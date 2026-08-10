@@ -1,6 +1,6 @@
 ---
 name: preflight
-description: 開工前檢查這個專案的環境有沒有把工作流程靜默停用：流程規範那一章的內容讀不讀得到、skill 與 lens 齊不齊、tmp/ 有沒有被 gitignore。Claude Code 另查 auto-compact 與 subagent 模型；其他 host 另查 hub-dispatch 跑不跑得起來。只讀、只報告，不改任何設定。
+description: 開工前檢查這個專案的環境有沒有把工作流程靜默停用：流程規範那一章的內容讀不讀得到、skill 與 lens 齊不齊、tmp/ 有沒有被 gitignore。Claude Code 另查 auto-compact 與 subagent 模型；其他 host 另查 dowafu 跑不跑得起來。只讀、只報告，不改任何設定。
 ---
 
 # preflight — 環境前置檢查
@@ -85,7 +85,7 @@ session 又會漏掉。
 ## 2. 如果你是 Claude Code 的 agent
 
 下面兩項只影響 **Claude Code 自己的內派 sub-agent**。外派（`find-holes-external` 走
-`hub-dispatch`）的 spoke 模型由工單的 `_dispatch.md` 決定，**不受這兩項影響**——
+`dowafu`）的 spoke 模型由工單的 `_dispatch.md` 決定，**不受這兩項影響**——
 這個專案只跑外派的話，這一節查了也不會改變什麼。
 
 ```bash
@@ -145,29 +145,29 @@ grep -h "\"model\"\|\"effortLevel\"" ~/.claude/settings.json .claude/settings.js
 第 2 節那兩項對你不存在，跳過。你要確認的是下面三件事，**按這個順序**——前一項不成立，
 後面查了也沒有意義。
 
-### 一、`hub-dispatch` 在哪、跑不跑得起來
+### 一、`dowafu` 在哪、跑不跑得起來
 
 **這是首要條件。** 工具起不來，工單寫得再好都派不出去；等到派工當下才發現，
 會白費一次組工單的工。
 
 ```bash
-"$PNPM_HOME/hub-dispatch" --version
+dowafu --version
 ```
 
 印得出版本號就過。印不出來只有兩種情況：
 
 | 症狀 | 意思 | 怎麼回報 |
 | --- | --- | --- |
-| `Operation not permitted` | **沙箱擋的**，不是沒安裝。CLI 在家目錄底下，而沙箱預設不讀家目錄 | 照 host 的提示放行後重試。順帶告訴使用者：API key（`~/.config/dispatch/.env`）與對外網路同樣被擋，派工時一併要放行 |
-| `$PNPM_HOME` 是空的 | 不是用 pnpm 裝的 | 問使用者 CLI 裝在哪，**不要自己搜檔案系統** |
+| `Operation not permitted` | **沙箱擋的**，不是沒安裝。CLI 多半裝在家目錄底下，而沙箱預設不讀家目錄 | 照 host 的提示放行後重試。順帶告訴使用者：API key（`~/.config/dispatch/.env`）與對外網路同樣被擋，派工時一併要放行 |
+| `command not found` | 可能沒裝，也可能裝在 PATH 之外 | 問使用者 CLI 裝在哪（請他跑 `which dowafu`），**不要自己搜檔案系統** |
 
-**`command -v hub-dispatch` 查不到不代表沒安裝**，別拿那個當判準。
+**`command -v dowafu` 查不到不代表沒安裝**，別拿那個當判準。
 
 ### 二、lens 定義與 skill 在不在
 
 見第 1 節的「skill 與 lens」。有一點對你特別重要：
 
-**lens 定義是 CLI 要讀的，不是你要讀的。** 它是 `hub-dispatch` 組 spoke system prompt
+**lens 定義是 CLI 要讀的，不是你要讀的。** 它是 `dowafu` 組 spoke system prompt
 的來源，你只要確認**檔案在**就好，不必自己讀懂內容。skill 才是你要讀的。
 
 ### 三、流程規範的內容，在你讀得到的地方

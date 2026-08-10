@@ -14,7 +14,7 @@ read them from. Everything lands on disk for you to check.
 npm install -g dowafu
 ```
 
-The command is `dowafu` (`hub-dispatch` also works, for existing setups).
+The command is `dowafu`.
 
 ## API keys
 

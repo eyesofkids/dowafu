@@ -1,6 +1,6 @@
 ---
 name: find-holes-external
-description: 把規劃書段落派給外部模型（OpenAI／DeepSeek／Gemini／Anthropic）做找漏洞審查，經本地 hub-dispatch CLI 執行，spoke 唯讀且受白名單控管。適用於需要異質視角、或要對照真實原始碼審查規劃書時。用法：/find-holes-external <規劃書檔案路徑> [聚焦章節或問題]
+description: 把規劃書段落派給外部模型（OpenAI／DeepSeek／Gemini／Anthropic）做找漏洞審查，經本地 dowafu CLI 執行，spoke 唯讀且受白名單控管。適用於需要異質視角、或要對照真實原始碼審查規劃書時。用法：/find-holes-external <規劃書檔案路徑> [聚焦章節或問題]
 ---
 
 # find-holes-external — 外派找漏洞
@@ -8,7 +8,7 @@ description: 把規劃書段落派給外部模型（OpenAI／DeepSeek／Gemini�
 你是 hub。本 skill 把規劃書的指定範圍派給**外部模型**做找漏洞審查。
 **spoke 產出意見，不產裁決；採不採用由使用者決定。**
 
-工具是 `hub-dispatch`（已全域安裝的本地 CLI），用你的終端機工具呼叫。
+工具是 `dowafu`（已全域安裝的本地 CLI），用你的終端機工具呼叫。
 **spoke 只讀你給它的東西**——唯讀，而且每次讀檔都經白名單判定。
 
 > **需要知道的全部在這裡，不要去翻別的文件找補充說明。**
@@ -48,32 +48,34 @@ system prompt 來源——角色、禁令、輸出格式、收尾句都在裡面
 - **不帶 `--yes` 時 CLI 會直接中止、不呼叫任何 API**（stdin 不是 TTY，確認提示沒有人
   能回答）。這是機制保證——但它擋得住「沒有人在場」，擋不住「你自己決定要跑」
 - **執行中終端機會即時輸出**每輪 token 與工具呼叫，那條通道可靠
-- `hub-dispatch` 在 PATH 上，指令直接下就行
+- `dowafu` 在 PATH 上，指令直接下就行
 
 ### 你不是 Claude Code 的 agent
 
 四件事不同。
 
-**一、每一條 `hub-dispatch` 指令都照這個形狀，`cd` 與 `--repo-root .` 都不要省：**
+**一、每一條 `dowafu` 指令都照這個形狀，`cd` 與 `--repo-root .` 都不要省：**
 
 ```bash
-cd <repo 根的絕對路徑> && "$PNPM_HOME/hub-dispatch" <工單目錄> --repo-root . --dry-run
+cd <repo 根的絕對路徑> && dowafu <工單目錄> --repo-root . --dry-run
 ```
 
 你的終端機不保證落在哪一個 workspace folder，而 `--repo-root` 預設取 cwd。cwd 錯了會
 **安靜地錯**——工單照樣解析、spoke 照樣派出去，只是白名單邊界與 lens 定義都指到別處。
 
-**二、`hub-dispatch` 是外部全域 CLI，不在 workspace 裡。不要去找它，直接下：**
+**二、`dowafu` 是外部全域 CLI，不在 workspace 裡。不要去找它，直接下：**
 
 ```bash
-"$PNPM_HOME/hub-dispatch" --version
+dowafu --version
 ```
 
-它在家目錄底下，而沙箱預設不讀家目錄——**`command -v` 查不到不代表它沒安裝**。
-`$PNPM_HOME` 是空的就問使用者，**不要搜檔案系統**。
+印不出版本號只有兩種情況，**兩種都不要自己搜檔案系統**：
 
-被沙箱擋下時回 `Operation not permitted`。**那不是工單或指令的問題**，照提示放行再跑一次。
-API key 與對外網路同樣被擋，所以放行是必要的，不是可選的。
+- **`command not found`**——問使用者 CLI 裝在哪（請他跑 `which dowafu`），拿到絕對路徑
+  之後改用絕對路徑呼叫
+- **`Operation not permitted`**——**沙箱擋的，不是沒安裝**。它多半裝在家目錄底下，而沙箱
+  預設不讀家目錄。照 host 的提示放行再跑一次；API key 與對外網路同樣被擋，所以放行是
+  必要的，不是可選的
 
 **三、`--yes` 一定要帶。**
 
@@ -208,7 +210,7 @@ API key 與對外網路同樣被擋，所以放行是必要的，不是可選的
 **四條規則**：
 
 1. **不要寫角色定義**（「你是一個…」「不得…」「請以…收尾」）。角色、禁令、輸出格式、
-   收尾句由 `hub-dispatch` 從 `.claude/agents/<agent>.md` 讀出來組進 system prompt。
+   收尾句由 `dowafu` 從 `.claude/agents/<agent>.md` 讀出來組進 system prompt。
    寫進工單會造成規則雙來源——同一組規則出現兩次、措辭還不一致。
 
 2. **問題要開放，不要指向你已經發現的東西。** 把答案寫進問題，spoke 找到就只是複述工單。
@@ -256,7 +258,7 @@ API key 與對外網路同樣被擋，所以放行是必要的，不是可選的
 不出來。那是你在第 2 節就該做完的事（逐題對照表），乾跑不會替你補。
 
 ```bash
-hub-dispatch tmp/dispatch/<ticket-id> --repo-root . --dry-run
+dowafu tmp/dispatch/<ticket-id> --repo-root . --dry-run
 ```
 
 **跑之前先跟使用者說明這一步在幹嘛。** 他多半沒用過這個工具，看你在下指令會以為已經
@@ -287,7 +289,7 @@ token 量級合理、**沒有 `⚠ 輸出目錄…未被…忽略` 的警告**�
 ## 5. 實跑
 
 ```bash
-hub-dispatch tmp/dispatch/<ticket-id> --repo-root . --yes
+dowafu tmp/dispatch/<ticket-id> --repo-root . --yes
 ```
 
 > **這一步會花錢。** `--yes` 等於你代替使用者按下確認，**加上它之前必須在對話裡取得
@@ -426,7 +428,7 @@ lens 定義留著，下次還會用。
 | 撞 429 | 加 `--concurrency 1` 重跑 |
 | 報告品質差 | 換一個型號重跑，或同一組設定再跑一次取聯集（見第 3 節「跑 2–3 次怎麼做」） |
 | 缺 API key | 使用者要在 `~/.config/dispatch/.env` 設定，**你不要去碰那個檔** |
-| 找不到 `hub-dispatch` | **查不到不代表沒安裝**——見 §1.5，多半是沙箱不讀家目錄 |
+| 找不到 `dowafu` | **查不到不代表沒安裝**——見 §1.5，多半是沙箱不讀家目錄 |
 | `Operation not permitted` | host 的沙箱擋的，**不是工單或指令的問題**。照提示放行再跑一次 |
 
 **撞到任何異常，告訴使用者**——不要自己吞掉或繞過去。

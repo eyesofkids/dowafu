@@ -28,8 +28,7 @@
     "node": ">=20"
   },
   "bin": {
-    "dowafu": "dist/cli.js",
-    "hub-dispatch": "dist/cli.js"
+    "dowafu": "dist/cli.js"
   },
   "files": [
     "dist",

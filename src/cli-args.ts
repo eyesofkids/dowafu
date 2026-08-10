@@ -7,10 +7,11 @@
 // 完整用法（原僅一行）。
 
 import { DispatchError } from "./types.js";
+import { getCommandName } from "./pkg-info.js";
 import type { CliOptions } from "./report.js";
 import type { RunEvent } from "./runner.js";
 
-export const HELP_TEXT = `用法：hub-dispatch <ticket-dir> [options]
+export const HELP_TEXT = `用法：${getCommandName()} <ticket-dir> [options]
 
   --repo-root <dir>        白名單邊界與 .claude/agents 的根，預設 cwd
   --providers <path>       整檔取代出貨的 providers.json

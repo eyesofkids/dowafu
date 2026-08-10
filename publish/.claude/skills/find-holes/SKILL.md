@@ -9,7 +9,7 @@ description: 【Claude Code 內派專用；VS Code 環境改用 find-holes-exter
 **spoke 產出意見，不產裁決；採不採用由使用者決定。**
 
 > **本 skill 只管內派。** 需要外部模型的異質視角、或要對照真實原始碼審查時，
-> 改用 `find-holes-external`（走 `hub-dispatch` CLI，spoke 唯讀且受白名單控管）。
+> 改用 `find-holes-external`（走 `dowafu` CLI，spoke 唯讀且受白名單控管）。
 
 ## 步驟
 

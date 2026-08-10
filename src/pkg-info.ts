@@ -24,3 +24,19 @@ export function getPackageVersion(): string {
   const raw = JSON.parse(readFileSync(pkgPath, "utf8")) as { version?: string };
   return raw.version ?? "0.0.0";
 }
+
+// 指令名同樣取自 package.json，理由與上面一致：這份原始碼會在不同的套件名下出貨，
+// 把名字寫死在說明文字裡，就會出現「--help 教你打 A、實際裝成 B」的落差——而那種落差
+// 不會報錯，只會讓照做的人打不到指令。取 bin 的第一個 key；bin 是字串形式時它等於套件名。
+export function getCommandName(): string {
+  const pkgPath = fileURLToPath(packageRootURL("package.json"));
+  const raw = JSON.parse(readFileSync(pkgPath, "utf8")) as {
+    name?: string;
+    bin?: Record<string, string> | string;
+  };
+  if (raw.bin && typeof raw.bin === "object") {
+    const first = Object.keys(raw.bin)[0];
+    if (first) return first;
+  }
+  return raw.name ?? "cli";
+}
