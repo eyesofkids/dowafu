@@ -33,7 +33,8 @@
   "files": [
     "dist",
     "providers.json",
-    "publish"
+    "publish",
+    "README_zh-tw.md"
   ],
   "scripts": {
     "verify:providers": "tsx scripts/verify-providers.ts",

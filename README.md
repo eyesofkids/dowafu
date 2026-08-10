@@ -1,6 +1,10 @@
 # dowafu
 
-Send a section of your design doc to external LLMs for review, from the terminal.
+**English** ｜ [繁體中文](https://github.com/eyesofkids/dowafu/blob/main/README_zh-tw.md)
+
+A read-only review harness: it sends a section of a document to external models, decides
+what each of them may read, records what they did, and audits the shape of what they
+returned.
 
 You write a ticket. `dowafu` calls each provider's API. Each reviewer — a *spoke* —
 reads only the files you whitelisted, and returns observations with the evidence it
@@ -47,8 +51,9 @@ chmod 600 ~/.config/dispatch/.env
 Only the providers you actually dispatch to need a key. The file is plain text — it is
 protected by nothing but its file permissions.
 
-**The current directory's `.env` is never read.** That directory is the project under
-review, and its secrets have no business in a process that talks to three external APIs.
+**The current directory's `.env` is never read.** That is where you ran the command, and
+usually the project under review; its secrets have no business in a process that is
+talking to external APIs.
 
 ## Usage
 
@@ -117,7 +122,7 @@ requests and responses.
   refused, and the refusal is recorded.
 - **`_docs/` is off limits**, whatever the whitelist says.
 - **Nothing is billed before you confirm.** The dry run prints the resolved repo root,
-  models, token estimates and output path, and calls no API.
+  each reviewer's model and language, token estimates and the output path, and calls no API.
 - **Secrets are masked** in `run.jsonl`, `raw/*.json` and stdout.
 - **Failures stop the run.** A missing key, an unknown model, a file that does not
   exist — each aborts with the path or name that caused it, before any spend.
