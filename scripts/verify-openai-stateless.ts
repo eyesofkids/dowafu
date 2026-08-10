@@ -21,7 +21,7 @@ import { writeFile, mkdir } from "node:fs/promises";
 loadDispatchEnv(resolveDispatchHome());
 
 const MODEL = process.env.OPENAI_MODEL || "gpt-5.6-luna";
-const FAKE_PACKAGE_JSON_RESULT = '{"name":"ai-workflow-hub-spoke-dispatcher"}';
+const FAKE_PACKAGE_JSON_RESULT = '{"name":"dowafu"}';
 const FAKE_TSCONFIG_RESULT = '{"compilerOptions":{"module":"NodeNext"}}';
 
 // 強迫至少兩次連續 tool call，逼出 3 輪以上的續接（round1 呼叫 read_file(package.json)

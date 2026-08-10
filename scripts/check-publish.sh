@@ -38,10 +38,6 @@ check "絕對路徑" \
   '/(Users|Volumes|home)/' \
   "改成相對路徑，或改成「請使用者提供」"
 
-check "本 repo 名稱" \
-  'ai-workflow-hub-spoke' \
-  "外部專案不知道這個 repo 叫什麼"
-
 # 只抓帶版號／帶主題的**具體檔名**。`issue_log`／`report`／`runbook` 這些
 # 光禿禿的名詞是流程規範裡的文件類別（六種文件），屬通用詞彙，不算洩漏。
 check "本 repo 的文件檔名" \
@@ -52,9 +48,18 @@ check "_docs 底下的具體路徑" \
   '_docs/[a-z][a-z-]+/' \
   "_docs/ 這個名字可以出現（CLI 硬編的 spoke 禁區），但底下的子目錄是本 repo 的"
 
-check "其他專案名稱" \
-  '(igopms|real-run-same-lens)' \
-  "那是測試素材與實驗記錄所在的專案，與外部使用者無關"
+# 專案專屬的洩漏樣式（自己的 repo 名、測試素材所在的專案名⋯）放在單獨一個檔案裡，
+# 因為**樣式本身就是要藏的東西**——寫死在這支腳本裡，等於把那些名字複製到每一份
+# 這支腳本會被同步到的地方。該檔不隨同步出去；沒有它就只跑上面那幾條通用檢查。
+# 格式：每行「標籤<tab>regex<tab>提示」，`#` 開頭與空行略過。
+PATTERNS_FILE="$ROOT/scripts/leak-patterns.local"
+if [ -f "$PATTERNS_FILE" ]; then
+  while IFS=$'\t' read -r label pattern hint; do
+    [ -z "${label:-}" ] && continue
+    case "$label" in \#*) continue ;; esac
+    check "$label" "$pattern" "$hint"
+  done < "$PATTERNS_FILE"
+fi
 
 # 衍生版（.agents/skills）與來源（.claude/skills）的同步檢查。
 # 兩者內容刻意不同——衍生版拿掉了只有某一種 host 才成立的段落——所以不能逐位元組比對。

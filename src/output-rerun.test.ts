@@ -11,7 +11,7 @@ import { ensureOutDir, RunLogWriter } from "./output.js";
 // 覆蓋，唯獨 run.jsonl 走 appendFile 且 ensureOutDir 不清空，於是重跑會把上一次的事件
 // 留著。
 //
-// 實測踩點（issue_log_v2.0.md 2026-08-07）：igopms 同工單重跑後，run.jsonl 數出 9／22 次
+// 實測踩點（issue_log_v2.0.md 2026-08-07）：同工單重跑後，run.jsonl 數出 9／22 次
 // 工具呼叫，summary.md 寫 7／20，spoke_end 事件共 4 個（每支 2 個）——多出來的正是上一次
 // 的事件。而 toolCalls[] 是偵測「零讀取」的唯一依據，v2.1 又剛把「重跑」訂為零讀取的標準
 // 處置，這條路徑因此從罕見變成常見。

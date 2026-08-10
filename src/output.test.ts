@@ -106,7 +106,7 @@ function mkToolCallAudit(overrides: Partial<ToolCallAudit> = {}): ToolCallAudit 
 }
 
 // plan_dispatch_v2.0.md §15（一）：本版最優先項——素材為 issue_log_v2.0.md 2026-08-07
-// 的真實案例，igopms 兩支 spoke 零讀取但舊版稽核輸出全部 pass。
+// 的真實案例，某次派工的兩支 spoke 零讀取但舊版稽核輸出全部 pass。
 test("buildSummaryMarkdown：zeroSourceRead 時在稽核欄最前面顯眼標示，並附允許清單檔數", () => {
   const md = buildSummaryMarkdown(
     "t1",

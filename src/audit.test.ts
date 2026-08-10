@@ -110,7 +110,7 @@ test("auditSpoke：收尾句與清單外引用路徑照舊運作，不受本輪�
 
 // plan_dispatch_v1.12.md §15：PATH_REGEX 的字元類 [\w.\-] 不匹配中括號，Next.js 動態路由
 // 段（[id]、[...slug]、[[...slug]]）會被從中括號後截斷，導致清單內的合法引用被誤判為
-// 清單外。素材取自 mini-todo 首次外部派工的真實回報原文（issue_log_v1.md 同日條目）。
+// 清單外。素材取自首次外部派工的真實回報原文（issue_log_v1.md 同日條目）。
 test("auditSpoke：含 [id] 動態路由段的路徑須完整抽出，比對清單內即不列為清單外（真實回報原文）", () => {
   const text = withClosing(`# 觀察
 1. \`POST /api/todos/[id]/external/generate\` 的實際程式碼沒有驗證登入狀態。
@@ -140,7 +140,7 @@ test("auditSpoke：含 [id] 動態路由段的路徑須完整抽出，比對清�
 
 // 熱修補（issue_log_v1.md 同日條目）：§15 引用路徑比對的第二類誤報——「無法驗證」章節
 // 內的路徑必然在允許清單之外（§16 回報模板：該欄列「需要但讀不到的檔案」），不是
-// §15 要防的「臆測或引用工單原文」。素材為 mini-todo hole-finder-feasibility 的真實回報
+// §15 要防的「臆測或引用工單原文」。素材為某次外部派工 hole-finder-feasibility 的真實回報
 // 原文（hub 驗收拿三份真實回報重跑後發現，PATH_REGEX 的中括號修正未涵蓋這類）。
 test("auditSpoke：「無法驗證」章節內引用清單外路徑不列入 citedPathsOutsideAllowlist（真實回報原文，feasibility 允許清單無 lib/hash.ts）", () => {
   const text = withClosing(`# 觀察
@@ -203,7 +203,7 @@ test("auditSpoke：同一清單外路徑同時出現在「觀察」與「無法�
 });
 
 // plan_dispatch_v2.0.md §15（二）：清單外引用附出現章節與疑似縮寫來源。素材為
-// issue_log_v2.0.md 2026-08-07 的真實案例——igopms feasibility 在「觀察」節寫了縮寫路徑
+// issue_log_v2.0.md 2026-08-07 的真實案例——某次派工的 feasibility 在「觀察」節寫了縮寫路徑
 // [id]/sync/route.ts，允許清單內有完整路徑 app/api/property-management/external-ics/[id]/sync/route.ts。
 test("auditSpoke：清單外路徑標明出現章節，且為允許清單項目後綴時標明疑似縮寫來源（真實案例）", () => {
   const text = withClosing(`# 觀察

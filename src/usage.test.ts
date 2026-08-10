@@ -82,12 +82,12 @@ test("normalizeGeminiUsage：無 thoughtsTokenCount 時 reasoningTokens 為 unde
   assert.equal(usage.reasoningTokens, undefined);
 });
 
-// plan_dispatch_v1.12.md §12／§14：核對真實外部派工的三輪 usageMetadata 原文（mini-todo
+// plan_dispatch_v1.12.md §12／§14：核對真實外部派工的三輪 usageMetadata 原文（首次外部派工
 // hole-finder-feasibility，facts_dispatch.md 2026-08-06「首次外部專案真實派工實測」），
 // 確認 normalizeGeminiUsage 的輸出與原文帳目一致；另把 v1.9 未記錄的 promptTokensDetails
 // 與 serviceTier 兩個欄位一併帶入，確保未來 gemini 加欄位時不會靜默壞掉（不參與計算，
 // 也不應造成解析失敗）。
-test("normalizeGeminiUsage：真實三輪 usageMetadata（mini-todo 首次外部派工，逐輪核對帳目）", () => {
+test("normalizeGeminiUsage：真實三輪 usageMetadata（首次外部派工，逐輪核對帳目）", () => {
   const round1 = normalizeGeminiUsage({
     promptTokenCount: 592,
     candidatesTokenCount: 79,
@@ -174,8 +174,8 @@ test("normalizeFinishReason：null 正規化為 unknown", () => {
   assert.deepEqual(normalizeFinishReason(null), { finishReason: "unknown", finishReasonRaw: null });
 });
 
-// plan_dispatch_v2.5.md §25 測試 1：真實 gemini usageMetadata（ai-skill-chat-thread-chain
-// hole-finder-feasibility 第 8 輪，tmp/external-runs/ai-skill-chat-thread-chain/raw/
+// plan_dispatch_v2.5.md §25 測試 1：真實 gemini usageMetadata（某次派工的
+// hole-finder-feasibility 第 8 輪，tmp/external-runs/<ticket>/raw/
 // hole-finder-feasibility.response.json:321-339）。cachedContentTokenCount 一直在 raw 裡，
 // 正規化層沒讀（issue_log_v2.1.md 2026-08-08）。
 test("normalizeGeminiUsage：真實 cachedContentTokenCount 需被讀入 cachedTokens（v2.5 §24）", () => {
@@ -192,8 +192,8 @@ test("normalizeGeminiUsage：真實 cachedContentTokenCount 需被讀入 cachedT
   assert.equal(usage.available, true, "快取欄位不得影響 available（v2.5 規格二）");
 });
 
-// plan_dispatch_v2.5.md §25 測試 2：真實 openai usage（ai-skill-chat-contract-v13
-// hole-finder-feasibility，tmp/external-runs/ai-skill-chat-contract-v13/raw/
+// plan_dispatch_v2.5.md §25 測試 2：真實 openai usage（某次派工的
+// hole-finder-feasibility，tmp/external-runs/<ticket>/raw/
 // hole-finder-feasibility.response.json:536-547）。cache_write_tokens 一直在 raw 裡，
 // 既有測試（:13）帶了這個欄位卻沒斷言，漏讀不會變紅。
 test("normalizeResponsesUsage：真實 cache_write_tokens 需被讀入 cacheWriteTokens（v2.5 §24）", () => {
@@ -333,7 +333,7 @@ test("§27：用 v2.5 之前的舊允許清單重跑真實 raw，證明機制當
     return Object.keys(obj).filter((k) => !known.has(k));
   }
 
-  // 與 §25 測試 1 同一份真實 gemini raw（第 8 輪，tmp/external-runs/ai-skill-chat-thread-chain/
+  // 與 §25 測試 1 同一份真實 gemini raw（第 8 輪，tmp/external-runs/<ticket>/
   // raw/hole-finder-feasibility.response.json:321-339）
   const geminiRaw = {
     promptTokenCount: 26773,
@@ -344,7 +344,7 @@ test("§27：用 v2.5 之前的舊允許清單重跑真實 raw，證明機制當
   const geminiUnknown = oldFindUnknownTopLevel(OLD_GEMINI_USAGE_KEYS, geminiRaw);
   assert.deepEqual(geminiUnknown, ["cachedContentTokenCount"], "舊允許清單應叫出這個當年被漏掉的欄位");
 
-  // 與 §25 測試 2 同一份真實 openai raw（tmp/external-runs/ai-skill-chat-contract-v13/
+  // 與 §25 測試 2 同一份真實 openai raw（tmp/external-runs/<ticket>/
   // raw/hole-finder-feasibility.response.json:536-547）
   const openaiInputDetails = { cache_write_tokens: 37980, cached_tokens: 3199 };
   const openaiUnknown = oldFindUnknownTopLevel(OLD_RESPONSES_INPUT_DETAILS_KEYS, openaiInputDetails);

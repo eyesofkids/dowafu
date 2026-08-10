@@ -5,7 +5,7 @@ import type { ToolCallLog } from "./types.js";
 
 // plan_dispatch_v2.0.md §15（一）：本項屬「規格已定但未實作」——v1.8 §15 的稽核表列六項，
 // output.ts 只渲染五項，缺的正是這欄。素材取自 issue_log_v2.0.md 2026-08-07 的真實案例：
-// igopms／non-internal-api-auth 兩支 spoke 只讀了 _shared.md 與自己的工單檔，35 個允許
+// 某次真實派工的兩支 spoke 只讀了 _shared.md 與自己的工單檔，35 個允許
 // 讀取的原始碼檔一個都沒開，而舊版稽核輸出全部 pass。
 
 function log(overrides: Partial<ToolCallLog> = {}): ToolCallLog {

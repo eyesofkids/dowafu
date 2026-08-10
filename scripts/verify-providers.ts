@@ -22,7 +22,7 @@ loadDispatchEnv(resolveDispatchHome());
 
 const USER_PROMPT =
   '請呼叫 read_file 工具讀取路徑 "package.json"，並用一句話告訴我它的 "name" 欄位值。';
-const FAKE_TOOL_RESULT = '{"name":"ai-workflow-hub-spoke-dispatcher"}';
+const FAKE_TOOL_RESULT = '{"name":"dowafu"}';
 
 // ---------------------------------------------------------------------------
 // §11：API key 不得出現在任何落檔、stdout 或錯誤訊息中。

@@ -12,7 +12,7 @@ export type ToolCallAudit = {
   rejected: number;
   allowedReadsCount: number; // 該 spoke 允許讀取清單的檔案數，供「允許 N 檔」顯示
   // 「toolCalls 全部落在工單目錄內（_shared.md／<agent>.md），而該 spoke 的允許讀取清單
-  // 非空」——沒看程式碼就作答的簽名（issue_log_v2.0.md 2026-08-07：igopms 兩支 spoke
+  // 非空」——沒看程式碼就作答的簽名（issue_log_v2.0.md 2026-08-07：某次派工的兩支 spoke
   // 零讀取，稽核卻全過）。
   zeroSourceRead: boolean;
 };
