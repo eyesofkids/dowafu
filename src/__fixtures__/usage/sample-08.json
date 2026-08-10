@@ -1,0 +1,209 @@
+[
+  {
+    "api": "gemini",
+    "usage": {
+      "promptTokenCount": 1007,
+      "candidatesTokenCount": 87,
+      "totalTokenCount": 1094,
+      "promptTokensDetails": [
+        {
+          "modality": "TEXT",
+          "tokenCount": 1007
+        }
+      ],
+      "serviceTier": "standard"
+    }
+  },
+  {
+    "api": "gemini",
+    "usage": {
+      "promptTokenCount": 7126,
+      "candidatesTokenCount": 570,
+      "totalTokenCount": 7696,
+      "promptTokensDetails": [
+        {
+          "modality": "TEXT",
+          "tokenCount": 7126
+        }
+      ],
+      "serviceTier": "standard"
+    }
+  },
+  {
+    "api": "gemini",
+    "usage": {
+      "promptTokenCount": 41722,
+      "candidatesTokenCount": 929,
+      "totalTokenCount": 42651,
+      "promptTokensDetails": [
+        {
+          "modality": "TEXT",
+          "tokenCount": 41722
+        }
+      ],
+      "serviceTier": "standard"
+    }
+  },
+  {
+    "api": "gemini",
+    "usage": {
+      "promptTokenCount": 911,
+      "candidatesTokenCount": 41,
+      "totalTokenCount": 952,
+      "promptTokensDetails": [
+        {
+          "modality": "TEXT",
+          "tokenCount": 911
+        }
+      ],
+      "serviceTier": "standard"
+    }
+  },
+  {
+    "api": "gemini",
+    "usage": {
+      "promptTokenCount": 6463,
+      "candidatesTokenCount": 45,
+      "totalTokenCount": 6508,
+      "promptTokensDetails": [
+        {
+          "modality": "TEXT",
+          "tokenCount": 6463
+        }
+      ],
+      "serviceTier": "standard"
+    }
+  },
+  {
+    "api": "gemini",
+    "usage": {
+      "promptTokenCount": 6965,
+      "candidatesTokenCount": 18,
+      "totalTokenCount": 6983,
+      "cachedContentTokenCount": 4060,
+      "promptTokensDetails": [
+        {
+          "modality": "TEXT",
+          "tokenCount": 6965
+        }
+      ],
+      "cacheTokensDetails": [
+        {
+          "modality": "TEXT",
+          "tokenCount": 4060
+        }
+      ],
+      "serviceTier": "standard"
+    }
+  },
+  {
+    "api": "gemini",
+    "usage": {
+      "promptTokenCount": 8236,
+      "candidatesTokenCount": 26,
+      "totalTokenCount": 8262,
+      "cachedContentTokenCount": 4060,
+      "promptTokensDetails": [
+        {
+          "modality": "TEXT",
+          "tokenCount": 8236
+        }
+      ],
+      "cacheTokensDetails": [
+        {
+          "modality": "TEXT",
+          "tokenCount": 4060
+        }
+      ],
+      "serviceTier": "standard"
+    }
+  },
+  {
+    "api": "gemini",
+    "usage": {
+      "promptTokenCount": 8564,
+      "candidatesTokenCount": 30,
+      "totalTokenCount": 8594,
+      "cachedContentTokenCount": 4057,
+      "promptTokensDetails": [
+        {
+          "modality": "TEXT",
+          "tokenCount": 8564
+        }
+      ],
+      "cacheTokensDetails": [
+        {
+          "modality": "TEXT",
+          "tokenCount": 4057
+        }
+      ],
+      "serviceTier": "standard"
+    }
+  },
+  {
+    "api": "gemini",
+    "usage": {
+      "promptTokenCount": 9600,
+      "candidatesTokenCount": 27,
+      "totalTokenCount": 9627,
+      "cachedContentTokenCount": 4057,
+      "promptTokensDetails": [
+        {
+          "modality": "TEXT",
+          "tokenCount": 9600
+        }
+      ],
+      "cacheTokensDetails": [
+        {
+          "modality": "TEXT",
+          "tokenCount": 4057
+        }
+      ],
+      "serviceTier": "standard"
+    }
+  },
+  {
+    "api": "gemini",
+    "usage": {
+      "promptTokenCount": 10290,
+      "candidatesTokenCount": 28,
+      "totalTokenCount": 10318,
+      "cachedContentTokenCount": 8112,
+      "promptTokensDetails": [
+        {
+          "modality": "TEXT",
+          "tokenCount": 10290
+        }
+      ],
+      "cacheTokensDetails": [
+        {
+          "modality": "TEXT",
+          "tokenCount": 8112
+        }
+      ],
+      "serviceTier": "standard"
+    }
+  },
+  {
+    "api": "gemini",
+    "usage": {
+      "promptTokenCount": 11113,
+      "candidatesTokenCount": 730,
+      "totalTokenCount": 11843,
+      "cachedContentTokenCount": 8110,
+      "promptTokensDetails": [
+        {
+          "modality": "TEXT",
+          "tokenCount": 11113
+        }
+      ],
+      "cacheTokensDetails": [
+        {
+          "modality": "TEXT",
+          "tokenCount": 8110
+        }
+      ],
+      "serviceTier": "standard"
+    }
+  }
+]

@@ -1,0 +1,99 @@
+[
+  {
+    "api": "gemini",
+    "usage": {
+      "promptTokenCount": 745,
+      "candidatesTokenCount": 95,
+      "totalTokenCount": 840,
+      "promptTokensDetails": [
+        {
+          "modality": "TEXT",
+          "tokenCount": 745
+        }
+      ],
+      "serviceTier": "standard"
+    }
+  },
+  {
+    "api": "gemini",
+    "usage": {
+      "promptTokenCount": 7880,
+      "candidatesTokenCount": 144,
+      "totalTokenCount": 8024,
+      "promptTokensDetails": [
+        {
+          "modality": "TEXT",
+          "tokenCount": 7880
+        }
+      ],
+      "serviceTier": "standard"
+    }
+  },
+  {
+    "api": "gemini",
+    "usage": {
+      "promptTokenCount": 35521,
+      "candidatesTokenCount": 1073,
+      "totalTokenCount": 36594,
+      "promptTokensDetails": [
+        {
+          "modality": "TEXT",
+          "tokenCount": 35521
+        }
+      ],
+      "serviceTier": "standard"
+    }
+  },
+  {
+    "api": "gemini",
+    "usage": {
+      "promptTokenCount": 737,
+      "candidatesTokenCount": 94,
+      "totalTokenCount": 831,
+      "promptTokensDetails": [
+        {
+          "modality": "TEXT",
+          "tokenCount": 737
+        }
+      ],
+      "serviceTier": "standard"
+    }
+  },
+  {
+    "api": "gemini",
+    "usage": {
+      "promptTokenCount": 7843,
+      "candidatesTokenCount": 128,
+      "totalTokenCount": 7971,
+      "promptTokensDetails": [
+        {
+          "modality": "TEXT",
+          "tokenCount": 7843
+        }
+      ],
+      "serviceTier": "standard"
+    }
+  },
+  {
+    "api": "gemini",
+    "usage": {
+      "promptTokenCount": 13364,
+      "candidatesTokenCount": 862,
+      "totalTokenCount": 14226,
+      "cachedContentTokenCount": 4066,
+      "promptTokensDetails": [
+        {
+          "modality": "TEXT",
+          "tokenCount": 13364
+        }
+      ],
+      "cacheTokensDetails": [
+        {
+          "modality": "TEXT",
+          "tokenCount": 4066
+        }
+      ],
+      "serviceTier": "standard"
+    }
+  }
+]

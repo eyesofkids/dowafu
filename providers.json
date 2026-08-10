@@ -1,0 +1,84 @@
+{
+  "formatVersion": 1,
+  "openai": {
+    "baseURL": "https://api.openai.com/v1",
+    "api": "responses",
+    "store": false,
+    "toolCalling": true,
+    "reasoning": {
+      "style": "openai",
+      "allowed": ["none", "minimal", "low", "medium", "high", "xhigh", "max"],
+      "default": "high"
+    },
+    "models": ["gpt-5.6-luna", "gpt-5.6-terra", "gpt-5.6-sol"],
+    "charsPerToken": 1.0,
+    "tpmLimit": 200000,
+    "maxSpokeTokens": null,
+    "pricingSource": { "url": "https://developers.openai.com/api/docs/pricing", "asOf": "2026-08-09" },
+    "pricing": {
+      "gpt-5.6-luna": { "inputPerM": 0.20, "cachedInputPerM": 0.02, "outputPerM": 1.20 },
+      "gpt-5.6-terra": { "inputPerM": 2.00, "cachedInputPerM": 0.20, "outputPerM": 12.00 },
+      "gpt-5.6-sol": { "inputPerM": 5.00, "cachedInputPerM": 0.50, "outputPerM": 30.00 }
+    }
+  },
+  "deepseek": {
+    "baseURL": "https://api.deepseek.com/v1",
+    "api": "responses",
+    "store": false,
+    "toolCalling": true,
+    "reasoning": {
+      "style": "deepseek",
+      "allowed": ["low", "high", "max"],
+      "default": "high"
+    },
+    "models": ["deepseek-v4-flash"],
+    "charsPerToken": 1.0,
+    "tpmLimit": null,
+    "maxSpokeTokens": null,
+    "pricingSource": { "url": "https://api-docs.deepseek.com/quick_start/pricing/", "asOf": "2026-08-09", "note": "官方預告近期將調漲，且幅度顯著" },
+    "pricing": {
+      "deepseek-v4-flash": { "inputPerM": 0.14, "cachedInputPerM": 0.0028, "outputPerM": 0.28 }
+    }
+  },
+  "gemini": {
+    "baseURL": "https://generativelanguage.googleapis.com/v1beta",
+    "api": "gemini-native",
+    "store": null,
+    "toolCalling": true,
+    "reasoning": {
+      "style": "gemini",
+      "allowed": ["minimal", "low", "medium", "high"],
+      "default": "high"
+    },
+    "models": ["gemini-3.1-flash-lite", "gemini-3.5-flash-lite", "gemini-3.6-flash"],
+    "charsPerToken": 1.0,
+    "tpmLimit": null,
+    "maxSpokeTokens": null,
+    "pricingSource": { "url": "https://ai.google.dev/gemini-api/docs/pricing", "asOf": "2026-08-09", "note": "文字／圖片／影片價；音訊另計。output 價含 thinking tokens" },
+    "pricing": {
+      "gemini-3.1-flash-lite": { "inputPerM": 0.25, "cachedInputPerM": 0.025, "outputPerM": 1.50 },
+      "gemini-3.5-flash-lite": { "inputPerM": 0.30, "cachedInputPerM": 0.03, "outputPerM": 2.50 },
+      "gemini-3.6-flash": { "inputPerM": 1.50, "cachedInputPerM": 0.15, "outputPerM": 7.50 }
+    }
+  },
+  "anthropic": {
+    "baseURL": "https://api.anthropic.com",
+    "api": "anthropic-messages",
+    "store": null,
+    "toolCalling": true,
+    "reasoning": {
+      "style": "anthropic",
+      "allowed": ["low", "medium", "high", "xhigh", "max"],
+      "default": "high"
+    },
+    "models": ["claude-opus-5", "claude-sonnet-5"],
+    "charsPerToken": 1.0,
+    "tpmLimit": null,
+    "maxSpokeTokens": null,
+    "pricingSource": { "url": "https://platform.claude.com/docs/en/about-claude/pricing", "asOf": "2026-08-09", "note": "sonnet-5 為 2026-08-31 前的優惠價，之後為 3.00／15.00" },
+    "pricing": {
+      "claude-opus-5": { "inputPerM": 5.00, "cachedInputPerM": 0.50, "cacheWritePerM": 6.25, "outputPerM": 25.00 },
+      "claude-sonnet-5": { "inputPerM": 2.00, "cachedInputPerM": 0.20, "cacheWritePerM": 2.50, "outputPerM": 10.00 }
+    }
+  }
+}

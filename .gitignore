@@ -1,0 +1,14 @@
+node_modules/
+dist/
+
+.env
+.env.*
+!.env.example
+
+# spoke 回報不是文件版本，不進版控
+tmp/
+
+.DS_Store
+
+# 樣本含個人設定與他專案內容，不進版控
+_docs/sample/

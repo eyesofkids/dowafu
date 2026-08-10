@@ -1,0 +1,84 @@
+[
+  {
+    "api": "gemini",
+    "usage": {
+      "promptTokenCount": 600,
+      "candidatesTokenCount": 87,
+      "totalTokenCount": 687,
+      "promptTokensDetails": [
+        {
+          "modality": "TEXT",
+          "tokenCount": 600
+        }
+      ],
+      "serviceTier": "standard"
+    }
+  },
+  {
+    "api": "gemini",
+    "usage": {
+      "promptTokenCount": 6717,
+      "candidatesTokenCount": 824,
+      "totalTokenCount": 7541,
+      "promptTokensDetails": [
+        {
+          "modality": "TEXT",
+          "tokenCount": 6717
+        }
+      ],
+      "serviceTier": "standard"
+    }
+  },
+  {
+    "api": "gemini",
+    "usage": {
+      "promptTokenCount": 608,
+      "candidatesTokenCount": 41,
+      "totalTokenCount": 649,
+      "promptTokensDetails": [
+        {
+          "modality": "TEXT",
+          "tokenCount": 608
+        }
+      ],
+      "serviceTier": "standard"
+    }
+  },
+  {
+    "api": "gemini",
+    "usage": {
+      "promptTokenCount": 6162,
+      "candidatesTokenCount": 45,
+      "totalTokenCount": 6207,
+      "promptTokensDetails": [
+        {
+          "modality": "TEXT",
+          "tokenCount": 6162
+        }
+      ],
+      "serviceTier": "standard"
+    }
+  },
+  {
+    "api": "gemini",
+    "usage": {
+      "promptTokenCount": 6680,
+      "candidatesTokenCount": 681,
+      "totalTokenCount": 7361,
+      "cachedContentTokenCount": 4058,
+      "promptTokensDetails": [
+        {
+          "modality": "TEXT",
+          "tokenCount": 6680
+        }
+      ],
+      "cacheTokensDetails": [
+        {
+          "modality": "TEXT",
+          "tokenCount": 4058
+        }
+      ],
+      "serviceTier": "standard"
+    }
+  }
+]

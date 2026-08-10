@@ -1,0 +1,61 @@
+{
+  "name": "dowafu",
+  "version": "0.1.0",
+  "description": "Send a section of your design doc to external LLMs for review. They read only the files you whitelist, and nothing is billed until you confirm.",
+  "keywords": [
+    "llm",
+    "cli",
+    "code-review",
+    "design-review",
+    "agent",
+    "openai",
+    "deepseek",
+    "gemini",
+    "anthropic"
+  ],
+  "license": "MIT",
+  "author": "Eddy Chang",
+  "homepage": "https://github.com/eyesofkids/dowafu#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/eyesofkids/dowafu.git"
+  },
+  "bugs": {
+    "url": "https://github.com/eyesofkids/dowafu/issues"
+  },
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "bin": {
+    "dowafu": "dist/cli.js",
+    "hub-dispatch": "dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "providers.json",
+    "publish"
+  ],
+  "scripts": {
+    "verify:providers": "tsx scripts/verify-providers.ts",
+    "dispatch": "tsx src/cli.ts",
+    "test": "tsx --test 'src/**/*.test.ts'",
+    "lint": "eslint .",
+    "check:publish": "bash scripts/check-publish.sh",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "build": "tsc -p tsconfig.build.json && chmod +x dist/cli.js",
+    "prepublishOnly": "npm run test && npm run lint && npm run typecheck && npm run build"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "openai": "^4.68.4"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/node": "^22.10.2",
+    "eslint": "^10.8.1",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2",
+    "typescript-eslint": "^8.66.0"
+  }
+}
