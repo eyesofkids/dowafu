@@ -17,7 +17,7 @@ Outward-facing documents (`README.md`, this file) are in English.
 | `npm run typecheck` | `tsc -p tsconfig.json --noEmit`, **covers test files** |
 | `npm run build` | `tsc -p tsconfig.build.json` + `chmod +x dist/cli.js`, **excludes `*.test.ts`** |
 | `npm run dispatch <ticket-dir>` | runs `src/cli.ts` directly, no build step |
-| `npm run check:publish` | scans `publish/` before copying it into another project |
+| `npm run check:skills` | checks the two shipped skill copies are in step |
 | `npm run verify:providers` | real minimal requests against each provider API. **Costs money**, run by hand |
 
 Done means **test / lint / typecheck / build all green**.
@@ -56,11 +56,12 @@ in [`publish/README.md`](./publish/README.md).
   `publish/.agents/skills/` hold the same skills for hosts that look in different places.
   The `.agents/` copies are **derived**: same content minus the parts that only hold for
   one host. Each records the source file's sha256 in its frontmatter, and
-  `npm run check:publish` recomputes it — **edit `.claude/skills/` first**, then revisit
+  `npm run check:skills` recomputes it — **edit `.claude/skills/` first**, then revisit
   the derived copy.
 - Everything is a **whole-file copy**; there is nothing to splice.
 - `publish/` must not carry traces of a specific installation: absolute paths, private
-  document filenames, project names, or measurements. `check:publish` scans for those.
+  document filenames, project names, or measurements. That scan runs upstream, where
+  those edits happen and where the list of strings to look for lives.
 - `publish/` is not in the npm `files` list by accident — it is, so that `npm i` gives the
   consumer both the CLI and the material to copy.
 

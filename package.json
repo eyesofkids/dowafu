@@ -40,7 +40,7 @@
     "dispatch": "tsx src/cli.ts",
     "test": "tsx --test 'src/**/*.test.ts'",
     "lint": "eslint .",
-    "check:publish": "bash scripts/check-publish.sh",
+    "check:skills": "bash scripts/check-publish.sh",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "build": "tsc -p tsconfig.build.json && chmod +x dist/cli.js",
     "prepublishOnly": "npm run test && npm run lint && npm run typecheck && npm run build"

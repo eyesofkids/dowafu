@@ -1,10 +1,14 @@
 #!/usr/bin/env bash
-# 發佈前檢查：掃 publish/ 有沒有本 repo 的痕跡。
+# publish/ 的發佈前檢查，兩段職責：
 #
-# publish/ 的內容會被複製到一個對本 repo 一無所知的專案裡執行——任何指向這裡的
-# 絕對路徑、文件檔名或專屬指令，在那邊都是死的。這支腳本只查得到「機械性」的洩漏；
-# 屬於判斷的部分（實測數字該不該留、立場與最新裁示一不一致）見
-# .claude/skills/publish-check/SKILL.md 的清單。
+# 一、**衍生 skill 的同步**——`.agents/skills/` 是從 `.claude/skills/` 衍生的，來源改了
+#     衍生版沒跟上是靜默的。這段永遠執行，因為它守的是這個 repo 真的會出貨的東西。
+#
+# 二、**洩漏掃描**（絕對路徑、內部文件檔名、專案名⋯）——樣式讀自 scripts/leak-patterns.local。
+#     樣式本身就是要藏的東西，寫死在這裡等於把它們複製到每個同步目的地；沒有那個檔就
+#     不跑這段，因為沒有該檔的地方也不是編輯發生的地方。
+#
+# 兩段都查不到「判斷題」（實測數字該不該留、立場與最新裁示一不一致）——那要人看。
 
 set -uo pipefail
 
@@ -33,20 +37,6 @@ check() {
 
 echo "掃描 $TARGET"
 echo
-
-check "絕對路徑" \
-  '/(Users|Volumes|home)/' \
-  "改成相對路徑，或改成「請使用者提供」"
-
-# 只抓帶版號／帶主題的**具體檔名**。`issue_log`／`report`／`runbook` 這些
-# 光禿禿的名詞是流程規範裡的文件類別（六種文件），屬通用詞彙，不算洩漏。
-check "本 repo 的文件檔名" \
-  '(issue_log_v[0-9]|plan_dispatch|plan_lens_bench|facts_dispatch|decision_dispatch|runbook_dispatch|handoff_dispatch|quickstart_dispatch|report_v[0-9])' \
-  "那些檔只存在於本 repo 的 _docs/。理由要寫進 publish 的文件本身，或整句拿掉"
-
-check "_docs 底下的具體路徑" \
-  '_docs/[a-z][a-z-]+/' \
-  "_docs/ 這個名字可以出現（CLI 硬編的 spoke 禁區），但底下的子目錄是本 repo 的"
 
 # 專案專屬的洩漏樣式（自己的 repo 名、測試素材所在的專案名⋯）放在單獨一個檔案裡，
 # 因為**樣式本身就是要藏的東西**——寫死在這支腳本裡，等於把那些名字複製到每一份
@@ -86,16 +76,23 @@ check_derived() {
 for s in find-holes-external preflight wrap; do check_derived "$s"; done
 
 if [ "$fail" -eq 0 ]; then
-  echo "✓ 沒有機械性洩漏"
-  echo
-  # 判斷清單放在一支本地 skill 裡，那支不隨 publish/ 出貨，所以不是每個 checkout 都有。
-  # 沒有的話照樣要人工看一遍，只是沒有現成清單可循——這裡不假裝它一定在。
-  if [ -f "$ROOT/.claude/skills/publish-check/SKILL.md" ]; then
-    echo "接著走 .claude/skills/publish-check/SKILL.md 的判斷清單——"
+  # 「通過」要講清楚是通過了什麼。沒有樣式檔的地方沒跑洩漏掃描，卻印「沒有洩漏」，
+  # 那是這個專案最不想要的那種訊息——看起來查過了，其實整段沒執行。
+  echo "✓ 衍生 skill 與來源同步"
+  if [ -f "$PATTERNS_FILE" ]; then
+    echo "✓ 沒有機械性洩漏"
+    echo
+    # 判斷清單放在一支本地 skill 裡，那支不隨 publish/ 出貨，所以不是每個 checkout 都有。
+    # 沒有的話照樣要人工看一遍，只是沒有現成清單可循——這裡不假裝它一定在。
+    if [ -f "$ROOT/.claude/skills/publish-check/SKILL.md" ]; then
+      echo "接著走 .claude/skills/publish-check/SKILL.md 的判斷清單——"
+    else
+      echo "接著人工看一遍——"
+    fi
+    echo "grep 查不到「實測數字該不該留」「立場與最新裁示一不一致」這類問題。"
   else
-    echo "接著人工看一遍——"
+    echo "（未跑洩漏掃描：找不到 scripts/leak-patterns.local，此處不是編輯發生的地方）"
   fi
-  echo "grep 查不到「實測數字該不該留」「立場與最新裁示一不一致」這類問題。"
 fi
 
 exit "$fail"
