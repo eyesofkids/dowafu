@@ -32,6 +32,7 @@ const SPOKE: ResolvedSpoke = {
   allowSet: new Set<string>(),
   allowedReadsResolved: [],
   allowedReadsRelative: [],
+  lang: "zh" as const,
 };
 
 function mkOptions(overrides: Partial<RunnerOptions> = {}): RunnerOptions {

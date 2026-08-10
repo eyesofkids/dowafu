@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { buildFinalizeUserText, buildFirstUserText, buildSystemPrompt } from "./prompt.js";
+import { FIXED_CLOSING_LINE, FIXED_CLOSING_LINE_EN } from "./audit.js";
 
 // prompt.ts 先前無測試覆蓋。plan_dispatch_v2.0.md §16：回報模板追加「引用路徑須與允許讀取
 // 清單逐字相同」的要求，從源頭消除 §15 稽核抓到的縮寫路徑噪音——本輪一併補上基本案例。
@@ -109,5 +110,43 @@ test("buildFirstUserText：步驟 4（依回報模板產出）仍在步驟 3 之
 });
 
 test("buildFinalizeUserText：收束呼叫文字要求不再呼叫工具", () => {
+  assert.match(buildFinalizeUserText(), /不要再呼叫工具/);
+});
+
+// 英文工單的 prompt：模板、工具說明、四個步驟都要換過去，而且**收尾句必須與稽核那側
+// 逐字相同**——那是稽核判斷「回報有沒有寫完」的唯一依據，兩邊各寫各的就永遠 fail。
+test("buildSystemPrompt：lang=en 時給英文回報模板與英文工具說明", () => {
+  const p = buildSystemPrompt("You are a reviewer.", "en");
+  assert.match(p, /# Observations/);
+  assert.match(p, /# Cannot verify/);
+  assert.match(p, /read_file\(path\)/);
+  assert.doesNotMatch(p, /觀察/);
+});
+
+test("buildSystemPrompt：英文模板的收尾句與 audit 的 FIXED_CLOSING_LINE_EN 逐字相同", () => {
+  const p = buildSystemPrompt("You are a reviewer.", "en");
+  assert.ok(
+    p.trimEnd().endsWith(FIXED_CLOSING_LINE_EN),
+    `英文模板結尾必須是稽核認得的那一句，實際結尾：${JSON.stringify(p.trimEnd().slice(-80))}`,
+  );
+});
+
+test("buildSystemPrompt：預設（不傳 lang）維持中文，既有工單不受影響", () => {
+  const p = buildSystemPrompt("你是審查者。");
+  assert.match(p, /# 觀察/);
+  assert.ok(p.trimEnd().endsWith(FIXED_CLOSING_LINE));
+});
+
+test("buildFirstUserText：lang=en 時四個步驟與清單說明都是英文", () => {
+  const t = buildFirstUserText("/repo/tmp/dispatch/x", "hole-finder-safety", ["lib/a.ts"], "/repo", "en");
+  assert.match(t, /Do these in order/);
+  assert.match(t, /read_file\("tmp\/dispatch\/x\/_shared\.md"\)/);
+  assert.match(t, /- lib\/a\.ts/);
+  assert.match(t, /Cannot verify/);
+  assert.doesNotMatch(t, /依序執行/);
+});
+
+test("buildFinalizeUserText：lang=en 時給英文收束指示", () => {
+  assert.match(buildFinalizeUserText("en"), /do not call any more tools/);
   assert.match(buildFinalizeUserText(), /不要再呼叫工具/);
 });

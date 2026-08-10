@@ -104,7 +104,10 @@ test("parseSharedDoc：待審段落完全沒寫時，維持原訊息（不誤報
   assert.throws(
     () => parseSharedDoc(md),
     (err: unknown) => {
-      assert.match((err as DispatchError).message, /缺「# 待審段落」或內容為空/);
+      // 訊息中段列了英文工單的別名，故只比對頭尾兩段——這條測試守的是「走哪一條錯誤路徑」
+      // （沒寫 vs 被切斷），不是措辭。
+      assert.match((err as DispatchError).message, /缺「# 待審段落」/);
+      assert.match((err as DispatchError).message, /內容為空/);
       assert.doesNotMatch((err as DispatchError).message, /切斷/);
       return true;
     },
@@ -158,4 +161,57 @@ test("parseAgentTicket：允許讀取解析為相對路徑陣列", () => {
 `;
   const t = parseAgentTicket(md);
   assert.deepEqual(t.allowedReads, ["src/foo.ts", "src/bar.ts"]);
+});
+
+// 使用者裁示 2026-08-10：英文工單要能用，語言**由工單自己的標記決定**（不另設旗標）。
+// 這四條守的是「標記命中哪一套、lang 就是哪一套」——lang 錯了，spoke 會收到另一種語言的
+// 回報模板，稽核再逐字比對收尾句，整份判 fail。
+test("parseAgentTicket：英文標記 → lang 為 en，問題與允許清單照樣解析", () => {
+  const md = `# Questions
+1. Does the permission check hold under concurrent requests?
+
+# Allowed reads
+- lib/auth-guard.ts
+- prisma/schema.prisma
+`;
+  const t = parseAgentTicket(md);
+  assert.equal(t.lang, "en");
+  assert.match(t.questions, /concurrent requests/);
+  assert.deepEqual(t.allowedReads, ["lib/auth-guard.ts", "prisma/schema.prisma"]);
+});
+
+test("parseAgentTicket：中文標記 → lang 為 zh（既有工單不受影響）", () => {
+  const md = `# 具體問題
+1. 這段的權限檢查在並行下成立嗎？
+
+# 允許讀取
+- lib/auth-guard.ts
+`;
+  const t = parseAgentTicket(md);
+  assert.equal(t.lang, "zh");
+  assert.deepEqual(t.allowedReads, ["lib/auth-guard.ts"]);
+});
+
+test("parseSharedDoc：英文標記的 _shared.md 解析得出待審段落與前提", () => {
+  const md = `# Premises
+- Auth is settled: stateless JWT
+
+# Under review
+The section under review, verbatim.
+`;
+  const shared = parseSharedDoc(md);
+  assert.deepEqual(shared.premises, ["Auth is settled: stateless JWT"]);
+  assert.match(shared.reviewText, /verbatim/);
+});
+
+test("parseAgentTicket：兩套標記都沒有時，錯誤訊息同時列出中英兩種", () => {
+  assert.throws(
+    () => parseAgentTicket("# Something else\n內容\n"),
+    (err: unknown) => {
+      const msg = (err as DispatchError).message;
+      assert.match(msg, /具體問題/);
+      assert.match(msg, /Questions/);
+      return true;
+    },
+  );
 });

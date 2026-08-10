@@ -5,6 +5,20 @@
 import { splitTopLevelSections } from "./ticket.js";
 
 export const FIXED_CLOSING_LINE = "以上為觀察與問題，採用與否由 hub 與使用者裁決。";
+// 英文工單走英文模板，收尾句與章節名也跟著換。稽核**兩套都認**且不看工單語言——spoke
+// 偶爾會用另一種語言作答，那是產出品質的事，不該讓稽核整份判 fail 而蓋掉真正的訊號。
+export const FIXED_CLOSING_LINE_EN =
+  "These are observations and questions. Whether to adopt them is for the hub and the user to decide.";
+const OBSERVATIONS_SECTIONS = ["觀察", "Observations"];
+const CANNOT_VERIFY_SECTIONS = ["無法驗證", "Cannot verify"];
+
+function getSection(sections: Map<string, string>, names: string[]): string | undefined {
+  for (const n of names) {
+    const body = sections.get(n);
+    if (body !== undefined) return body;
+  }
+  return undefined;
+}
 
 const SUSPECT_PHRASES = ["應該改成", "建議採用", "嚴重度", "高風險", "應廢止"];
 
@@ -24,6 +38,8 @@ const OBSERVATION_PATTERNS: RegExp[] = [
   /^\*\*\d+\.\s/, // 粗體包住編號："**1. 內容**"（plan_fixes_v1.0.md §1：兩輪各中一次，數不出來時誤判「無法計數」）
   /^(?:\*\*)?觀察\s*\d+(?:\.\d+)?(?:\*\*)?[:：]/, // 巢狀觀察標記："**觀察 1.1**：" 或 "觀察 1："
   /^#{2,4}\s*觀察\s*\d+/, // 標題形式："### 觀察 1"
+  /^(?:\*\*)?Observation\s*\d+(?:\.\d+)?(?:\*\*)?[:：]/i, // 英文模板的巢狀標記
+  /^#{2,4}\s*Observation\s*\d+/i, // 英文模板的標題形式
 ];
 
 function countObservations(observationsBody: string): number | null {
@@ -91,13 +107,13 @@ export function auditSpoke(finalText: string | null, allowedRelativePaths: strin
 
   const lines = finalText.split(/\r?\n/).map((l) => l.trim());
   const lastNonEmpty = [...lines].reverse().find((l) => l.length > 0) ?? "";
-  const finalLinePass = lastNonEmpty === FIXED_CLOSING_LINE;
+  const finalLinePass = lastNonEmpty === FIXED_CLOSING_LINE || lastNonEmpty === FIXED_CLOSING_LINE_EN;
 
   const sections = splitTopLevelSections(finalText);
-  const observationsSection = sections.get("觀察");
+  const observationsSection = getSection(sections, OBSERVATIONS_SECTIONS);
   const observationCount = observationsSection !== undefined ? countObservations(observationsSection) : null;
 
-  const cannotVerifySectionPresent = sections.has("無法驗證");
+  const cannotVerifySectionPresent = CANNOT_VERIFY_SECTIONS.some((n) => sections.has(n));
 
   const citedPaths = [...new Set([...finalText.matchAll(PATH_REGEX)].map((m) => m[1]))];
   const allowedSet = new Set(allowedRelativePaths);
@@ -114,12 +130,12 @@ export function auditSpoke(finalText: string | null, allowedRelativePaths: strin
   //
   // 取捨：spoke 若在「無法驗證」欄裡編造一個不存在、且未在別處引用的路徑，此處抓不到。
   // 可接受——該欄本來就是列「讀不到的檔案」，單獨出現在那裡不構成 §15 要防的訊號。
-  const cannotVerifySectionText = sections.get("無法驗證") ?? "";
+  const cannotVerifySectionText = getSection(sections, CANNOT_VERIFY_SECTIONS) ?? "";
   const pathsCitedInCannotVerifySection = new Set(
     [...cannotVerifySectionText.matchAll(PATH_REGEX)].map((m) => m[1]),
   );
   const elsewhereText = [...sections.entries()]
-    .filter(([heading]) => heading !== "無法驗證")
+    .filter(([heading]) => !CANNOT_VERIFY_SECTIONS.includes(heading))
     .map(([, body]) => body)
     .join("\n");
   const pathsCitedElsewhere = new Set([...elsewhereText.matchAll(PATH_REGEX)].map((m) => m[1]));

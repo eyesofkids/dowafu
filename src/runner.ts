@@ -203,8 +203,14 @@ async function sendWithResilience(
 
 export async function runSpoke(spoke: ResolvedSpoke, adapter: Adapter, ticketDir: string, options: RunnerOptions): Promise<SpokeRunResult> {
   const startedAt = Date.now();
-  const systemPrompt = buildSystemPrompt(spoke.agentBody);
-  const firstUserText = buildFirstUserText(path.resolve(ticketDir), spoke.agent, spoke.allowedReadsRelative, options.repoRoot);
+  const systemPrompt = buildSystemPrompt(spoke.agentBody, spoke.lang);
+  const firstUserText = buildFirstUserText(
+    path.resolve(ticketDir),
+    spoke.agent,
+    spoke.allowedReadsRelative,
+    options.repoRoot,
+    spoke.lang,
+  );
   const conv: Conversation = { systemPrompt, turns: [{ role: "user", text: firstUserText }] };
 
   let toolCallCount = 0;
@@ -318,7 +324,7 @@ export async function runSpoke(spoke: ResolvedSpoke, adapter: Adapter, ticketDir
       finalText = result.meta.text ?? finalText;
       if (toolCallsThisRound.length === 0 || finalizeMode) break;
       finalizeMode = true;
-      conv.turns.push({ role: "user", text: buildFinalizeUserText() });
+      conv.turns.push({ role: "user", text: buildFinalizeUserText(spoke.lang) });
       continue;
     }
 
@@ -342,7 +348,7 @@ export async function runSpoke(spoke: ResolvedSpoke, adapter: Adapter, ticketDir
       status = "truncated:budget";
       budgetTrigger = "reasoning_round";
       finalizeMode = true;
-      conv.turns.push({ role: "user", text: buildFinalizeUserText() });
+      conv.turns.push({ role: "user", text: buildFinalizeUserText(spoke.lang) });
       continue;
     }
 
@@ -351,7 +357,7 @@ export async function runSpoke(spoke: ResolvedSpoke, adapter: Adapter, ticketDir
       status = "truncated:budget";
       budgetTrigger = "reasoning";
       finalizeMode = true;
-      conv.turns.push({ role: "user", text: buildFinalizeUserText() });
+      conv.turns.push({ role: "user", text: buildFinalizeUserText(spoke.lang) });
       continue;
     }
 
@@ -359,7 +365,7 @@ export async function runSpoke(spoke: ResolvedSpoke, adapter: Adapter, ticketDir
       status = "truncated:budget";
       budgetTrigger = "total";
       finalizeMode = true;
-      conv.turns.push({ role: "user", text: buildFinalizeUserText() });
+      conv.turns.push({ role: "user", text: buildFinalizeUserText(spoke.lang) });
       continue;
     }
 
@@ -392,7 +398,7 @@ export async function runSpoke(spoke: ResolvedSpoke, adapter: Adapter, ticketDir
     if (hitToolLimit) {
       status = "truncated:tool_limit";
       finalizeMode = true;
-      conv.turns.push({ role: "user", text: buildFinalizeUserText() });
+      conv.turns.push({ role: "user", text: buildFinalizeUserText(spoke.lang) });
     }
   }
 

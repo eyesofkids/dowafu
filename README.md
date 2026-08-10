@@ -8,6 +8,17 @@ read them from. Everything lands on disk for you to check.
 
 **Spokes produce observations, not verdicts.** What to do about them stays with you.
 
+> ### Tickets work in English or Chinese. The CLI's own output is Chinese.
+>
+> Write the ticket's section headings in either language and the rest follows: the
+> reviewer is prompted in that language, asked for its report in that language's
+> template, and the audit checks it against the matching one. The language is decided by
+> the headings themselves — there is no flag to forget — and the dry run prints which one
+> it resolved to, per reviewer.
+>
+> What is still Traditional Chinese: `--help`, error messages, the dry-run report and
+> `summary.md`. That is the development language and it has not been translated.
+
 ## Install
 
 ```bash
@@ -53,7 +64,15 @@ before calling anything.
 
 ## The ticket
 
-A ticket is a directory with three kinds of file:
+A ticket is a directory with three kinds of file. The headings are **literal markers the
+parser matches** — use one of the two sets below, exactly as written.
+
+| English | 中文 |
+| --- | --- |
+| `# Questions` | `# 具體問題` |
+| `# Allowed reads` | `# 允許讀取` |
+| `# Under review` | `# 待審段落` |
+| `# Premises` | `# 前提（不受審）` |
 
 | File | Contents |
 | --- | --- |
@@ -74,13 +93,17 @@ A ticket is a directory with three kinds of file:
 
 ```markdown
 <!-- hole-finder-safety.md -->
-# 具體問題
+# Questions
 1. Does the permission check described here hold under concurrent requests?
 
-# 允許讀取
+# Allowed reads
 - lib/auth-guard.ts
 - prisma/schema.prisma
 ```
+
+The set you use decides the reviewer's language: `# Questions` gets an English prompt and
+an English report template, `# 具體問題` gets the Chinese ones. Mixing the two sets inside
+one reviewer's file is not supported — the first heading that matches wins.
 
 Reviewer definitions live in `.claude/agents/<agent>.md` under the repo root — they are
 the source of each spoke's system prompt, and the CLI reads them directly. Results are

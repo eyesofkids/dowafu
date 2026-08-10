@@ -117,8 +117,14 @@ async function main() {
 
   // §10 步驟 6／§14 閘門一：呼叫前估算
   const estimates: SpokeEstimate[] = spokes.map((spoke) => {
-    const systemPrompt = buildSystemPrompt(spoke.agentBody);
-    const firstUserText = buildFirstUserText(path.resolve(ticketDir), spoke.agent, spoke.allowedReadsRelative, repoRoot);
+    const systemPrompt = buildSystemPrompt(spoke.agentBody, spoke.lang);
+    const firstUserText = buildFirstUserText(
+      path.resolve(ticketDir),
+      spoke.agent,
+      spoke.allowedReadsRelative,
+      repoRoot,
+      spoke.lang,
+    );
     const charsPerToken = effectiveCharsPerToken(spoke, options);
     return {
       agent: spoke.agent,

@@ -83,7 +83,8 @@ export function buildReport(
     const cap = effectiveCap(spoke, cli);
     lines.push(
       `  ${spoke.agent.padEnd(20)} → ${spoke.provider.padEnd(8)} / ${spoke.model.padEnd(20)} ` +
-        `[${spoke.providerConfig.api}] effort=${spoke.effort ?? "—"} store=${spoke.providerConfig.store === false ? "false" : "n/a"} ` +
+        `[${spoke.providerConfig.api}] effort=${spoke.effort ?? "—"} lang=${spoke.lang} ` +
+        `store=${spoke.providerConfig.store === false ? "false" : "n/a"} ` +
         `est. ${est.toLocaleString()}  cap ${cap.toLocaleString()}`,
     );
   }

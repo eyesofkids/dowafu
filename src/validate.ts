@@ -6,7 +6,7 @@ import fs from "node:fs";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { DispatchError, type ProviderConfig, type ProvidersFile } from "./types.js";
-import type { Ticket } from "./ticket.js";
+import type { Ticket, TicketLang } from "./ticket.js";
 import { buildAllowSet } from "./whitelist.js";
 
 export type ResolvedSpoke = {
@@ -20,6 +20,7 @@ export type ResolvedSpoke = {
   allowSet: Set<string>;
   allowedReadsResolved: string[]; // realpath，供 buildAllowSet 使用
   allowedReadsRelative: string[]; // 工單原文相對路徑，供稽核（§15 引用路徑比對）比對
+  lang: TicketLang; // 由該 spoke 的工單標記決定，見 ticket.ts 的 TicketLang
 };
 
 function apiKeyEnvFor(provider: string): string {
@@ -138,6 +139,7 @@ export async function resolveSpokes(
       allowSet,
       allowedReadsResolved,
       allowedReadsRelative: agentTicket.allowedReads,
+      lang: agentTicket.lang,
     });
   }
 

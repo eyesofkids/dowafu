@@ -30,6 +30,7 @@ const SPOKE: ResolvedSpoke = {
   allowSet: new Set<string>(),
   allowedReadsResolved: [],
   allowedReadsRelative: [],
+  lang: "zh" as const,
 };
 
 const CLI: CliOptions = {
@@ -211,4 +212,16 @@ test("buildReport：允許清單為空時不印順序放大量那幾行", () => 
     gitignoreStatus: "ignored",
   });
   assert.equal(report.includes("逐個讀的順序放大量"), false);
+});
+
+// 語言是工單標記推出來的，不是使用者填的——所以它必須印在報表上。看得見才擋得住
+// 「英文問題被判成中文工單」這種在花錢之前唯一能發現的錯。
+test("buildReport：每個 spoke 印出解析到的語言", () => {
+  const meta = { repoRoot: "/repo", providersSource: BUNDLED, gitignoreStatus: "ignored" as const };
+  const zh = buildReport("t1", [SPOKE], ESTIMATES, NO_ALLOWLIST, CLI, "tmp/spoke/t1", meta);
+  assert.match(zh, /lang=zh/);
+
+  const enSpoke = { ...SPOKE, lang: "en" as const };
+  const en = buildReport("t1", [enSpoke], ESTIMATES, NO_ALLOWLIST, CLI, "tmp/spoke/t1", meta);
+  assert.match(en, /lang=en/);
 });

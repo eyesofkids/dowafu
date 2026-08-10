@@ -228,6 +228,7 @@ function mkResolvedSpoke(overrides: Partial<ResolvedSpoke> = {}): ResolvedSpoke 
     allowSet: new Set<string>(),
     allowedReadsResolved: [],
     allowedReadsRelative: [],
+    lang: "zh",
     ...overrides,
   };
 }

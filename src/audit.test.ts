@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { auditSpoke, FIXED_CLOSING_LINE } from "./audit.js";
+import { auditSpoke, FIXED_CLOSING_LINE, FIXED_CLOSING_LINE_EN } from "./audit.js";
 
 // plan_dispatch_v1.9.md §15：observationCount 放寬 regex，且「數不出來」記 null、「明確為零」
 // 記 0——這是 v1.10 §25 的 --json 契約直接依賴的區分（序列化時降級為 0 就白改了）。
@@ -280,4 +280,51 @@ test("auditSpoke：真實報告的結構（粗體編號格式）數出 19 條", 
   const text = readFixture("bold-numbered-19.md");
   const result = auditSpoke(text, []);
   assert.equal(result.observationCount, 19);
+});
+
+// 英文工單的回報：章節名、收尾句、觀察計數三處都要認得。認不得的後果不是漏一欄，是
+// 「收尾句 fail ＋ 觀察無法計數 ＋ 無法驗證欄缺失」全紅，而產出其實完全正常。
+test("auditSpoke：英文回報的收尾句、章節與計數都認得", () => {
+  const text = `# Observations
+1. The permission check is not atomic.
+   Evidence: lib/auth-guard.ts:17
+2. The rate limit comparison does not hold.
+   Evidence: reasoning
+
+# Cannot verify
+- \`lib/hash.ts\`: not in the allowed list.
+
+${FIXED_CLOSING_LINE_EN}`;
+  const result = auditSpoke(text, ["lib/auth-guard.ts"]);
+  assert.equal(result.finalLinePass, true, "英文收尾句須 pass");
+  assert.equal(result.observationCount, 2);
+  assert.equal(result.cannotVerifySectionPresent, true);
+});
+
+test("auditSpoke：英文「Cannot verify」節內的清單外路徑同樣不列入清單外引用", () => {
+  const text = `# Observations
+1. Something.
+   Evidence: lib/auth-guard.ts:17
+
+# Cannot verify
+- \`lib/hash.ts\`: not in the allowed list.
+
+${FIXED_CLOSING_LINE_EN}`;
+  const result = auditSpoke(text, ["lib/auth-guard.ts"]);
+  assert.deepEqual(result.citedPathsOutsideAllowlist, []);
+  assert.ok(result.citedPaths.includes("lib/hash.ts"), "記錄與判定是不同職責");
+});
+
+test("auditSpoke：中文回報不受英文支援影響", () => {
+  const text = `# 觀察
+1. 一條觀察
+   依據：lib/auth-guard.ts:17
+
+# 無法驗證
+無
+
+${FIXED_CLOSING_LINE}`;
+  const result = auditSpoke(text, ["lib/auth-guard.ts"]);
+  assert.equal(result.finalLinePass, true);
+  assert.equal(result.observationCount, 1);
 });

@@ -17,9 +17,16 @@ export type SharedDoc = {
   reviewText: string;
 };
 
+// 工單的區塊標記有中英兩套，**由工單自己用哪一套決定這支 spoke 收到哪種語言的 prompt
+// 與回報模板**（使用者裁示 2026-08-10：語言不另設旗標）。理由是旗標會被忘記，而忘了的
+// 後果不是報錯、是「英文問題配中文模板」——spoke 照英文作答，稽核逐字比對中文收尾句，
+// 整份判 fail。標記與模板同源，就不可能對不起來。
+export type TicketLang = "zh" | "en";
+
 export type AgentTicket = {
   questions: string;
   allowedReads: string[];
+  lang: TicketLang;
 };
 
 export type Ticket = {
@@ -127,14 +134,16 @@ function parseBulletList(body: string): string[] {
 export function parseSharedDoc(markdown: string): SharedDoc {
   const sections = splitTopLevelSections(markdown);
 
-  const reviewText = sections.get("待審段落");
+  const reviewText = sections.get("待審段落") ?? sections.get("Under review");
   if (!reviewText || reviewText.length === 0) {
     // issue_log_v2.1.md：這個錯誤實測撞過兩次，而兩次的成因都不是「忘了寫」——是內嵌的
     // 規劃書自帶 `#` 標題，被 splitTopLevelSections 當成新區塊，把待審段落切斷了。
     // 原訊息「缺或內容為空」會讓人先去查自己有沒有寫，方向就錯了。標題存在卻空白時，
     // 直接指名是誰切斷了它。
-    if (sections.has("待審段落")) {
-      const stray = [...sections.keys()].filter((k) => k !== "待審段落" && !k.startsWith("前提"));
+    if (sections.has("待審段落") || sections.has("Under review")) {
+      const stray = [...sections.keys()].filter(
+        (k) => k !== "待審段落" && k !== "Under review" && !k.startsWith("前提") && k !== "Premises",
+      );
       if (stray.length > 0) {
         throw new DispatchError(
           `_shared.md 的「# 待審段落」有標題但內容為空——被後面這些 \`#\` 標題切斷了：` +
@@ -146,10 +155,10 @@ export function parseSharedDoc(markdown: string): SharedDoc {
         );
       }
     }
-    throw new DispatchError('_shared.md 缺「# 待審段落」或內容為空', 2);
+    throw new DispatchError('_shared.md 缺「# 待審段落」（或英文工單的「# Under review」）或內容為空', 2);
   }
 
-  const premisesBody = sections.get("前提（不受審）") ?? sections.get("前提");
+  const premisesBody = sections.get("前提（不受審）") ?? sections.get("前提") ?? sections.get("Premises");
   const premises = premisesBody ? parseBulletList(premisesBody) : [];
 
   return { premises, reviewText };
@@ -159,15 +168,20 @@ export function parseSharedDoc(markdown: string): SharedDoc {
 export function parseAgentTicket(markdown: string): AgentTicket {
   const sections = splitTopLevelSections(markdown);
 
-  const questions = sections.get("具體問題");
+  // 先中文後英文。命中哪一套就是這份工單的語言——不看內文，只看標記，因為內文可能
+  // 中英混雜（英文規劃書配中文問題是常見寫法），標記則是作者明確選的。
+  const zhQuestions = sections.get("具體問題");
+  const enQuestions = sections.get("Questions");
+  const lang: TicketLang = zhQuestions !== undefined ? "zh" : enQuestions !== undefined ? "en" : "zh";
+  const questions = zhQuestions ?? enQuestions;
   if (!questions || questions.length === 0) {
-    throw new DispatchError('<agent>.md 缺「# 具體問題」或內容為空', 2);
+    throw new DispatchError('<agent>.md 缺「# 具體問題」（或英文工單的「# Questions」）或內容為空', 2);
   }
 
-  const allowedBody = sections.get("允許讀取");
+  const allowedBody = sections.get("允許讀取") ?? sections.get("Allowed reads");
   const allowedReads = allowedBody ? parseBulletList(allowedBody) : [];
 
-  return { questions, allowedReads };
+  return { questions, allowedReads, lang };
 }
 
 // 檔案系統存取層：讀工單目錄、組出完整 Ticket。

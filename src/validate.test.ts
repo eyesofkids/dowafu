@@ -16,7 +16,7 @@ function mkTicket(agent: string, effort?: string, model = "model-a"): Ticket {
     ticketDir: "tmp/dispatch/fake-ticket-for-validate-test",
     rows: [{ agent, provider: "testprovider", model, effort }],
     shared: { premises: [], reviewText: "待審段落" },
-    perAgent: new Map([[agent, { questions: "具體問題", allowedReads: [] }]]),
+    perAgent: new Map([[agent, { questions: "具體問題", allowedReads: [], lang: "zh" as const }]]),
   };
 }
 
@@ -133,7 +133,7 @@ test("resolveSpokes：允許讀取清單相對 --repo-root 解析，repoRoot 下
       ticketDir: "tmp/dispatch/fake-ticket-for-validate-test",
       rows: [{ agent: "hole-finder-cost", provider: "testprovider", model: "model-a", effort: "low" }],
       shared: { premises: [], reviewText: "待審段落" },
-      perAgent: new Map([["hole-finder-cost", { questions: "具體問題", allowedReads: ["allowed.txt"] }]]),
+      perAgent: new Map([["hole-finder-cost", { questions: "具體問題", allowedReads: ["allowed.txt"], lang: "zh" as const }]]),
     };
     const spokes = await resolveSpokes(ticket, mkProviders(), repoRoot);
     assert.equal(spokes[0].allowedReadsResolved.length, 1);
@@ -150,7 +150,7 @@ test("resolveSpokes：_docs/ 拒絕判定相對 --repo-root，不是相對 proce
       ticketDir: "tmp/dispatch/fake-ticket-for-validate-test",
       rows: [{ agent: "hole-finder-cost", provider: "testprovider", model: "model-a", effort: "low" }],
       shared: { premises: [], reviewText: "待審段落" },
-      perAgent: new Map([["hole-finder-cost", { questions: "具體問題", allowedReads: ["_docs/secret.md"] }]]),
+      perAgent: new Map([["hole-finder-cost", { questions: "具體問題", allowedReads: ["_docs/secret.md"], lang: "zh" as const }]]),
     };
     await assert.rejects(
       resolveSpokes(ticket, mkProviders(), repoRoot),
