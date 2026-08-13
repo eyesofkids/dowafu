@@ -5,8 +5,8 @@ writes a ticket, the CLI calls each provider, and each reviewer — a *spoke* �
 whitelisted files and returns observations with evidence. See [`README.md`](./README.md)
 for what it does and how to run it; this file is for working on it.
 
-**Source comments and everything under `publish/` are written in Traditional Chinese.**
-Outward-facing documents (`README.md`, this file) are in English.
+**Source comments are written in Traditional Chinese.** Outward-facing documents
+(`README.md`, this file) are in English. `publish/` ships **both** languages — see below.
 
 ## Commands
 
@@ -49,11 +49,19 @@ not blanket-cast to `unknown` and narrow it everywhere instead.
 ## `publish/`
 
 `publish/` holds what a consuming project needs: skills for whatever agent works there,
-the reviewer definitions the CLI reads, and `workflow_spec.md`. Install instructions are
-in [`publish/README.md`](./publish/README.md).
+the reviewer definitions the CLI reads, and `workflow_spec.md`.
 
-- **Skills live in two directories.** `publish/.claude/skills/` and
-  `publish/.agents/skills/` hold the same skills for hosts that look in different places.
+- **It is split by language**: `publish/en/` and `publish/zh-tw/`, each a complete set.
+  Install instructions are in that language directory's README —
+  [`publish/en/README.md`](./publish/en/README.md) or
+  [`publish/zh-tw/README.md`](./publish/zh-tw/README.md). **A consuming project installs
+  one or the other, never a mix**: a reviewer's fixed closing line has to match the report
+  template the audit checks it against, and those come from the same language directory.
+  The two trees are independent — neither borrows content from the other to fill a gap,
+  and nothing enforces that they stay in step, so a change to one is a reminder to look
+  at the other.
+- **Skills live in two directories** *within each language*. `publish/<lang>/.claude/skills/`
+  and `publish/<lang>/.agents/skills/` hold the same skills for hosts that look in different places.
   The `.agents/` copies are **derived**: same content minus the parts that only hold for
   one host. Each records the source file's sha256 in its frontmatter, and
   `npm run check:skills` recomputes it — **edit `.claude/skills/` first**, then revisit
