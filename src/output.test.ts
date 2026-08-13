@@ -1,9 +1,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, existsSync, rmSync, mkdirSync } from "node:fs";
+import { mkdtempSync, readFileSync, existsSync, rmSync, mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { buildSummaryMarkdown, persistSpokeResult, writeSpokeText } from "./output.js";
+import { buildSummaryMarkdown, outDirHasArtifacts, persistSpokeResult, writeSpokeText } from "./output.js";
 import { registerSecrets } from "./mask.js";
 import type { AuditResult } from "./audit.js";
 import type { ToolCallAudit } from "./tool-call-audit.js";
@@ -430,4 +430,32 @@ test("writeRawFiles：重跑時零 raw 必須覆蓋掉上一次的內容，不�
       "上一次的 raw 不得留存冒充本次證據（§13 重跑覆蓋語意）",
     );
   });
+});
+
+// fix_hosts #23：派工前的清場護欄。四格 host 對測抓到 hub 會自己 rm -rf 輸出目錄、
+// 沒問任何人，而那底下是已付費的產物——判斷式本身放在 output.ts，中止動作在 cli.ts。
+// 「讀不到就回 false」是刻意的：不存在該放行，權限不足交給 ensureOutDir 報更準的訊息。
+test("outDirHasArtifacts：目錄不存在回 false", async () => {
+  const base = mkdtempSync(path.join(tmpdir(), "dispatch-outdir-"));
+  assert.equal(await outDirHasArtifacts(path.join(base, "never-created")), false);
+  rmSync(base, { recursive: true, force: true });
+});
+
+test("outDirHasArtifacts：空目錄回 false", async () => {
+  const dir = mkdtempSync(path.join(tmpdir(), "dispatch-outdir-"));
+  assert.equal(await outDirHasArtifacts(dir), false);
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test("outDirHasArtifacts：有任何一個項目就回 true（含只有子目錄的情形）", async () => {
+  const dir = mkdtempSync(path.join(tmpdir(), "dispatch-outdir-"));
+  mkdirSync(path.join(dir, "raw"));
+  assert.equal(await outDirHasArtifacts(dir), true, "只有 raw/ 也算有產物——那是上一次跑過的痕跡");
+
+  const dir2 = mkdtempSync(path.join(tmpdir(), "dispatch-outdir-"));
+  writeFileSync(path.join(dir2, "run.jsonl"), "", "utf8");
+  assert.equal(await outDirHasArtifacts(dir2), true, "空的 run.jsonl 也算——它證明上一次真的跑過");
+
+  rmSync(dir, { recursive: true, force: true });
+  rmSync(dir2, { recursive: true, force: true });
 });

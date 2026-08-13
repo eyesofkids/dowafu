@@ -20,7 +20,7 @@ import { createGeminiAdapter } from "./adapters/gemini-native.js";
 import { createAnthropicAdapter } from "./adapters/anthropic-messages.js";
 import { auditSpoke } from "./audit.js";
 import { auditToolCalls, type ToolCallAudit } from "./tool-call-audit.js";
-import { ensureOutDir, persistSpokeResult, RunLogWriter, writeSummary } from "./output.js";
+import { ensureOutDir, outDirHasArtifacts, persistSpokeResult, RunLogWriter, writeSummary } from "./output.js";
 import { registerSecrets, maskString, maskDeep } from "./mask.js";
 import { SECRET_ENV_VARS } from "./secret-env.js";
 import { resolveDispatchHome, loadDispatchEnv } from "./dispatch-home.js";
@@ -206,12 +206,24 @@ async function main() {
   );
   log.info(report);
 
+  // 護欄的預告：乾跑不受影響（它不寫任何東西），但先講，免得實跑才發現被擋。
+  const outDirDirty = await outDirHasArtifacts(outDir);
+
   if (options.dryRun) {
+    if (outDirDirty) log.info("\n" + m(lang, "outDirNotEmptyDryRunWarning", outDir));
     log.info("\n" + m(lang, "dryRunNotice"));
     if (options.json) {
       console.log(JSON.stringify(maskDeep(buildPayload("dry-run", [], new Map(), new Map(), 0))));
     }
     return;
+  }
+
+  // 擋在 confirm 之前：不要先問「要不要花錢」再中止。exitCode 5 是「派工前被守則擋下、
+  // 未花任何錢」，與 3（成本閘門超限）分開，才分得出是哪一種擋。
+  // **刻意不提供 --overwrite 之類的旗標**：有旗標，「加上去」就會變成最便宜的滿足方式，
+  // 那正是 --yes 已經示範過的路。要覆蓋，由使用者自己清掉目錄。
+  if (outDirDirty) {
+    throw new DispatchError(m(lang, "outDirNotEmptyAbort", outDir), 5);
   }
 
   if (!options.yes) {

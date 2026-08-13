@@ -3,7 +3,7 @@ name: preflight
 description: Before starting work in a project, check whether its environment has silently disabled the workflow: whether the workflow-specification chapter is actually readable, whether the skills and lenses are present, whether tmp/ is gitignored, and whether dowafu runs. Read-only, report-only — changes no settings.
 metadata:
   derived-from: ".claude/skills/preflight/SKILL.md"
-  derived-from-sha256: "98d9da3831d27c58d869b197bdfdcaee3f2af2fcc70a169492488215bbd0eeab"
+  derived-from-sha256: "3dfe6eda496a2619d240abefa31791c650d78abace10c70f4ce6df2b80f52e17"
 ---
 
 # preflight — environment pre-check
@@ -32,7 +32,7 @@ grep -n "Plan → Implement → Accept" CLAUDE.md AGENTS.md workflow_spec.md 2>/
 
 echo "=== skills and lenses ==="
 ls .claude/skills/ 2>/dev/null
-ls .claude/agents/hole-finder-*.md 2>/dev/null
+ls .claude/agents/hole-finder*.md 2>/dev/null
 
 echo "=== tmp/ ==="
 git check-ignore -q tmp && echo "ignored" || echo "not ignored"
@@ -46,11 +46,24 @@ If you can read it, it passes. Whether the content is pasted directly into the e
 
 If you cannot read it, mark it as failing, then **go find it yourself** (usually `workflow_spec.md` at the repo root), and note in your report that "the specification is not in the auto-loaded set; it was read manually this time" — so the user knows a different session will miss it again.
 
+**If you find more than one copy, say which one auto-loads.** A project may already carry this chapter inline in its entry file while a second copy sits at the repo root as `workflow_spec.md` — and the two may be in different languages, since each language pack installs its own. "The content is readable" is then not enough: report **which copy is in your context**, and that nothing keeps the two in step. The one that auto-loads is the one that governs every later session.
+
 > **Why might it be unreadable?** The entry file differs by host: most hosts read `AGENTS.md` at the repo root, while some read a different entry file entirely. And `@xxx.md` is one particular host's import syntax — **other hosts do not expand it**, so what you see is a single line of text and the specification never entered your context at all. That does not mean the project is misconfigured; it is a difference on your side.
 
 ### Skills and lenses
 
-Whether `.claude/skills/find-holes-external/` and `.claude/agents/hole-finder-*.md` are present. (That glob lists the general-purpose `hole-finder.md` plus the three lenses; all four are normal.)
+Whether `.claude/skills/find-holes-external/` and the lens definitions are present. **Report the filenames you actually saw, and name any that are missing** — "I saw three of them" is not a check; which three is the check.
+
+Four files are expected, and all four are normal:
+
+| File | What it is |
+| --- | --- |
+| `hole-finder.md` | The general-purpose lens |
+| `hole-finder-cost.md` | Cost |
+| `hole-finder-feasibility.md` | Feasibility |
+| `hole-finder-safety.md` | Security, concurrency, failure states |
+
+> The glob above has no hyphen before the `*` on purpose: `hole-finder-*.md` cannot match `hole-finder.md`, so counting from it while expecting four never adds up.
 
 **If a lens is missing, do not write a replacement yourself** — it is the source of the spoke's system prompt, and a self-written version puts the output out of step with the audit criteria.
 

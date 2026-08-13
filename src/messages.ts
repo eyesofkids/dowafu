@@ -62,6 +62,8 @@ type MessageArgs = {
   cancelledInteractive: [];
   cancelledNonInteractive: [];
   outDirNotWritable: [outDir: string];
+  outDirNotEmptyAbort: [outDir: string];
+  outDirNotEmptyDryRunWarning: [outDir: string];
   outDirWritten: [outDir: string];
   outDirFallbackStderr: [];
   stdoutSummaryLine: [
@@ -256,6 +258,15 @@ const MESSAGES: Record<Lang, MessageDefs> = {
     cancelledNonInteractive: () =>
       "非互動環境（stdin 不是 TTY）無人可確認，已取消，未呼叫任何 API。要在此環境派工請明確加上 --yes。",
     outDirNotWritable: (outDir) => `落檔目錄不可寫：${outDir}`,
+    // 護欄：舊產物是花過錢的東西，覆蓋掉之前沒有人會被問到。換一個 ticket-id 零成本，
+    // 所以這裡不提供 --overwrite 之類的旗標——有旗標就會有人直接加上去。
+    outDirNotEmptyAbort: (outDir) =>
+      `輸出目錄已有產物，未派工、未呼叫任何 API：${outDir}\n` +
+      `那是上一次跑出來的東西，覆蓋掉就沒了。兩條路：\n` +
+      `  1. 換一個沒用過的 ticket-id 再派（建議，零成本）\n` +
+      `  2. 由使用者自行清掉那個目錄之後重跑——這是他的決定，不是你的`,
+    outDirNotEmptyDryRunWarning: (outDir) =>
+      `⚠ 輸出目錄已有產物：${outDir}\n  乾跑不受影響，但實跑會被擋下。換一個 ticket-id 即可。`,
     outDirWritten: (outDir) => `落檔完成：${outDir}/`,
     outDirFallbackStderr: () => "落檔目錄不可寫，完整報告已改印於 stderr：",
     stdoutSummaryLine: (agent, status, model, tokens, costLabel, latencyMs) =>
@@ -445,6 +456,13 @@ const MESSAGES: Record<Lang, MessageDefs> = {
     cancelledNonInteractive: () =>
       "Non-interactive environment (stdin is not a TTY); nobody could confirm. Cancelled; no API calls were made. To dispatch in this environment, pass --yes explicitly.",
     outDirNotWritable: (outDir) => `Output directory is not writable: ${outDir}`,
+    outDirNotEmptyAbort: (outDir) =>
+      `The output directory already holds artifacts. Nothing was dispatched; no API was called: ${outDir}\n` +
+      `Those came from a previous run, and overwriting them loses them. Two ways forward:\n` +
+      `  1. Pick a ticket-id you have not used and dispatch under that (recommended; it costs nothing)\n` +
+      `  2. Have the user clear that directory themselves, then rerun — that call is theirs, not yours`,
+    outDirNotEmptyDryRunWarning: (outDir) =>
+      `⚠ The output directory already holds artifacts: ${outDir}\n  The dry run is unaffected, but the real run will be stopped. Pick a different ticket-id.`,
     outDirWritten: (outDir) => `Files written to: ${outDir}/`,
     outDirFallbackStderr: () => "Output directory is not writable; the full report was printed to stderr instead:",
     stdoutSummaryLine: (agent, status, model, tokens, costLabel, latencyMs) =>

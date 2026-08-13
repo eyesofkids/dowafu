@@ -3,7 +3,7 @@ name: find-holes-external
 description: Dispatch sections of a plan document to external models (OpenAI / DeepSeek / Gemini / Anthropic) for hole-finding review, executed through the local dowafu CLI, where spokes are read-only and governed by an allowlist. Use when you need a heterogeneous perspective, or when the plan has to be reviewed against the real source code. Usage: /find-holes-external <path to plan> [section or question to focus on]
 metadata:
   derived-from: ".claude/skills/find-holes-external/SKILL.md"
-  derived-from-sha256: "9d71e0893813a8724b8cfb7386749d137eeec7779248056eb64e9fe21c3433ab"
+  derived-from-sha256: "c738dad01f448eb1ea86690ce10946f5091d768a6ba311289387ab84431fbadc"
 ---
 
 # find-holes-external — external hole-finding
@@ -94,6 +94,12 @@ Listing it per question lets the user see at a glance what is missing. **That co
 
 **When deciding the allowlist, ask yourself question by question: "where is the answer to this one? is that file on the list?"** Matching files to the lens's name (giving the safety lens the security-related files) produces the wrong list — the lens is **the angle you look from**, the list is **the material you look at**. When the list contains only the **producing** side of some behavior while the question asks about the **displaying** side, the spoke is physically incapable of answering correctly; swap in a set of files aimed at where the answers live and the same lens finds it. **The point of this self-check is to catch the gap before dispatching, not after.**
 
+### One table per spoke — the list is cut per lens, not once for the dispatch
+
+**Fill in that table once per spoke.** Each spoke gets its own questions, so it gets its own list; handing two lenses the same list because assembling one is less work is how a file that only one of them needed goes missing. If two spokes do end up with the same files, be able to say why — an identical list is a result, not a starting point.
+
+**One list shared by two lenses converges on the intersection, not the union.** What drops out first is whatever only one lens needed, which is precisely what that lens was dispatched to look at; the spoke can then only record the gap in its "cannot verify" section, and finding out that way costs a full dispatch. Trimming for cost is legitimate — trim each spoke's list against its own questions.
+
 ### Lenses
 
 | agent | Perspective |
@@ -171,7 +177,7 @@ The first line `<!-- format: v1 -->` is **required**; `model` is required; list 
 
 2. **Keep questions open; do not point at what you have already found.** Write the answer into the question and the spoke finding it is just the ticket read back to you.
 
-3. **The allowlist must cover the files actually needed to answer those questions.** Ask yourself per question: which files do I have to read to answer this? If one is missing, all the spoke can do is note what it lacked in its "cannot verify" section — **that is the dispatcher's failure, not its own**. Paths are **relative to the repo root**. An empty list is legal (a pure text review), but then it cannot read code and you lose the most valuable class of finding: "the document says X, but `src/foo.ts:42` actually does Y".
+3. **The allowlist must cover the files actually needed to answer those questions.** Ask yourself per question: which files do I have to read to answer this? If one is missing, all the spoke can do is note what it lacked in its "cannot verify" section — **that is the dispatcher's failure, not its own**. Paths are **relative to the repo root**. An empty list is legal (a pure text review), but then it cannot read code and you lose the most valuable class of finding: "the document says X, but `src/foo.ts:42` actually does Y". **The list belongs to this `<agent>.md`, not to the dispatch** — do not copy another spoke's list over wholesale: a file that spoke needs and this one does not is dead weight in the read order, and the reverse is a hole.
 
 4. **Put the large files last — this alone can halve the cost.** Spokes read files in **strict list order**, most models **call for one file per round**, and every round resends everything read so far. So the number of times a file is billed again = **total rounds − the round it was read in** — **the earlier it sits, the more times it is resent**. For a file of a dozen-odd k tokens, first versus last can nearly double that spoke's total. The method is simple: **sort ascending by file size**, largest last. If you are unsure of the size, `wc -l` first. **This still applies when you shuffle the list order** — pin the large files at the end and shuffle only the rest.
 
@@ -217,6 +223,10 @@ dowafu tmp/dispatch/<ticket-id> --repo-root . --dry-run
 | Allowlist estimate + file count | What the spoke can read, and how much of it |
 | Worst-case total | **This is a ceiling, not an expectation** (the sum of each spoke's cap); the actual figure is usually far below it |
 
+**Relay it in your own words, in a table — and never inside a code fence unless you are pasting the output byte for byte.** A fenced block means "this is what the tool printed"; putting a rewritten version inside one claims an accuracy you did not deliver. Rewriting is fine, and often reads better than the raw output. Passing a rewrite off as the raw output is not.
+
+**Whatever you relay, the qualifiers come with it.** The report's hedges are what stop the numbers being misread: that a total is a ceiling rather than an expectation, which day the price list was drawn from, what assumptions an estimate rests on, the lines confirming each lens's closing line. They are the first things to look droppable and the only things that make the numbers safe to act on. **Drop a qualifier and you have handed the user a firmer number than the tool gave you.**
+
 The report gives tokens, not money, and that **only holds for the dry run**. To convert to money, **the price list is `providers.json`'s `pricing`** (`inputPerM` / `cachedInputPerM` / `outputPerM`) — **do not look it up on the vendor's website**: those numbers are exactly what the CLI bills against, and pulling from the website would make "what you reported" and "what the CLI actually charges" disagree. If `pricingSource.asOf` looks stale, report it to the user rather than editing the number yourself (fix `providers.json` instead). **For the real run**, `summary.md` has an "estimated cost" column, and each spoke also prints a `cost=` line when it finishes — that figure is already computed by the CLI, so **just relay it; do not compute it yourself**.
 
 Then check each item: `repoRoot` is this project, `model` matches what you wrote, **the `effort` printed in the report is the tier you expected**, the token estimate is a sensible magnitude, and **there is no `⚠ Output directory ... is not ignored by the git repo it lives in` warning**.
@@ -227,7 +237,11 @@ If any item is wrong, fix the ticket and rerun — **do not proceed**.
 
 ## 5. The real run
 
-**First confirm the output directory is clean.** Only proceed if `tmp/spoke/<ticket-id>/` does not exist; if it does, use a different ticket-id or ask the user whether to clear it — **do not just run over it**.
+**The output directory must be one that does not exist yet.** Check `tmp/spoke/<ticket-id>/`: if something is already there, **pick a new ticket-id and dispatch under that** — a fresh id costs nothing and removes the collision entirely.
+
+**Deleting artifacts is the user's call, never yours.** Not before dispatching, not to tidy up, not because the directory is in the way. You may ask whether to clear it; you may not clear it yourself, and you may not run over it. What sits there was paid for, and nothing in the directory tells you whether the user still needs it. (Section 7's cleanup is a different thing: that happens *after* they have ruled, because they said so.)
+
+**The CLI enforces this.** If the directory is not empty it stops before dispatching — nothing called, nothing spent — and tells you to pick a different ticket-id. **There is no flag that overrides it**: clearing the directory is the user's action, not a switch you can pass.
 
 The CLI clears `run.jsonl` when it starts (stale events would make you miscount), **but that step only happens if it actually starts**. If startup fails, the previous run's artifacts sit there untouched — and **the files will not tell you whether they belong to this run**.
 
@@ -291,7 +305,11 @@ The artifacts are in `tmp/spoke/<ticket-id>/`: `<agent>.md` (the report), `summa
    **Reproduce it verbatim in two situations**: the artifacts have already been cleared by section 7 (there is no original left to check, so a summary cannot satisfy condition 4), or a single report is short enough that summarizing would be overkill. Everything else defaults to a summary.
 
    **If you cannot meet condition 2, dispatch fewer spokes rather than falling back to verbatim** — the problem is dispatch scale, not presentation; do not treat "not confident" as a reason to revert to full reproduction.
-2. **Fold `summary.md`'s audit table into that same section and reproduce it too.**
+2. **Relay `summary.md`'s audit cell into that same section by naming every segment it contains.** One line per segment per spoke, **in the order `summary.md` prints them** — `Tool calls:` comes first, ahead of `Closing line:`. Where a segment is empty the CLI prints its own word for that (`none`); **copy what it printed, and never leave a segment out**. Writing them all out costs you nothing over writing out most of them, and a missing name is something the user can see — a missing row is not.
+
+   **A segment beginning with `⚠` is never dropped, and neither is `(audit unavailable)`.** Those are not decoration sitting outside the named columns; they are the audit telling you something went wrong, and dropping them leaves the user holding only the parts that said nothing did.
+
+   **Any segment carrying content is reproduced word for word.** Only `pass` and the CLI's own empty-value word may be compressed. The segments saying "nothing here" are the cheap ones to keep, and the one saying something is the one worth dropping — so this rule is deliberately asymmetric: **the more a segment has to say, the less freedom you have with it.**
 3. **Then open a separate "hub assessment" section** — deduplicate, and annotate each item with your preliminary judgment (holds / does not hold + why / needs the user's ruling).
 
 ### Merging multiple runs
@@ -312,8 +330,8 @@ The artifacts are in `tmp/spoke/<ticket-id>/`: `<agent>.md` (the report), `summa
 
 | Column | Meaning |
 | --- | --- |
+| `Tool calls:N (allowed N / rejected N)` | How many reads, how many rejected — the statistics from `toolCalls[]` in `run.jsonl`. **Printed first**, ahead of the closing line |
 | `Closing line:` | pass / fail |
-| `Tool calls:N (allowed N / rejected N)` | How many reads, how many rejected — the statistics from `toolCalls[]` in `run.jsonl` |
 | `Observations:N` | The item count; `uncountable` means the format could not be recognized — go read the original |
 | `Citations outside allowlist:` | Paths cited from outside the allowlist, **possibly guessed at** — judge against `toolCalls[]`. **This column has never once caught a genuine hallucination**: what it catches is usually the spoke copying an abbreviated path out of the material, relaying a path the material mentioned while stating it could not read it, or mixing absolute and relative paths. Check first whether that path appears in your own `_shared.md`, or is merely written differently; do not assume it was invented |
 | `Cannot-verify section:` | Whether that section was written per the template. **When judging output quality, look at how specific this section is** (for example, noting per item which conclusion depended on which unreadable file), not at the observation count — counts are unreliable, since overlap and padding both inflate them without indicating quality |
@@ -353,6 +371,8 @@ Finally, tell the user what happened.
 ```bash
 rm -rf tmp/spoke/<ticket-id> tmp/dispatch/<ticket-id>
 ```
+
+**This is the only place in this workflow where you delete anything, and only once the user has ruled and told you to.** Anywhere else — including a directory that is in your way before dispatch — follow §5: you may ask, you may not delete.
 
 Leave the lens definitions; they will be used again.
 

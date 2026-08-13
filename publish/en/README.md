@@ -74,6 +74,25 @@ Three details that raise no error when you get them wrong — they just quietly 
 If the target project has no `CLAUDE.md`, create one containing the single line `@AGENTS.md`
 (the officially recommended approach).
 
+### If the project already has a workflow-specification chapter
+
+Plenty of projects already carry one, pasted straight into the entry file — and possibly in
+a different language from the pack you just installed, since each language pack ships its
+own `workflow_spec.md`. Copying the file in on top of that leaves **two copies with nothing
+keeping them in step**, and the one that governs every session is whichever the entry file
+auto-loads: the chapter that was already there, not the file you just installed.
+
+Pick one and remove the other:
+
+- **Keep `workflow_spec.md`** (recommended): delete the old chapter out of the entry file
+  and put the import above in its place
+- **Keep the inline chapter**: replace its text with the installed `workflow_spec.md`'s, in
+  whichever language you are standardizing on, and do not copy `workflow_spec.md` into the
+  project at all
+
+Either way the project ends up with **one copy**. Run `preflight` afterwards: it reports
+which copy is actually in context, so a skipped decision here still gets caught.
+
 ## What must never appear here
 
 The contents of `publish/` run somewhere that has no idea the source project exists, so they

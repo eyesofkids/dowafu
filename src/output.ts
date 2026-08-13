@@ -1,7 +1,7 @@
 // plan_dispatch_v1.4.md §12/§16：落檔與 run.jsonl。寫入序列化——前一次 appendFile 未
 // resolve 前不發下一次；呼叫平行，寫入序列。所有落檔內容在寫入前經 maskDeep 遮蔽（§12）。
 
-import { appendFile, mkdir, writeFile } from "node:fs/promises";
+import { appendFile, mkdir, readdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { Lang, SpokeRunResult } from "./types.js";
 import type { AuditResult, OutsideAllowlistCitation } from "./audit.js";
@@ -46,6 +46,20 @@ export async function ensureOutDir(outDir: string): Promise<void> {
   // 重跑會把上一次的事件留著，而 toolCalls[] 正是偵測「零讀取」的唯一依據
   // （issue_log_v2.0.md 2026-08-07：hub 驗收時據此數錯 9／22 vs 實際 7／20）。
   await writeFile(path.join(outDir, "run.jsonl"), "", "utf8");
+}
+
+// 上面 §13 那條「重跑會覆蓋同名輸出目錄」的前提是**重跑的人知道自己在覆蓋什麼**。
+// 四格 host 對測（2026-08-13）打掉了那個前提：hub 會在派工前自己 rm -rf 掉輸出目錄，
+// 沒有人被問過，而那底下是已經付過錢的產物。覆蓋本身不改（此處語意維持不變），改成
+// 由 cli.ts 在**還沒呼叫任何 API 的地方**擋下來——目錄非空就中止，並要求換 ticket-id。
+// 讀不到目錄（不存在、或權限不足）一律回 false：不存在本來就該放行，權限不足則交給
+// 後面的 ensureOutDir 報 outDirNotWritable，兩者的訊息各自比這裡準確。
+export async function outDirHasArtifacts(outDir: string): Promise<boolean> {
+  try {
+    return (await readdir(outDir)).length > 0;
+  } catch {
+    return false;
+  }
 }
 
 // §13：raw 一律無條件覆寫。v2.4 實作期間曾加過「空 raw 不覆蓋磁碟上的非空內容」守衛

@@ -45,7 +45,7 @@ grep -n "規劃→實作→驗收流程規範" CLAUDE.md AGENTS.md workflow_spec
 
 echo "=== skill 與 lens ==="
 ls .claude/skills/ 2>/dev/null
-ls .claude/agents/hole-finder-*.md 2>/dev/null
+ls .claude/agents/hole-finder*.md 2>/dev/null
 
 echo "=== tmp/ ==="
 git check-ignore -q tmp && echo "已忽略" || echo "未忽略"
@@ -62,6 +62,11 @@ git check-ignore -q tmp && echo "已忽略" || echo "未忽略"
 讀完在回報裡註明「規範不在自動載入範圍內，本次是手動讀取的」——讓使用者知道換個
 session 又會漏掉。
 
+**找到不只一份，就要講明哪一份會被自動載入。** 專案可能本來就把這一章內嵌在入口檔裡，
+而根目錄又多一份 `workflow_spec.md`——兩份的語言還可能不同（語言套件各裝各的）。
+這時只回報「內容讀得到」不夠：要指出**你 context 裡的是哪一份**，以及兩份之間沒有任何
+同步機制。自動載入的那一份，才是之後每個 session 真正生效的那一份。
+
 > **為什麼會讀不到？** 入口檔因 host 而異：Claude Code 讀 `CLAUDE.md`（**不讀
 > `AGENTS.md`**），其他 host 多半讀 repo 根的 `AGENTS.md`。而 `@xxx.md` 是 Claude Code
 > 的 import 語法，**別的 host 不會展開它**——那時你看到的只是一行字，規範內容從來沒進
@@ -69,8 +74,20 @@ session 又會漏掉。
 
 ### skill 與 lens
 
-`.claude/skills/find-holes-external/` 與 `.claude/agents/hole-finder-*.md` 在不在。
-（後者 glob 會列出通用的 `hole-finder.md` 加三個 lens，四個都算正常。）
+`.claude/skills/find-holes-external/` 與 lens 定義在不在。**回報你實際看到的檔名，
+缺哪個就點名**——「看到三個」不算檢查，是哪三個才算。
+
+應該有四個，四個都算正常：
+
+| 檔 | 是什麼 |
+| --- | --- |
+| `hole-finder.md` | 通用 lens |
+| `hole-finder-cost.md` | 成本 |
+| `hole-finder-feasibility.md` | 可行性 |
+| `hole-finder-safety.md` | 安全、併發、失敗態 |
+
+> 上面那道 glob 的 `*` 前面沒有連字號是刻意的：`hole-finder-*.md` 配不到
+> `hole-finder.md`，拿它去數卻期待四個，怎麼數都對不起來。
 
 **lens 缺了不要自己補寫**——它是 spoke 的 system prompt 來源，自己寫的版本會讓產出跟
 稽核判準對不上。
