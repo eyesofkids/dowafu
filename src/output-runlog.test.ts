@@ -18,7 +18,7 @@ test("RunLogWriter.append：每行含合法 ISO 8601 格式的 ts 欄位", async
   await withTmpDir(async (dir) => {
     const logPath = path.join(dir, "run.jsonl");
     writeFileSync(logPath, "", "utf8");
-    const writer = new RunLogWriter(logPath);
+    const writer = new RunLogWriter(logPath, "zh");
     writer.append({ type: "spoke_start", agent: "a" });
     await writer.flush();
 
@@ -36,7 +36,7 @@ test("RunLogWriter.append：ts 於 maskDeep 之後加入，不受遮蔽規則誤
     try {
       const logPath = path.join(dir, "run.jsonl");
       writeFileSync(logPath, "", "utf8");
-      const writer = new RunLogWriter(logPath);
+      const writer = new RunLogWriter(logPath, "zh");
       writer.append({ type: "spoke_start", agent: "agent-20-x" });
       await writer.flush();
 
@@ -53,7 +53,7 @@ test("RunLogWriter.append：queue 中一次 appendFile 失敗後，後續 append
   await withTmpDir(async (dir) => {
     const logPath = path.join(dir, "run.jsonl");
     writeFileSync(logPath, "", "utf8");
-    const writer = new RunLogWriter(logPath);
+    const writer = new RunLogWriter(logPath, "zh");
 
     chmodSync(logPath, 0o444); // 唯讀，讓下一次 appendFile 因 EACCES 失敗
     writer.append({ type: "spoke_start", agent: "會失敗" });

@@ -3,8 +3,9 @@ import assert from "node:assert/strict";
 import { buildAnthropicRequest } from "./anthropic-messages.js";
 import type { Conversation, ReasoningConfig } from "../types.js";
 
-const ANTHROPIC_CONFIG: { reasoning: ReasoningConfig } = {
+const ANTHROPIC_CONFIG: { reasoning: ReasoningConfig; lang: "zh" | "en" } = {
   reasoning: { style: "anthropic", allowed: ["low", "medium", "high", "xhigh", "max"], default: "high" },
+  lang: "zh",
 };
 
 // plan_dispatch_v2.7.md §29 規格三十第 1 條：本條是本版的核心——擋的是「唯一會讓整個
@@ -110,6 +111,26 @@ test("buildAnthropicRequest：assistant turn 的 raw（含 thinking block）以�
   assert.ok(messages.includes(assistantRaw), "assistant turn 的 raw 物件應以參照相等原樣出現在 messages 中");
   const assistantMessage = messages[1] as { content: unknown[] };
   assert.ok(assistantMessage.content.includes(thinkingBlock), "thinking block 不得被過濾掉");
+});
+
+// i18n_classification_t2.md §三之3：read_file 工具 description 是 C 類雙語常數，由
+// config.lang 選用，三支 adapter 共用同一組常數（見 read-file-tool-description.ts）。
+test("buildAnthropicRequest：read_file 工具的 description 依 config.lang 換語言（zh／en，手寫字面量）", () => {
+  const conv: Conversation = { systemPrompt: "s", turns: [{ role: "user", text: "hi" }] };
+  const paramsZh = buildAnthropicRequest(conv, { model: "claude-sonnet-5", effort: "high" }, ANTHROPIC_CONFIG) as Record<
+    string,
+    unknown
+  >;
+  const toolsZh = paramsZh.tools as Array<{ description: string }>;
+  assert.equal(toolsZh[0].description, "讀取指定路徑的檔案內容");
+
+  const paramsEn = buildAnthropicRequest(
+    conv,
+    { model: "claude-sonnet-5", effort: "high" },
+    { ...ANTHROPIC_CONFIG, lang: "en" },
+  ) as Record<string, unknown>;
+  const toolsEn = paramsEn.tools as Array<{ description: string }>;
+  assert.equal(toolsEn[0].description, "Read the contents of the file at the given path.");
 });
 
 // 注意：與 gemini-native 同理（見 gemini-native.test.ts 開頭註解）——turnsToMessages 對

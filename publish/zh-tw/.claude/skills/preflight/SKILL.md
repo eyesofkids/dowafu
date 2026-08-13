@@ -158,7 +158,7 @@ dowafu --version
 
 | 症狀 | 意思 | 怎麼回報 |
 | --- | --- | --- |
-| `Operation not permitted` | **沙箱擋的**，不是沒安裝。CLI 多半裝在家目錄底下，而沙箱預設不讀家目錄 | 照 host 的提示放行後重試。順帶告訴使用者：API key（`~/.config/dispatch/.env`）與對外網路同樣被擋，派工時一併要放行 |
+| `Operation not permitted` | **沙箱擋的**，不是沒安裝。CLI 多半裝在家目錄底下，而沙箱預設不讀家目錄 | 照 host 的提示放行後重試。順帶告訴使用者：API key（`~/.config/dowafu/.env`）與對外網路同樣被擋，派工時一併要放行 |
 | `command not found` | 可能沒裝，也可能裝在 PATH 之外 | 問使用者 CLI 裝在哪（請他跑 `which dowafu`），**不要自己搜檔案系統** |
 
 **`command -v dowafu` 查不到不代表沒安裝**，別拿那個當判準。

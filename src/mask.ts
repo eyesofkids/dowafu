@@ -59,16 +59,29 @@ export type DescribedError = {
   headers?: Record<string, string>;
 };
 
+// 序列化失敗一律降級為固定字串，不再往上拋——呼叫端（describeError）的職責是「把錯誤描述
+// 出來」，它自己不能因為描述不出來而變成第二個錯誤。回傳值仍經 maskString，因為
+// 不可序列化的物件其 toString 也可能帶出秘密。
+function safeStringify(value: object): string {
+  try {
+    return maskString(JSON.stringify(value));
+  } catch {
+    return "[unserializable error body]";
+  }
+}
+
 export function describeError(err: unknown): DescribedError {
   if (err && typeof err === "object") {
     const anyErr = err as Record<string, unknown>;
     const status = typeof anyErr.status === "number" ? anyErr.status : undefined;
     const headers = maskHeaders(anyErr.headers);
     const message = typeof anyErr.message === "string" ? maskString(anyErr.message) : undefined;
+    // issue_log_v2.5.md 待修 #10：JSON.stringify 遇 BigInt 會拋 TypeError、遇循環引用同樣拋，
+    // 而 runSpoke 沒有包住這條路徑——遮蔽層自己拋錯的下場是整支 spoke 落到 allSettled 的防禦
+    // 分支：status failed，而且**那次錯誤本身不會被記錄**，因為記錄它正是這個函式的工作。
+    // 序列化不了就退回型別描述，不得讓遮蔽層成為新的失敗來源。
     const errorBody =
-      anyErr.error && typeof anyErr.error === "object"
-        ? { message: maskString(JSON.stringify(anyErr.error)) }
-        : undefined;
+      anyErr.error && typeof anyErr.error === "object" ? { message: safeStringify(anyErr.error) } : undefined;
     return {
       status,
       is429: status === 429,

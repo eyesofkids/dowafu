@@ -5,7 +5,7 @@
 // plan_dispatch_v2.0.md §16：從源頭消除「清單外引用」噪音——spoke 自行縮寫路徑會被 §15
 // 稽核標記為清單外，即使指的其實是清單內的檔案（issue_log_v2.0.md 2026-08-07 的真實案例）。
 import path from "node:path";
-import type { TicketLang } from "./ticket.js";
+import type { Lang } from "./types.js";
 
 // 英文工單走這一份。內容與中文版逐條對應——同樣先「觀察／依據／原文」，同樣以固定收尾句
 // 結束，因為稽核靠那句話判斷回報有沒有寫完。翻譯時刻意保留祈使句與「原文是主要依據、
@@ -45,7 +45,9 @@ const TOOL_NOTE_EN = "You have one tool, `read_file(path)`. Neither the ticket n
 // plan_dispatch_v2.1.md §8（二）：組裝順序改為 agent body → 工具說明 → 回報模板。原順序
 // （agent body → 回報模板 → 工具說明）讓工具說明掉在回報模板的固定收尾句之後，在結構上
 // 像附註——而那正是唯一說明「你有工具」的段落（provider log system-1.txt 全文證實）。
-export function buildSystemPrompt(agentBody: string, lang: TicketLang = "zh"): string {
+// plan_i18n_v1.3.md §一之2：不設預設值——不是安全網（九個既有呼叫端都已顯式傳值，
+// 一個都不會紅），是防未來新增的呼叫端靜默拿到與產品預設（en）相反的值。
+export function buildSystemPrompt(agentBody: string, lang: Lang): string {
   const toolNote = lang === "en" ? TOOL_NOTE_EN : TOOL_NOTE;
   const template = lang === "en" ? REPORT_TEMPLATE_EN : REPORT_TEMPLATE;
   return [agentBody.trim(), toolNote, template].join("\n\n");
@@ -56,7 +58,7 @@ export function buildSystemPrompt(agentBody: string, lang: TicketLang = "zh"): s
 // 步驟 1、2 同句型的命令句，並逐條列出允許清單路徑。綁定條件是「要引用就必須先讀」，不是
 // 「必須讀完整份清單」——清單寧寬勿窄時硬性全讀會浪費 token，且與 §7「被拒呼叫仍計入
 // --max-tool-calls」的成本模型衝突。
-function buildStep3(allowedReadsRelative: string[], lang: TicketLang): string {
+function buildStep3(allowedReadsRelative: string[], lang: Lang): string {
   if (allowedReadsRelative.length === 0) {
     return lang === "en"
       ? "3. There are no readable files this time; answer from the section under review alone."
@@ -88,8 +90,8 @@ export function buildFirstUserText(
   ticketDir: string,
   agent: string,
   allowedReadsRelative: string[],
-  repoRoot?: string,
-  lang: TicketLang = "zh",
+  repoRoot: string | undefined,
+  lang: Lang,
 ): string {
   const dir = displayTicketDir(ticketDir, repoRoot);
   if (lang === "en") {
@@ -113,7 +115,7 @@ ${buildStep3(allowedReadsRelative, lang)}
 清單外的檔案會被拒絕。被拒時不要重試，在「無法驗證」欄記下缺什麼。`;
 }
 
-export function buildFinalizeUserText(lang: TicketLang = "zh"): string {
+export function buildFinalizeUserText(lang: Lang): string {
   return lang === "en"
     ? "You have reached the execution limit. Produce your report now from what you already have; do not call any more tools."
     : "已達執行上限，請依現有資訊直接產出目前的回報，不要再呼叫工具。";

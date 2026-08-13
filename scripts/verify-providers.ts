@@ -18,7 +18,8 @@ import { loadDispatchEnv, resolveDispatchHome } from "../src/dispatch-home.js";
 import OpenAI from "openai";
 import { writeFile, mkdir } from "node:fs/promises";
 
-loadDispatchEnv(resolveDispatchHome());
+const dispatchHome = resolveDispatchHome();
+if (dispatchHome !== null) loadDispatchEnv(dispatchHome);
 
 const USER_PROMPT =
   '請呼叫 read_file 工具讀取路徑 "package.json"，並用一句話告訴我它的 "name" 欄位值。';

@@ -11,17 +11,33 @@ import dotenv from "dotenv";
 import os from "node:os";
 import path from "node:path";
 
+// plan_i18n_v1.3.md §三：這兩個函式現在跑在 parseArgs／--help 之前（見 cli.ts），任何
+// 會拋的東西都會擋住求助路徑。因此各自包 try/catch，任何例外都降級為「沒有設定檔」，
+// 不中止、不拋——包括 os.homedir() 在無 HOME／無 passwd 對應時拋錯。
 export function resolveDispatchHome(
   env: NodeJS.ProcessEnv = process.env,
   homedir: () => string = os.homedir,
-): string {
-  if (env.DISPATCH_HOME) return env.DISPATCH_HOME;
-  if (env.XDG_CONFIG_HOME) return path.join(env.XDG_CONFIG_HOME, "dispatch");
-  return path.join(homedir(), ".config", "dispatch");
+): string | null {
+  try {
+    if (env.DISPATCH_HOME) return env.DISPATCH_HOME;
+    // v0.2.0：目錄名與 CLI 同名（`dowafu`），原本叫 `dispatch`。**不做舊路徑回退**
+    // （乙案已否決）——回退那段程式碼一旦寫下就永遠刪不掉，而它要處理的是一次性的搬家。
+    // 代價是搬家沒做完時 loadDispatchEnv 靜默降級（見下方註解），症狀要到派工當下才出現，
+    // 所以 impl_tickets 的順序是「先複製目錄、再改這兩行」。
+    if (env.XDG_CONFIG_HOME) return path.join(env.XDG_CONFIG_HOME, "dowafu");
+    return path.join(homedir(), ".config", "dowafu");
+  } catch {
+    return null;
+  }
 }
 
 // 唯一允許呼叫 dotenv 的地方——`path` 一律明確指定為 dispatchHome 下的 `.env`，
 // 絕不留白（留白即回退成 dotenv 預設讀 cwd 的 `.env`，正是本函式存在的目的所要杜絕的）。
+// 維持 `void` 簽名：讀取失敗一律降級為「沒有設定檔」（見上方註解），呼叫端不需要狀態。
 export function loadDispatchEnv(dispatchHome: string): void {
-  dotenv.config({ path: path.join(dispatchHome, ".env") });
+  try {
+    dotenv.config({ path: path.join(dispatchHome, ".env") });
+  } catch {
+    // .env 是目錄／無讀取權限／內容畸形等，全部降級，不中止、不拋。
+  }
 }

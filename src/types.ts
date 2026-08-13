@@ -1,6 +1,12 @@
 // plan_dispatch_v1.4.md §8：中性表示。raw 原樣保留，不解構重組；toolCalls 是唯讀投影，
 // 核心不得用它重建請求（adapter 續接一律用 raw）。
 
+// plan_i18n_v1.2.md §1.1：run-level 語言（--lang > DISPATCH_LANG > 內建預設 en 判定後的
+// 權威值），與工單標記無關——見 validate.ts 的 resolveSpokes。原名 TicketLang，T1 階段誤導性
+// 地暗示「語言由工單決定」；T7a 更名並從 ticket.ts 搬來這裡（types.ts 零內部 import，
+// 不會與任何檔案產生循環）。值維持 "zh" | "en" 不變，純粹改名與搬遷。
+export type Lang = "zh" | "en";
+
 export type ToolCall = {
   id: string; // 用於與工具結果關聯（openai/deepseek 的 call_id；gemini 用 part 的 functionCall.id 或退回索引）
   name: string;
@@ -90,6 +96,10 @@ export type ProviderConfig = {
   tpmLimit: number | null;
   maxSpokeTokens: number | null;
   pricing?: Record<string, ModelPricing>; // §4：逐模型單價，缺席的型號無法估算成本（回傳 null，不是 0）
+  // v0.2.0：`pricingSource.asOf` 進報表——乾跑要印出本次型號的單價與它的查證日期，
+  // hub 才不必去找 providers.json 這個檔。**刻意不收 `url`**：skill 明訂價目來源是這份
+  // 檔案、不要查官網（那份數字就是 CLI 的計費基準），把網址印在報表上等於邀請它去查。
+  pricingAsOf?: string;
 };
 
 export type ProvidersFile = Record<string, ProviderConfig>;

@@ -8,30 +8,10 @@
 
 import { DispatchError } from "./types.js";
 import { getCommandName } from "./pkg-info.js";
+import { m } from "./messages.js";
 import type { CliOptions } from "./report.js";
 import type { RunEvent } from "./runner.js";
-
-export const HELP_TEXT = `用法：${getCommandName()} <ticket-dir> [options]
-
-  --repo-root <dir>        白名單邊界與 .claude/agents 的根，預設 cwd
-  --providers <path>       整檔取代出貨的 providers.json
-  --json                   stdout 只印結果 JSON，其餘輸出改走 stderr
-  --out <dir>              落檔目錄，預設 tmp/spoke/
-  --concurrency <n>        同時執行的 spoke 數，預設 2
-  --max-tokens <n>         呼叫前估算閘門（各 spoke 初始 prompt 總和），預設 200000
-  --max-spoke-tokens <n>   單一 spoke 執行期累積上限（實際 usage），預設 400000
-  --timeout <sec>          單次 API 呼叫逾時（不是整支 spoke），預設 600
-  --retries <n>            單輪呼叫的重試次數（僅暫時性錯誤），預設 2
-  --chars-per-token <n>    閘門一估算係數，預設 1.0（可由 providers.json 逐家覆寫）
-  --max-spoke-reasoning-tokens <n>  單一 spoke 的推理 token 累積上限，預設 50000
-  --max-round-reasoning-tokens <n>  單輪推理 token 上限，預設 null（不檢查）
-  --rate-limit-retries <n> 429 專用重試次數，預設 5（不計入 --retries）
-  --max-rate-wait <sec>    單次 429 等待上限，預設 30
-  --max-tool-calls <n>     單一 spoke 的 read_file 呼叫上限，預設 30
-  --dry-run                解析、驗證、估算、印報表，不呼叫 API
-  --yes                    略過派工確認。非互動環境（stdin 不是 TTY）沒帶就中止
-  --help, -h               印本說明後結束（exit 0）
-  --version, -V            印版本號後結束（exit 0）`;
+import type { Lang, SpokeRunResult } from "./types.js";
 
 const DEFAULTS: CliOptions = {
   out: "tmp/spoke",
@@ -61,7 +41,71 @@ export type ParsedArgs =
   | { mode: "version" }
   | { mode: "run"; ticketDir: string; options: CliOptions };
 
-export function parseArgs(argv: string[]): ParsedArgs {
+// plan_i18n_v1.3.md §二之1：--lang 與 DISPATCH_LANG 走同一個判定函式，接受 en／zh-tw／zh，
+// 大小寫不敏感、trim。不共用的話會出現「同一個值放旗標有效、放環境變數無效」這種依媒介
+// 分裂的邊界，是最難查的那種不一致。
+export function parseLang(value: string): Lang | null {
+  const v = value.trim().toLowerCase();
+  if (v === "en") return "en";
+  if (v === "zh-tw" || v === "zh") return "zh";
+  return null;
+}
+
+// plan_i18n_impl_tickets T3：resolveLang 之前，還有一段訊息需要語言——parseArgs 自己的
+// 解析期錯誤、以及 resolveLang 判定失敗時它自己要拋的那兩則訊息。這段時序裡還沒有
+// 「權威語言」可用（--lang 可能就是壞的那個值，資格未定；resolveLang 本身還沒跑完，
+// 不能拿它自己會拋例外的回傳值來決定拋例外訊息用什麼語言）。
+//
+// v1.2 §1.3／§3.2：這類訊息一律走「DISPATCH_LANG 有效就用它，否則用內建預設 en」——
+// 不查 --lang（它在這個時間點的有效性正是問題本身），也不會拋例外。cli.ts 在
+// registerSecrets／loadDispatchEnv 之後、parseArgs 之前算好這個值，一併傳給 parseArgs
+// 與用於 --help 本身的輸出；resolveLang 內部對它自己的兩則錯誤訊息也重用同一函式。
+export function resolveFallbackLang(envLangRaw: string | undefined): Lang {
+  const trimmed = (envLangRaw ?? "").trim();
+  if (!trimmed) return "en";
+  return parseLang(trimmed) ?? "en";
+}
+
+// plan_i18n_v1.3.md §二之2：--lang 與 DISPATCH_LANG 的完整組合表（九項）。
+// 呼叫時機：parseArgs 之後、help／version 短路之後——在此之前不得驗證語言。
+export function resolveLang(cliLangRaw: string | undefined, envLangRaw: string | undefined): Lang {
+  const envTrimmed = (envLangRaw ?? "").trim();
+  const envIsSet = envTrimmed.length > 0; // #7：空字串／全空白視為「未設定」，不是無效
+  const envParsed = envIsSet ? parseLang(envTrimmed) : null;
+  const msgLang = resolveFallbackLang(envLangRaw);
+
+  if (cliLangRaw !== undefined) {
+    const cliParsed = parseLang(cliLangRaw);
+    if (cliParsed !== null) return cliParsed; // #1：旗標有效，不驗 DISPATCH_LANG
+    // #4：旗標無效——一併指出 env 是否也無效，避免使用者修好旗標後才撞到 env 又是壞的。
+    const envNote =
+      envIsSet && envParsed === null ? m(msgLang, "invalidEnvAlsoNote", envLangRaw) : "";
+    throw new DispatchError(
+      m(
+        msgLang,
+        "invalidLangFlag",
+        cliLangRaw,
+        m(msgLang, "availableValuesSuffix", m(msgLang, "availableLangValues")),
+        envNote,
+      ),
+      2,
+    );
+  }
+
+  if (!envIsSet) return "en"; // #7：未設定 → 內建預設
+  if (envParsed !== null) return envParsed; // #2
+  // #3：DISPATCH_LANG 無效且沒有有效 --lang——訊息須指名是環境變數，不是旗標。
+  throw new DispatchError(
+    m(msgLang, "invalidEnvLang", envLangRaw, m(msgLang, "availableValuesSuffix", m(msgLang, "availableLangValues"))),
+    2,
+  );
+}
+
+// plan_i18n_impl_tickets T3：lang 是「訊息語言」，即 resolveFallbackLang 算出的那個值
+// （見上方說明）——parseArgs 這個階段權威語言尚未確定，不是 run-level lang。
+export function parseArgs(argv: string[], lang: Lang): ParsedArgs {
+  const helpText = m(lang, "helpText", getCommandName());
+
   // --help／--version 可出現在任何位置，且優先於其他一切解析——不要求先有 ticketDir。
   if (argv.includes("--help") || argv.includes("-h")) return { mode: "help" };
   if (argv.includes("--version") || argv.includes("-V")) return { mode: "version" };
@@ -72,7 +116,7 @@ export function parseArgs(argv: string[]): ParsedArgs {
   const numFlag = (name: string, apply: (n: number) => void) => {
     flagHandlers[name] = (v) => {
       const n = Number(v);
-      if (!Number.isFinite(n)) throw new DispatchError(`--${name} 需要數字，收到：${v}`, 2);
+      if (!Number.isFinite(n)) throw new DispatchError(m(lang, "numberFlagInvalid", name, v), 2);
       apply(n);
     };
   };
@@ -81,6 +125,10 @@ export function parseArgs(argv: string[]): ParsedArgs {
   flagHandlers["out"] = (v) => (options.out = v);
   flagHandlers["repo-root"] = (v) => (options.repoRoot = v);
   flagHandlers["providers"] = (v) => (options.providersPath = v);
+  // 這裡只存原始字串，不驗證格式——格式與 DISPATCH_LANG 的組合判定需要 process.env，
+  // parseArgs 是純函式不碰它，交給 cli.ts 呼叫 resolveLang（見下）。重複帶 --lang 時
+  // 最後一次覆蓋前一次，與其他旗標一致（v1.3 §二之2 #8）。
+  flagHandlers["lang"] = (v) => (options.langRaw = v);
   numFlag("concurrency", (n) => (options.concurrency = n));
   numFlag("max-tokens", (n) => (options.maxTokens = n));
   numFlag("max-spoke-tokens", (n) => (options.maxSpokeTokens = n));
@@ -104,44 +152,80 @@ export function parseArgs(argv: string[]): ParsedArgs {
     } else if (arg.startsWith("--")) {
       const name = arg.slice(2);
       const handler = flagHandlers[name];
-      if (!handler) throw new DispatchError(`未知選項：${arg}\n\n${HELP_TEXT}`, 2);
+      if (!handler) throw new DispatchError(m(lang, "unknownOption", arg, helpText), 2);
       const value = argv[++i];
-      if (value === undefined) throw new DispatchError(`--${name} 缺少值`, 2);
+      if (value === undefined) {
+        // v1.3 §二之2 #9：--lang 缺值時沿用既有的「缺少值」措辭，額外列出可用值。
+        const suffix =
+          name === "lang" ? m(lang, "availableValuesSuffix", m(lang, "availableLangValues")) : "";
+        throw new DispatchError(m(lang, "missingFlagValue", name, suffix), 2);
+      }
       handler(value);
     } else if (ticketDir === undefined) {
       ticketDir = arg;
     } else {
       // v1.10 §9：多餘的 positional 原本被靜默忽略（`hub-dispatch a b` 只跑 a），
       // 與設計原則 2（fail closed）不一致，改為中止。
-      throw new DispatchError(`多餘的引數：${arg}（工單目錄已是 "${ticketDir}"）\n\n${HELP_TEXT}`, 2);
+      throw new DispatchError(m(lang, "tooManyArgs", arg, ticketDir, helpText), 2);
     }
   }
 
   if (!ticketDir) {
-    throw new DispatchError(HELP_TEXT, 2);
+    throw new DispatchError(helpText, 2);
   }
   return { mode: "run", ticketDir, options };
 }
 
-export function formatEvent(event: RunEvent): string {
+// plan_i18n_impl_tickets T3：跟 run-level lang，不是 env lang——這是執行中的即時輸出，
+// 此時 resolveLang 早已成功、cli.ts 手上有權威值，直接傳進來即可，不必再猜語言。
+export function formatEvent(event: RunEvent, lang: Lang): string {
   switch (event.type) {
     case "spoke_start":
-      return `[${event.agent}] 開始 → ${event.provider}/${event.model}`;
+      return m(lang, "eventSpokeStart", event.agent, event.provider, event.model);
     case "round":
+      // 此則純 ASCII（round／usage／toolCalls 皆非中文），兩語言逐字相同，不必經 messages.ts。
       return `[${event.agent}] round ${event.round} usage=${JSON.stringify(event.usage)} toolCalls=${event.hasToolCalls}`;
     case "unknown_usage_keys":
-      return `[${event.agent}] ⚠ round ${event.round} 出現未知 usage 欄位：${event.keys.join(", ")}`;
+      return m(lang, "eventUnknownUsageKeys", event.agent, event.round, event.keys.join(", "));
     case "tool_call":
-      return `[${event.agent}] read_file(${event.path}) ${event.allowed ? "允許" : `拒絕(${event.reason})`}`;
+      return m(lang, "eventToolCall", event.agent, event.path, event.allowed, event.reason);
     case "rate_limit_wait":
-      return `[${event.agent}] 429，等待 ${event.seconds}s（來源：${event.source}）`;
+      return m(lang, "eventRateLimitWait", event.agent, event.seconds, event.source);
     case "round_error":
-      return `[${event.agent}] ⚠ round ${event.round} 錯誤 status=${event.status ?? "—"}：${event.message}`;
-    case "spoke_end":
-      return (
-        `[${event.agent}] 結束 status=${event.status} latency=${event.latencyMs}ms totalTokens=${event.totalTokens}` +
-        ` cost=${event.costUsd === null ? "無價目資料" : `$${event.costUsd.toFixed(4)}`}` +
-        (event.budgetTrigger ? ` budgetTrigger=${event.budgetTrigger}` : "")
+      return m(lang, "eventRoundError", event.agent, event.round, String(event.status ?? "—"), event.message);
+    case "spoke_end": {
+      const costLabel = event.costUsd === null ? m(lang, "noPricingData") : `$${event.costUsd.toFixed(4)}`;
+      const budgetSuffix = event.budgetTrigger ? ` budgetTrigger=${event.budgetTrigger}` : "";
+      return m(
+        lang,
+        "eventSpokeEnd",
+        event.agent,
+        event.status,
+        event.latencyMs,
+        event.totalTokens,
+        costLabel,
+        budgetSuffix,
       );
+    }
   }
+}
+
+// plan_i18n_impl_tickets T3b：moved out of cli.ts（原本是該檔的私有函式）。cli.ts 底部有
+// `main().catch()` 的無條件呼叫，import 它會直接跑掉整支程式（見檔頭說明）——這支函式本身
+// 純函式、不含 I/O，搬來這裡才有安全的方式可以單元測試，不必 spawn 子行程。
+export function buildStdoutSummary(results: SpokeRunResult[], lang: Lang): string {
+  return results
+    .map((r) =>
+      m(
+        lang,
+        "stdoutSummaryLine",
+        r.agent,
+        r.status,
+        r.modelReturned ?? "—",
+        r.usage.totalTokens,
+        r.costUsd === null ? m(lang, "noPricingData") : `$${r.costUsd.toFixed(4)}`,
+        r.latencyMs,
+      ),
+    )
+    .join("\n");
 }

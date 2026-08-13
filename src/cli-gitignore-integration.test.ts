@@ -74,8 +74,11 @@ test("gitignore 檢查：cwd ≠ --repo-root 時，報表依 cwd 的 .gitignore 
     );
 
     assert.equal(result.status, 0, `dry-run 應成功結束，stderr：${result.stderr}`);
-    assert.match(result.stdout, /⚠ 輸出目錄 .* 未被輸出目錄所在的 git repo 忽略/, `應印 ⚠ 警告，實際輸出：\n${result.stdout}`);
-    assert.doesNotMatch(result.stdout, /ℹ 無法判定/, "不該退化成「無法判定」——cwd 側是真的可判定的 git repo");
+    // plan_i18n_impl_tickets T5：report.ts 起改吃 run-level lang（本測試未帶 --lang，
+    // 落到內建預設 en，見 plan_i18n_v1.2.md §1.1），輸出因此是英文——這條斷言驗的是
+    // 「依 cwd 判定、印出 ⚠ 而非 ℹ」這件事本身，語言不是重點，故不鎖死某一種語言的措辭。
+    assert.match(result.stdout, /⚠.*(輸出目錄|Output directory).*(tmp\/spoke\/ticket-gitignore-test)/, `應印 ⚠ 警告，實際輸出：\n${result.stdout}`);
+    assert.doesNotMatch(result.stdout, /ℹ.*(無法判定|Cannot determine)/, "不該退化成「無法判定」——cwd 側是真的可判定的 git repo");
   } finally {
     rmSync(cwdDir, { recursive: true, force: true });
     rmSync(repoRootDir, { recursive: true, force: true });

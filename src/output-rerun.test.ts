@@ -39,7 +39,7 @@ test("ensureOutDir：清空後 RunLogWriter 仍可正常追加，且只含本次
     writeFileSync(logPath, '{"type":"spoke_end","agent":"舊跑"}\n');
 
     await ensureOutDir(outDir);
-    const writer = new RunLogWriter(logPath);
+    const writer = new RunLogWriter(logPath, "zh");
     writer.append({ type: "spoke_start", agent: "本次" });
     writer.append({ type: "spoke_end", agent: "本次" });
     await writer.flush();

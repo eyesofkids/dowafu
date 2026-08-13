@@ -71,6 +71,31 @@ test("auditSpoke：「### 觀察 N」標題形式正確計數", () => {
   assert.equal(result.observationCount, 3);
 });
 
+// real-run-i18n-lang（2026-08-12）：`deepseek-v4-flash` 的中文格把觀察寫成
+// `## 1. 「比照 tags 路由」…`——標題形式，但編號後面直接接內容、沒有「觀察」二字，
+// 既有的兩條標題樣式都認不出來，於是整份判「無法計數」。同一份工單重跑改用平鋪編號就數得出來。
+// **那是該次對照中唯一一項「中文格看起來比英文格差」的來源，而它與語言無關。**
+test("auditSpoke：`## 1. 內容` 這種標題編號（無「觀察」二字）→ 數得出來，不是 null", () => {
+  const body = [
+    "# 觀察",
+    "",
+    "## 1. 「比照 tags 路由」的骨架成立，但呼叫形態與現檔不同",
+    "依據：app/api/tags/route.ts:12",
+    "",
+    "## 2. 既有資料的 role 處理完全未涵蓋",
+    "依據：推理",
+    "",
+    "# 無法驗證",
+    "- 無",
+  ].join("\n");
+  assert.equal(auditSpoke(withClosing(body), []).observationCount, 2);
+});
+
+test("auditSpoke：平鋪編號仍優先於標題編號樣式（新樣式排在最後，不得蓋掉既有判讀）", () => {
+  const body = ["# 觀察", "", "## 背景", "1. 第一條", "2. 第二條", "3. 第三條"].join("\n");
+  assert.equal(auditSpoke(withClosing(body), []).observationCount, 3);
+});
+
 test("auditSpoke：章節存在但內容為空 → observationCount 為 0（明確為零，不是數不出來）", () => {
   const text = withClosing(`# 觀察
 

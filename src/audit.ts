@@ -21,6 +21,11 @@ function getSection(sections: Map<string, string>, names: string[]): string | un
 }
 
 const SUSPECT_PHRASES = ["應該改成", "建議採用", "嚴重度", "高風險", "應廢止"];
+// plan_i18n_v1.2.md §4.1／i18n_classification_t2.md §五 #8-12：英文回報若只比對中文詞，
+// 稽核會靜默失效——不報錯、不變紅，只是什麼都抓不到。兩套並存同時比對，不隨 lang 切換
+// （spoke 可能用另一種語言作答，稽核本來就不看工單語言）。summary.md 需要分開標示是
+// 哪一套命中，供日後調整這份清單時有資料可依據，故 auditSpoke 分開回傳兩個陣列。
+const SUSPECT_PHRASES_EN = ["should be changed to", "recommend adopting", "severity", "high risk", "should be deprecated"];
 
 // 抓看起來像相對路徑的引用：至少一層目錄＋副檔名，容許前後有反引號與 :行號。
 // plan_dispatch_v1.12.md §15：字元類須容許中括號，否則 Next.js 動態路由段（[id]、
@@ -40,6 +45,11 @@ const OBSERVATION_PATTERNS: RegExp[] = [
   /^#{2,4}\s*觀察\s*\d+/, // 標題形式："### 觀察 1"
   /^(?:\*\*)?Observation\s*\d+(?:\.\d+)?(?:\*\*)?[:：]/i, // 英文模板的巢狀標記
   /^#{2,4}\s*Observation\s*\d+/i, // 英文模板的標題形式
+  // real-run-i18n-lang（2026-08-12）：`deepseek-v4-flash` 的中文格寫成 `## 1. 「比照 tags 路由」…`
+  // ——標題形式但編號後面直接是內容，沒有「觀察」二字，上面兩條標題樣式都認不出來，於是整份
+  // 判「無法計數」。**那是本次唯一一項「中文格看起來比英文格差」的來源，而它與語言無關。**
+  // 放在最後：前面任何一條命中就不會走到這裡，所以不會蓋掉既有判讀。
+  /^#{2,4}\s*\d+[.、]/,
 ];
 
 function countObservations(observationsBody: string): number | null {
@@ -68,7 +78,9 @@ export type AuditResult = {
   citedPathsOutsideAllowlist: string[];
   citedPathsOutsideAllowlistDetail: OutsideAllowlistCitation[];
   cannotVerifySectionPresent: boolean;
-  suspectPhrases: string[];
+  suspectPhrases: string[]; // 中英兩套命中的聯集，維持既有消費端（json-output.ts／output.ts）語意
+  suspectPhrasesZh: string[];
+  suspectPhrasesEn: string[];
 };
 
 // 找出 targetPath 第一次出現的頂層章節（依文件順序）。用同一個 PATH_REGEX 逐章節重新
@@ -102,6 +114,8 @@ export function auditSpoke(finalText: string | null, allowedRelativePaths: strin
       citedPathsOutsideAllowlistDetail: [],
       cannotVerifySectionPresent: false,
       suspectPhrases: [],
+      suspectPhrasesZh: [],
+      suspectPhrasesEn: [],
     };
   }
 
@@ -146,7 +160,9 @@ export function auditSpoke(finalText: string | null, allowedRelativePaths: strin
     (p) => !allowedSet.has(p) && !pathsOnlyInCannotVerify.has(p),
   );
 
-  const suspectPhrases = SUSPECT_PHRASES.filter((phrase) => finalText.includes(phrase));
+  const suspectPhrasesZh = SUSPECT_PHRASES.filter((phrase) => finalText.includes(phrase));
+  const suspectPhrasesEn = SUSPECT_PHRASES_EN.filter((phrase) => finalText.includes(phrase));
+  const suspectPhrases = [...suspectPhrasesZh, ...suspectPhrasesEn];
 
   const citedPathsOutsideAllowlistDetail: OutsideAllowlistCitation[] = citedPathsOutsideAllowlist.map((p) => ({
     path: p,
@@ -162,5 +178,7 @@ export function auditSpoke(finalText: string | null, allowedRelativePaths: strin
     citedPathsOutsideAllowlistDetail,
     cannotVerifySectionPresent,
     suspectPhrases,
+    suspectPhrasesZh,
+    suspectPhrasesEn,
   };
 }

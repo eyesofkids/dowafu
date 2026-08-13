@@ -9,6 +9,7 @@ const OPENAI_CONFIG: ResponsesAdapterConfig = {
   apiKey: "unused-in-this-test",
   store: false,
   reasoning: { style: "openai", allowed: ["medium"] },
+  lang: "zh",
 };
 
 const DEEPSEEK_CONFIG: ResponsesAdapterConfig = {
@@ -16,6 +17,7 @@ const DEEPSEEK_CONFIG: ResponsesAdapterConfig = {
   apiKey: "unused-in-this-test",
   store: false,
   reasoning: { style: "deepseek", allowed: [] },
+  lang: "zh",
 };
 
 // plan_dispatch_v1.5.md §8：「構造含 assistant turn 的 conversation，呼叫 adapter 的
@@ -77,4 +79,19 @@ test("buildResponsesRequest：enableTools:false（收束呼叫）不帶 tools �
   const conv: Conversation = { systemPrompt: "s", turns: [{ role: "user", text: "hi" }] };
   const params = buildResponsesRequest(conv, { model: "gpt-5.6-luna", enableTools: false }, OPENAI_CONFIG) as unknown as Record<string, unknown>;
   assert.equal("tools" in params, false);
+});
+
+// i18n_classification_t2.md §三之3：read_file 工具 description 是 C 類雙語常數，由
+// config.lang 選用，三支 adapter 共用同一組常數（見 read-file-tool-description.ts）。
+test("buildResponsesRequest：read_file 工具的 description 依 config.lang 換語言（zh／en，手寫字面量）", () => {
+  const conv: Conversation = { systemPrompt: "s", turns: [{ role: "user", text: "hi" }] };
+  const paramsZh = buildResponsesRequest(conv, { model: "gpt-5.6-luna" }, OPENAI_CONFIG) as unknown as {
+    tools: Array<{ description: string }>;
+  };
+  assert.equal(paramsZh.tools[0].description, "讀取指定路徑的檔案內容");
+
+  const paramsEn = buildResponsesRequest(conv, { model: "gpt-5.6-luna" }, { ...OPENAI_CONFIG, lang: "en" }) as unknown as {
+    tools: Array<{ description: string }>;
+  };
+  assert.equal(paramsEn.tools[0].description, "Read the contents of the file at the given path.");
 });

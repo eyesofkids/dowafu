@@ -3,15 +3,19 @@
 
 import { appendFile, mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
-import type { SpokeRunResult } from "./types.js";
+import type { Lang, SpokeRunResult } from "./types.js";
 import type { AuditResult, OutsideAllowlistCitation } from "./audit.js";
 import type { ToolCallAudit } from "./tool-call-audit.js";
 import { maskDeep, maskString } from "./mask.js";
+import { m } from "./messages.js";
 
 export class RunLogWriter {
   private queue: Promise<void> = Promise.resolve();
 
-  constructor(private readonly filePath: string) {}
+  constructor(
+    private readonly filePath: string,
+    private readonly lang: Lang,
+  ) {}
 
   // plan_dispatch_v2.4.md §12（一）：ts 語意為「append 被呼叫的當下」，即事件發生時刻，
   // 故在此（方法本體）取時間，不得延後到 queue 的 then callback 內——落盤時間會被檔案
@@ -25,7 +29,7 @@ export class RunLogWriter {
     // append 都不會執行，且 flush() 也會 rejected，等於一次瞬時寫入失敗讓該次派工
     // 其餘所有事件全部遺失。失敗以 stderr 留痕，不靜默吞掉。
     this.queue = this.queue.then(() => appendFile(this.filePath, line, "utf8")).catch((err) => {
-      console.error(`run.jsonl 寫入失敗：${maskString(String(err))}`);
+      console.error(m(this.lang, "runLogWriteFailed", maskString(String(err))));
     });
   }
 
@@ -73,9 +77,17 @@ export async function writeRawFiles(outDir: string, agent: string, result: Spoke
 
 // §13：「原文產出」欄——failed 無產出；其餘（含 truncated:*）皆落檔，即使不完整，
 // 因為那是已經付過錢的內容。
-export async function writeSpokeText(outDir: string, agent: string, result: SpokeRunResult): Promise<void> {
+export async function writeSpokeText(
+  outDir: string,
+  agent: string,
+  result: SpokeRunResult,
+  lang: Lang,
+): Promise<void> {
   if (result.status === "failed") return;
-  const content = result.finalText ?? `(無法取得完整回報，執行狀態：${result.status})`;
+  // issue_log_v2.5.md 待修 #7：本函式一度是唯一沒有遮蔽的落檔路徑——`raw/` 與 `run.jsonl`
+  // 都經 maskDeep，只有這裡直寫 finalText。spoke 讀的是被審專案的原始碼，那裡若有硬編金鑰，
+  // 它可以照抄進「原文」欄（§16 模板要求逐字複製），於是秘密落到一個不經遮蔽的檔案裡。
+  const content = maskString(result.finalText ?? m(lang, "noFullReportAvailable", result.status));
   await writeFile(path.join(outDir, `${agent}.md`), content, "utf8");
 }
 
@@ -87,18 +99,19 @@ export async function persistSpokeResult(
   outDir: string,
   result: SpokeRunResult,
   onError: (message: string) => void,
+  lang: Lang,
 ): Promise<void> {
   try {
-    await writeSpokeText(outDir, result.agent, result);
+    await writeSpokeText(outDir, result.agent, result, lang);
   } catch (err) {
-    const msg = `落檔失敗（${result.agent}.md）：${maskString(String(err))}`;
+    const msg = m(lang, "persistTextFailed", result.agent, maskString(String(err)));
     result.errors.push(msg);
     onError(msg);
   }
   try {
     await writeRawFiles(outDir, result.agent, result);
   } catch (err) {
-    const msg = `落檔失敗（${result.agent} raw/）：${maskString(String(err))}`;
+    const msg = m(lang, "persistRawFailed", result.agent, maskString(String(err)));
     result.errors.push(msg);
     onError(msg);
   }
@@ -108,33 +121,36 @@ function formatStoreCell(store: SpokeRunResult["store"]): string {
   return store === "false" ? "false" : store;
 }
 
-const BUDGET_TRIGGER_LABEL: Record<NonNullable<SpokeRunResult["budgetTrigger"]>, string> = {
-  total: "總量",
-  reasoning: "推理累積",
-  reasoning_round: "推理單輪尖峰",
-};
-
 // §14：truncated:budget 需顯示觸發來源；reasoning_round 是「模型在某一輪卡住」的異常訊號，
 // 與正常的總量／累積推理超支後續動作不同（前者查 prompt 或換 effort，後者調門檻），
 // 須顯眼區分，不能跟其他 truncated:budget 混在一起看起來像同一種情況。
-function formatStatusCell(r: SpokeRunResult): string {
+function formatStatusCell(r: SpokeRunResult, lang: Lang): string {
   if (r.status !== "truncated:budget" || !r.budgetTrigger) return r.status;
-  const label = BUDGET_TRIGGER_LABEL[r.budgetTrigger];
-  const flag = r.budgetTrigger === "reasoning_round" ? "⚠ 異常尖峰・" : "";
+  const label = m(lang, "budgetTriggerLabel", r.budgetTrigger);
+  const flag = r.budgetTrigger === "reasoning_round" ? m(lang, "anomalySpikeFlag") : "";
   return `${r.status}（${flag}${label}）`;
 }
 
 // plan_dispatch_v2.0.md §15（二）：清單外引用附出現章節與疑似縮寫來源，讓讀者不必自己去猜
 // （issue_log_v2.0.md 2026-08-07：曾有 hub 因為裸字串誤判成稽核器的 bug，推錯了方向）。
-function formatOutsideAllowlistCell(detail: OutsideAllowlistCitation[]): string {
-  if (detail.length === 0) return "無";
+function formatOutsideAllowlistCell(detail: OutsideAllowlistCitation[], lang: Lang): string {
+  if (detail.length === 0) return m(lang, "noneLabel");
   return detail
     .map((d) => {
-      const sectionPart = d.section ? `「${d.section}」節` : "章節外";
-      const suffixPart = d.suffixOf ? `；疑似 ${d.suffixOf} 的縮寫` : "";
-      return `${d.path}（${sectionPart}${suffixPart}）`;
+      const sectionPart = d.section ? m(lang, "outsideAllowlistSection", d.section) : m(lang, "outsideAllowlistNoSection");
+      const suffixPart = d.suffixOf ? m(lang, "outsideAllowlistSuffixNote", d.suffixOf) : "";
+      return m(lang, "outsideAllowlistEntry", d.path, `${sectionPart}${suffixPart}`);
     })
     .join(",");
+}
+
+// plan_i18n_v1.2.md §4.1：SUSPECT_PHRASES 中英兩套並存比對，summary.md 分開標示是哪一套
+// 命中——日後調整這份清單時才有資料可依據，不必再猜一次。
+function formatSuspectPhrasesDetail(a: AuditResult, lang: Lang): string {
+  const parts: string[] = [];
+  if (a.suspectPhrasesZh.length > 0) parts.push(`zh:${a.suspectPhrasesZh.join(",")}`);
+  if (a.suspectPhrasesEn.length > 0) parts.push(`en:${a.suspectPhrasesEn.join(",")}`);
+  return parts.length > 0 ? parts.join(" / ") : m(lang, "noneLabel");
 }
 
 export function buildSummaryMarkdown(
@@ -142,6 +158,7 @@ export function buildSummaryMarkdown(
   results: SpokeRunResult[],
   audits: Map<string, AuditResult>,
   toolCallAudits: Map<string, ToolCallAudit>,
+  lang: Lang,
 ): string {
   const rows = results.map((r) => {
     const a = audits.get(r.agent);
@@ -150,35 +167,37 @@ export function buildSummaryMarkdown(
     // plan_dispatch_v2.6.md §26 規格四：hub 會讀的地方才有用（「順序放大量」印進乾跑報表
     // 後 hub 才真的重排清單，第 10 次派工，省 52%），放最前面顯眼標示。
     if (r.unknownUsageKeys.length > 0) {
-      cells.push(`⚠ 未知 usage 欄位：${r.provider} ${r.unknownUsageKeys.join(", ")}`);
+      cells.push(m(lang, "unknownUsageKeysWarning", r.provider, r.unknownUsageKeys.join(", ")));
     }
     // §15（一）：沒看程式碼就作答的簽名，放最前面顯眼標示——見 tool-call-audit.ts。
     if (t?.zeroSourceRead) {
-      cells.push(`⚠ 零原始碼讀取（允許 ${t.allowedReadsCount} 檔）`);
+      cells.push(m(lang, "zeroSourceReadWarning", t.allowedReadsCount));
     }
     if (t) {
-      cells.push(`工具呼叫:${t.total}（允許 ${t.allowed}／拒絕 ${t.rejected}）`);
+      cells.push(m(lang, "toolCallStats", t.total, t.allowed, t.rejected));
     }
     if (a) {
       cells.push(
-        `收尾句:${a.finalLinePass ? "pass" : "fail"}`,
-        `觀察:${a.observationCount ?? "無法計數"}`, // v1.9 §15：null（數不出來）與 0（明確為零）須可區分，不得混印
-        `清單外引用:${formatOutsideAllowlistCell(a.citedPathsOutsideAllowlistDetail)}`,
-        `無法驗證欄:${a.cannotVerifySectionPresent ? "pass" : "fail"}`,
-        `疑似禁止內容:${a.suspectPhrases.length > 0 ? a.suspectPhrases.join(",") : "無"}`,
+        m(lang, "closingLineCell", a.finalLinePass ? "pass" : "fail"),
+        // v1.9 §15：null（數不出來）與 0（明確為零）須可區分，不得混印
+        m(
+          lang,
+          "observationCountCell",
+          a.observationCount !== null ? String(a.observationCount) : m(lang, "cannotCountObservations"),
+        ),
+        m(lang, "outsideAllowlistCell", formatOutsideAllowlistCell(a.citedPathsOutsideAllowlistDetail, lang)),
+        m(lang, "cannotVerifySectionCell", a.cannotVerifySectionPresent ? "pass" : "fail"),
+        m(lang, "suspectPhrasesCell", formatSuspectPhrasesDetail(a, lang)),
       );
     }
-    const auditCell = cells.length > 0 ? cells.join(" / ") : "(無法稽核)";
+    const auditCell = cells.length > 0 ? cells.join(" / ") : m(lang, "auditUnavailable");
     // plan_fixes_v1.0.md §4：無價目資料須與「估出來是 $0」區分，不能印成空白或 0——
     // 兩者對讀者的意義完全不同（沒資料 vs 免費）。
-    const costCell = r.costUsd === null ? "無價目資料" : `$${r.costUsd.toFixed(4)}`;
-    return `| ${r.agent} | ${r.provider} | ${r.api} | ${r.modelRequested} | ${r.modelReturned ?? "—"} | ${r.effort ?? "—"} | ${formatStoreCell(r.store)} | ${formatStatusCell(r)} | ${r.latencyMs}ms | ${r.usage.totalTokens} | ${costCell} | ${auditCell} |`;
+    const costCell = r.costUsd === null ? m(lang, "noPricingData") : `$${r.costUsd.toFixed(4)}`;
+    return `| ${r.agent} | ${r.provider} | ${r.api} | ${r.modelRequested} | ${r.modelReturned ?? "—"} | ${r.effort ?? "—"} | ${formatStoreCell(r.store)} | ${formatStatusCell(r, lang)} | ${r.latencyMs}ms | ${r.usage.totalTokens} | ${costCell} | ${auditCell} |`;
   });
 
-  return `# dispatch summary — ${ticketId}
-
-| agent | provider | api | model(請求) | model(回傳) | effort | store | status | 耗時 | token | 估算成本 | 稽核 |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+  return `${m(lang, "summaryHeader", ticketId)}
 ${rows.join("\n")}
 `;
 }
@@ -189,7 +208,8 @@ export async function writeSummary(
   results: SpokeRunResult[],
   audits: Map<string, AuditResult>,
   toolCallAudits: Map<string, ToolCallAudit>,
+  lang: Lang,
 ): Promise<void> {
-  const md = buildSummaryMarkdown(ticketId, results, audits, toolCallAudits);
+  const md = buildSummaryMarkdown(ticketId, results, audits, toolCallAudits, lang);
   await writeFile(path.join(outDir, "summary.md"), md, "utf8");
 }

@@ -7,6 +7,7 @@ import type {
   Adapter,
   BudgetTrigger,
   Conversation,
+  Lang,
   NormalizedUsage,
   RateLimitHit,
   RawErrorEntry,
@@ -17,7 +18,7 @@ import type {
 } from "./types.js";
 import type { ResolvedSpoke } from "./validate.js";
 import { buildFinalizeUserText, buildFirstUserText, buildSystemPrompt } from "./prompt.js";
-import { ALLOWLIST_REJECT_MESSAGE, checkAllowlist } from "./whitelist.js";
+import { allowlistRejectMessage, checkAllowlist } from "./whitelist.js";
 import { findUnknownUsageKeys, sumUsage, usageProviderKeyFor } from "./usage.js";
 import { estimateCostUsd } from "./cost.js";
 import { describeError, ProviderHttpError } from "./mask.js";
@@ -25,10 +26,23 @@ import { parseRetryAfter } from "./rate-limit.js";
 import { RawIntegrityError } from "./raw-integrity.js";
 import { classifyError } from "./error-classify.js";
 import type { Semaphore } from "./semaphore.js";
+import { m } from "./messages.js";
 
 const MAX_FILE_BYTES = 200 * 1024; // §13：單檔 200KB 上限，防「單輪讀入巨檔」異常
 const MAX_ROUNDS = 60; // 安全上限，遠高於實務上的 --max-tool-calls，純防無窮迴圈 bug
 
+// i18n_classification_t2.md §三之1：這兩則都成為 executeToolCall／runSpoke 的
+// resultText，被 push 進 conv.turns 送往外部 API——消費者是 spoke 不是人類，歸 C 類，
+// 不進 messages.ts，由 spoke.lang 直接選用（同 whitelist.ts 的 allowlistRejectMessage）。
+const FILE_TRUNCATED_SUFFIX = "\n...(檔案超過 200KB 上限，內容已截斷)";
+const FILE_TRUNCATED_SUFFIX_EN = "\n...(file exceeds the 200KB limit; content truncated)";
+const TOOL_LIMIT_REACHED_MESSAGE = "已達 --max-tool-calls 上限，未執行";
+const TOOL_LIMIT_REACHED_MESSAGE_EN = "The --max-tool-calls limit has been reached; not executed.";
+
+// plan_i18n_v1.3.md §四之2 #4：formatEvent（cli-args.ts）把這些事件印給人看，靠的是
+// 「上游已遮蔽」的傳遞性——cli.ts 的 onEvent 只做 log.info(formatEvent(event, lang))，
+// 自己不遮蔽。新增欄位時務必自行確認來源已經過 maskString／maskDeep，不要假設 formatEvent
+// 或 onEvent 會補這一步，它們不會。
 export type RunEvent =
   | { type: "spoke_start"; agent: string; provider: string; model: string }
   | { type: "round"; agent: string; round: number; usage: NormalizedUsage; hasToolCalls: boolean }
@@ -83,7 +97,7 @@ async function executeToolCall(
 
   if (!check.allowed) {
     return {
-      resultText: ALLOWLIST_REJECT_MESSAGE,
+      resultText: allowlistRejectMessage(spoke.lang),
       log: { path: requestedPath, allowed: false, reason: check.reason, startedAt, durationMs: Date.now() - startedAt },
     };
   }
@@ -92,7 +106,8 @@ async function executeToolCall(
     const buf = await readFile(check.realPath);
     let content = buf.toString("utf8");
     if (buf.byteLength > MAX_FILE_BYTES) {
-      content = buf.subarray(0, MAX_FILE_BYTES).toString("utf8") + "\n...(檔案超過 200KB 上限，內容已截斷)";
+      const suffix = spoke.lang === "en" ? FILE_TRUNCATED_SUFFIX_EN : FILE_TRUNCATED_SUFFIX;
+      content = buf.subarray(0, MAX_FILE_BYTES).toString("utf8") + suffix;
     }
     return {
       resultText: content,
@@ -100,7 +115,7 @@ async function executeToolCall(
     };
   } catch {
     return {
-      resultText: ALLOWLIST_REJECT_MESSAGE,
+      resultText: allowlistRejectMessage(spoke.lang),
       log: { path: requestedPath, allowed: false, reason: "not_found", startedAt, durationMs: Date.now() - startedAt },
     };
   }
@@ -129,6 +144,7 @@ async function sendWithResilience(
     rateLimitHits: RateLimitHit[];
     onEvent: (event: RunEvent) => void;
     addWaitedMs: (ms: number) => void;
+    lang: Lang;
   },
 ): Promise<SendOutcome> {
   let generalAttempt = 0;
@@ -157,7 +173,7 @@ async function sendWithResilience(
         // §8：raw 完整性違反是實作缺陷，不是 API 錯誤——重試只會確定性地再次觸發同一個
         // bug（下一輪的 conv 結構仍帶著同樣的漏洞），不消耗任何網路呼叫也不可能成功。
         // 立即判定失敗，不進入一般失敗的重試計數。
-        recordError(err, `raw 完整性檢查失敗（實作缺陷，不重試）：${err.message}`, null);
+        recordError(err, m(ctx.lang, "rawIntegrityCheckFailed", err.message), null);
         return { ok: false, kind: "failed" };
       }
 
@@ -166,12 +182,22 @@ async function sendWithResilience(
       if (info.is429) {
         rateLimitAttempt++;
         if (rateLimitAttempt > cfg.rateLimitRetries) {
-          recordError(err, `429 撞牆次數超過 --rate-limit-retries (${cfg.rateLimitRetries})`, info.status ?? 429, info.errorBody);
+          recordError(
+            err,
+            m(ctx.lang, "rateLimitRetriesExceeded", cfg.rateLimitRetries),
+            info.status ?? 429,
+            info.errorBody,
+          );
           return { ok: false, kind: "rate_limited" };
         }
         const { seconds, source } = parseRetryAfter(info.retryAfterHeader, info.message, rateLimitAttempt - 1);
         if (seconds > cfg.maxRateWaitSec) {
-          recordError(err, `429 要求等待 ${seconds}s，超過 --max-rate-wait ${cfg.maxRateWaitSec}s`, info.status ?? 429, info.errorBody);
+          recordError(
+            err,
+            m(ctx.lang, "rateLimitWaitExceeded", seconds, cfg.maxRateWaitSec),
+            info.status ?? 429,
+            info.errorBody,
+          );
           return { ok: false, kind: "rate_limited" };
         }
         ctx.rateLimitHits.push({ at: Date.now(), waitSeconds: seconds, source });
@@ -266,6 +292,7 @@ export async function runSpoke(spoke: ResolvedSpoke, adapter: Adapter, ticketDir
         addWaitedMs: (ms) => {
           waitedMs += ms;
         },
+        lang: spoke.lang,
       },
     );
 
@@ -320,7 +347,7 @@ export async function runSpoke(spoke: ResolvedSpoke, adapter: Adapter, ticketDir
 
     if (!result.usage.available) {
       status = "truncated:usage_unavailable";
-      errors.push(`round ${round}: usage 不可用（usageMissing），保守收束`);
+      errors.push(m(spoke.lang, "usageUnavailableRound", round));
       finalText = result.meta.text ?? finalText;
       if (toolCallsThisRound.length === 0 || finalizeMode) break;
       finalizeMode = true;
@@ -335,7 +362,7 @@ export async function runSpoke(spoke: ResolvedSpoke, adapter: Adapter, ticketDir
 
     if (finalizeMode) {
       // 收束呼叫理論上不帶 tool，仍收到 tool call 屬異常，防禦性丟棄不執行
-      errors.push(`round ${round}: 收束呼叫仍回傳 tool call，忽略`);
+      errors.push(m(spoke.lang, "finalizeToolCallIgnored", round));
       finalText = result.meta.text;
       break;
     }
@@ -386,7 +413,8 @@ export async function runSpoke(spoke: ResolvedSpoke, adapter: Adapter, ticketDir
         };
         toolCalls.push(log);
         options.onEvent({ type: "tool_call", agent: spoke.agent, path: log.path, allowed: false, reason: log.reason });
-        conv.turns.push({ role: "tool", callId: call.id, result: "已達 --max-tool-calls 上限，未執行" });
+        const limitMessage = spoke.lang === "en" ? TOOL_LIMIT_REACHED_MESSAGE_EN : TOOL_LIMIT_REACHED_MESSAGE;
+        conv.turns.push({ role: "tool", callId: call.id, result: limitMessage });
         continue;
       }
       const { resultText, log } = await executeToolCall(call, spoke, options.repoRoot);

@@ -3,7 +3,8 @@
 
 import { readFile } from "node:fs/promises";
 import path from "node:path";
-import { DispatchError } from "./types.js";
+import { DispatchError, type Lang } from "./types.js";
+import { m } from "./messages.js";
 
 export type DispatchRow = {
   agent: string;
@@ -17,16 +18,18 @@ export type SharedDoc = {
   reviewText: string;
 };
 
-// 工單的區塊標記有中英兩套，**由工單自己用哪一套決定這支 spoke 收到哪種語言的 prompt
-// 與回報模板**（使用者裁示 2026-08-10：語言不另設旗標）。理由是旗標會被忘記，而忘了的
-// 後果不是報錯、是「英文問題配中文模板」——spoke 照英文作答，稽核逐字比對中文收尾句，
-// 整份判 fail。標記與模板同源，就不可能對不起來。
-export type TicketLang = "zh" | "en";
+// 語言曾經由工單的區塊標記決定（使用者裁示 2026-08-10：語言不另設旗標；理由是旗標會被
+// 忘記，忘了的後果不是報錯、是「英文問題配中文模板」）。**該裁示已被
+// plan_i18n_v1.3.md §一之5 推翻**：改為 run-level `--lang`／`DISPATCH_LANG` 決定語言
+// （見 validate.ts 的 resolveSpokes），與工單標記無關。中英兩套區塊標記仍並存解析
+// （下方 parseAgentTicket）——那是選欄位鍵用的別名，拿掉英文那套英文工單會直接解析
+// 失敗，跟語言選擇是兩回事。run-level 語言型別（原 TicketLang，T7a 更名為 Lang）已搬去
+// types.ts——它代表的是這個東西而非工單本身的語言，留在 ticket.ts 名實不符；本檔下方
+// 函式簽名仍需要它，故從 types.js 匯入。AgentTicket 本身已不再持有語言欄位。
 
 export type AgentTicket = {
   questions: string;
   allowedReads: string[];
-  lang: TicketLang;
 };
 
 export type Ticket = {
@@ -48,19 +51,19 @@ function isSeparatorRow(cells: string[]): boolean {
 }
 
 // §4：`_dispatch.md`。model/provider/agent 必填，無預設值；留白或寫 "default" 視為缺失。
-export function parseDispatchTable(markdown: string): DispatchRow[] {
+export function parseDispatchTable(markdown: string, lang: Lang): DispatchRow[] {
   const lines = markdown.split(/\r?\n/);
   const firstNonBlank = lines.find((l) => l.trim().length > 0);
   if (firstNonBlank?.trim() !== FORMAT_MARKER) {
     throw new DispatchError(
-      `_dispatch.md 首行須為 ${FORMAT_MARKER}，實際為：${firstNonBlank?.trim() ?? "(空白)"}`,
+      m(lang, "formatMarkerMismatch", FORMAT_MARKER, firstNonBlank?.trim() ?? m(lang, "blankPlaceholder")),
       2,
     );
   }
 
   const headerIndex = lines.findIndex((l) => /^\s*\|\s*agent\s*\|/i.test(l));
   if (headerIndex === -1 || !isSeparatorRow(splitTableRow(lines[headerIndex + 1] ?? ""))) {
-    throw new DispatchError("_dispatch.md 找不到派工表（缺 | agent | ... | 表頭或分隔列）", 2);
+    throw new DispatchError(m(lang, "dispatchTableMissingHeader"), 2);
   }
 
   const headerCells = splitTableRow(lines[headerIndex]).map((c) => c.toLowerCase());
@@ -81,19 +84,23 @@ export function parseDispatchTable(markdown: string): DispatchRow[] {
 
     const isMissing = (v: string) => v.length === 0 || v.toLowerCase() === "default";
     if (isMissing(agent) || isMissing(provider) || isMissing(model)) {
-      throw new DispatchError(
-        `_dispatch.md 第 ${i + 1} 行缺 agent/provider/model 必填欄位（留白或寫 "default" 視為缺失）：${line}`,
-        2,
-      );
+      throw new DispatchError(m(lang, "dispatchRowMissingFields", i + 1, line), 2);
     }
 
     rows.push({ agent, provider, model, effort: effort.length > 0 ? effort : undefined });
   }
 
   if (rows.length === 0) {
-    throw new DispatchError("_dispatch.md 派工表沒有任何資料列", 2);
+    throw new DispatchError(m(lang, "dispatchTableEmpty"), 2);
   }
   return rows;
+}
+
+// plan_i18n_v1.2.md §6.2：「讀檔 → 剝 frontmatter → trim」這個片段跨多處共用（原為
+// validate.ts 私有），放這裡不產生循環——audit.ts 已經 import 本檔。
+export function stripFrontmatter(markdown: string): string {
+  const match = markdown.match(/^---\r?\n[\s\S]*?\r?\n---\r?\n([\s\S]*)$/);
+  return (match ? match[1] : markdown).trim();
 }
 
 // 匯出供 audit.ts 重用（回報模板同樣是 `# 標題` 結構）。
@@ -131,7 +138,7 @@ function parseBulletList(body: string): string[] {
 }
 
 // §4：`_shared.md`。「待審段落」缺失或空即中止；「前提」缺失為警告（空前提合法）。
-export function parseSharedDoc(markdown: string): SharedDoc {
+export function parseSharedDoc(markdown: string, lang: Lang): SharedDoc {
   const sections = splitTopLevelSections(markdown);
 
   const reviewText = sections.get("待審段落") ?? sections.get("Under review");
@@ -145,17 +152,10 @@ export function parseSharedDoc(markdown: string): SharedDoc {
         (k) => k !== "待審段落" && k !== "Under review" && !k.startsWith("前提") && k !== "Premises",
       );
       if (stray.length > 0) {
-        throw new DispatchError(
-          `_shared.md 的「# 待審段落」有標題但內容為空——被後面這些 \`#\` 標題切斷了：` +
-            `${stray.map((s) => `「# ${s}」`).join("、")}。` +
-            `工單以 \`#\` 切分區塊，內嵌的規劃書若自帶 \`#\` 標題請降成 \`##\`。` +
-            `（注意：在「# 待審段落」下面補一行文字雖然能通過檢查，但規劃書本體仍會留在` +
-            `後面那個區塊裡，spoke 收到的待審段落等於是空的。）`,
-          2,
-        );
+        throw new DispatchError(m(lang, "strayHeadingsCutReviewSection", stray), 2);
       }
     }
-    throw new DispatchError('_shared.md 缺「# 待審段落」（或英文工單的「# Under review」）或內容為空', 2);
+    throw new DispatchError(m(lang, "missingReviewSection"), 2);
   }
 
   const premisesBody = sections.get("前提（不受審）") ?? sections.get("前提") ?? sections.get("Premises");
@@ -165,27 +165,26 @@ export function parseSharedDoc(markdown: string): SharedDoc {
 }
 
 // §4：`<agent>.md`。「具體問題」缺失或空即中止；「允許讀取」缺失為警告（空清單合法）。
-export function parseAgentTicket(markdown: string): AgentTicket {
+export function parseAgentTicket(markdown: string, lang: Lang): AgentTicket {
   const sections = splitTopLevelSections(markdown);
 
-  // 先中文後英文。命中哪一套就是這份工單的語言——不看內文，只看標記，因為內文可能
-  // 中英混雜（英文規劃書配中文問題是常見寫法），標記則是作者明確選的。
+  // 先中文後英文：命中哪一套只決定用哪一組欄位鍵去讀值——不再代表語言選擇，語言改由
+  // run-level `--lang` 決定（見上方型別註解、plan_i18n_v1.3.md §一之5）。
   const zhQuestions = sections.get("具體問題");
   const enQuestions = sections.get("Questions");
-  const lang: TicketLang = zhQuestions !== undefined ? "zh" : enQuestions !== undefined ? "en" : "zh";
   const questions = zhQuestions ?? enQuestions;
   if (!questions || questions.length === 0) {
-    throw new DispatchError('<agent>.md 缺「# 具體問題」（或英文工單的「# Questions」）或內容為空', 2);
+    throw new DispatchError(m(lang, "missingQuestionsSection"), 2);
   }
 
   const allowedBody = sections.get("允許讀取") ?? sections.get("Allowed reads");
   const allowedReads = allowedBody ? parseBulletList(allowedBody) : [];
 
-  return { questions, allowedReads, lang };
+  return { questions, allowedReads };
 }
 
 // 檔案系統存取層：讀工單目錄、組出完整 Ticket。
-export async function loadTicket(ticketDir: string): Promise<Ticket> {
+export async function loadTicket(ticketDir: string, lang: Lang): Promise<Ticket> {
   const dispatchPath = path.join(ticketDir, "_dispatch.md");
   const sharedPath = path.join(ticketDir, "_shared.md");
 
@@ -193,17 +192,17 @@ export async function loadTicket(ticketDir: string): Promise<Ticket> {
   try {
     dispatchText = await readFile(dispatchPath, "utf8");
   } catch {
-    throw new DispatchError(`找不到 ${dispatchPath}`, 2);
+    throw new DispatchError(m(lang, "fileNotFound", dispatchPath), 2);
   }
   let sharedText: string;
   try {
     sharedText = await readFile(sharedPath, "utf8");
   } catch {
-    throw new DispatchError(`找不到 ${sharedPath}`, 2);
+    throw new DispatchError(m(lang, "fileNotFound", sharedPath), 2);
   }
 
-  const rows = parseDispatchTable(dispatchText);
-  const shared = parseSharedDoc(sharedText);
+  const rows = parseDispatchTable(dispatchText, lang);
+  const shared = parseSharedDoc(sharedText, lang);
 
   const perAgent = new Map<string, AgentTicket>();
   for (const row of rows) {
@@ -212,9 +211,9 @@ export async function loadTicket(ticketDir: string): Promise<Ticket> {
     try {
       agentText = await readFile(agentPath, "utf8");
     } catch {
-      throw new DispatchError(`找不到 ${agentPath}（_dispatch.md 列了 agent "${row.agent}"）`, 2);
+      throw new DispatchError(m(lang, "agentFileNotFound", agentPath, row.agent), 2);
     }
-    perAgent.set(row.agent, parseAgentTicket(agentText));
+    perAgent.set(row.agent, parseAgentTicket(agentText, lang));
   }
 
   return { ticketDir, rows, shared, perAgent };

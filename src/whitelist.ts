@@ -3,6 +3,7 @@
 
 import fs from "node:fs";
 import path from "node:path";
+import type { Lang } from "./types.js";
 
 export type AllowlistRejectReason = "not_found" | "not_in_allowlist" | "outside_repo";
 
@@ -49,4 +50,13 @@ export function checkAllowlist(
 }
 
 // 統一回給 spoke 的訊息：不區分「不存在」與「不在允許範圍」。
-export const ALLOWLIST_REJECT_MESSAGE = "不存在或不在允許範圍";
+//
+// i18n_classification_t2.md §三之2：這則訊息經 executeToolCall 當 resultText 送回對話，
+// 消費者是 spoke 不是人類——歸 C 類，不進 messages.ts，由 spoke.lang 直接選用兩套並存的
+// 雙語常數（同 runner.ts 本地的 200KB 截斷／--max-tool-calls 上限兩則走同一模式）。
+const ALLOWLIST_REJECT_MESSAGE = "不存在或不在允許範圍";
+const ALLOWLIST_REJECT_MESSAGE_EN = "Not found or outside the allowed list";
+
+export function allowlistRejectMessage(lang: Lang): string {
+  return lang === "en" ? ALLOWLIST_REJECT_MESSAGE_EN : ALLOWLIST_REJECT_MESSAGE;
+}

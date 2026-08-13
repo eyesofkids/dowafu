@@ -443,6 +443,33 @@ test("rawErrors：成功的 spoke 為空陣列（沒撞過任何錯誤）", asyn
   assert.deepEqual(result.rawErrors, []);
 });
 
+// plan_i18n_impl_tickets T5 格式斷言第 2／4 條：rateLimitWaitExceeded 是 runner.ts 唯一
+// 有 2 個同型 number 參數（s／cap）的 key，餵差距懸殊的值（999s 對 5s）確保對調會被抓到；
+// 手寫字面量，不透過 m() 重建；中英兩份都斷言。retry-after header 給固定的 "999"，
+// parseRetryAfter 會原樣解析成 999（見 rate-limit.ts 的 header 分支，不受 backoff 影響）。
+test("429 要求等待秒數超過 --max-rate-wait：訊息依 lang 換語言，s／cap 手寫字面量、不對稱（zh／en）", async () => {
+  const { adapter: adapterZh } = createScriptedAdapter([
+    { throwStatus: 429, message: "rate limited", headers: { "retry-after": "999" } },
+  ]);
+  const resultZh = await runSpoke(SPOKE, adapterZh, "tmp/dispatch/fake-ticket", mkOptions({ maxRateWaitSec: 5 }));
+  assert.equal(resultZh.status, "failed");
+  assert.ok(
+    resultZh.errors.includes("429 要求等待 999s，超過 --max-rate-wait 5s"),
+    `實際 errors：${JSON.stringify(resultZh.errors)}`,
+  );
+
+  const enSpoke = { ...SPOKE, lang: "en" as const };
+  const { adapter: adapterEn } = createScriptedAdapter([
+    { throwStatus: 429, message: "rate limited", headers: { "retry-after": "999" } },
+  ]);
+  const resultEn = await runSpoke(enSpoke, adapterEn, "tmp/dispatch/fake-ticket", mkOptions({ maxRateWaitSec: 5 }));
+  assert.equal(resultEn.status, "failed");
+  assert.ok(
+    resultEn.errors.includes("429 requested a 999s wait, exceeding --max-rate-wait 5s"),
+    `實際 errors：${JSON.stringify(resultEn.errors)}`,
+  );
+});
+
 test("round_error 事件：每次錯誤都透過 onEvent 發出，攜帶 round／status／message", async () => {
   const { adapter } = createScriptedAdapter([{ throwStatus: 400, message: "bad request" }]);
   const events: RunEvent[] = [];

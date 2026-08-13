@@ -24,17 +24,19 @@ import { ensureOutDir, persistSpokeResult, RunLogWriter, writeSummary } from "./
 import { registerSecrets, maskString, maskDeep } from "./mask.js";
 import { SECRET_ENV_VARS } from "./secret-env.js";
 import { resolveDispatchHome, loadDispatchEnv } from "./dispatch-home.js";
-import { bundledProvidersPath, getPackageVersion } from "./pkg-info.js";
+import { bundledProvidersPath, getPackageVersion, getCommandName } from "./pkg-info.js";
 import { checkGitignore } from "./gitignore-check.js";
 import { buildJsonPayload, buildJsonPlan } from "./json-output.js";
-import { parseArgs, formatEvent, HELP_TEXT } from "./cli-args.js";
+import { parseArgs, formatEvent, resolveLang, resolveFallbackLang, buildStdoutSummary } from "./cli-args.js";
+import { m } from "./messages.js";
 import type { SpokeRunResult } from "./types.js";
 
 function createAdapterFor(spoke: ResolvedSpoke): Adapter {
   const apiKey = process.env[`${spoke.provider.toUpperCase()}_API_KEY`];
   if (!apiKey) {
-    // resolveSpokes 已檢查過，此處為型別窄化防禦
-    throw new DispatchError(`內部錯誤：${spoke.provider} 的 API key 遺失`, 2);
+    // resolveSpokes 已檢查過，此處為型別窄化防禦。用 spoke.lang 而非 langRaw／options.lang——
+    // 它是 ResolvedSpoke 上已經過 resolveLang 判定的權威值，與 run-level lang 同一個來源。
+    throw new DispatchError(m(spoke.lang, "apiKeyMissing", spoke.provider), 2);
   }
   // §29 規格十：窮盡式分派，不留「其餘落到 gemini」的 fallback——那會讓未來第四家 provider
   // 靜默走錯 adapter。switch 缺 case 時 TypeScript 因「不是每條路徑都回傳值」編譯失敗。
@@ -45,14 +47,16 @@ function createAdapterFor(spoke: ResolvedSpoke): Adapter {
         apiKey,
         store: spoke.providerConfig.store,
         reasoning: spoke.providerConfig.reasoning,
+        lang: spoke.lang,
       });
     case "gemini-native":
-      return createGeminiAdapter({ apiKey, baseURL: spoke.providerConfig.baseURL });
+      return createGeminiAdapter({ apiKey, baseURL: spoke.providerConfig.baseURL, lang: spoke.lang });
     case "anthropic-messages":
       return createAnthropicAdapter({
         baseURL: spoke.providerConfig.baseURL,
         apiKey,
         reasoning: spoke.providerConfig.reasoning,
+        lang: spoke.lang,
       });
   }
 }
@@ -76,9 +80,23 @@ async function confirm(message: string, output: NodeJS.WritableStream): Promise<
 }
 
 async function main() {
-  const parsed = parseArgs(process.argv.slice(2));
+  // plan_i18n_v1.3.md §三：DISPATCH_HOME → .env → secrets 全部搬到 parseArgs 之前，
+  // 因為這段現在跑在 --help 之前，任何會拋的東西都會擋住求助路徑——resolveDispatchHome／
+  // loadDispatchEnv 內部已各自降級失敗為「沒有設定檔」。§24.4：明文禁止讀 cwd 的 .env，
+  // 故不用 `import "dotenv/config"`（那會讀 cwd），改為明確指定 dispatchHome 下的路徑。
+  const dispatchHome = resolveDispatchHome();
+  if (dispatchHome !== null) loadDispatchEnv(dispatchHome);
+  registerSecrets(SECRET_ENV_VARS.map((k) => process.env[k]));
+
+  // plan_i18n_impl_tickets T3：parseArgs 自己的解析期錯誤、以及 --help 本身的輸出，都發生在
+  // resolveLang 判定出權威語言之前——這裡只能用「DISPATCH_LANG 有效就用它，否則內建預設 en」
+  // 這個不會拋例外的簡化判定（resolveFallbackLang，見 cli-args.ts）。--lang 旗標的值在這個
+  // 時間點還沒被驗證，不查它（v1.3 §二之2 #5／#6：help／version 的語言不受 --lang 影響）。
+  const messageLang = resolveFallbackLang(process.env.DISPATCH_LANG);
+
+  const parsed = parseArgs(process.argv.slice(2), messageLang);
   if (parsed.mode === "help") {
-    console.log(HELP_TEXT);
+    console.log(m(messageLang, "helpText", getCommandName()));
     return;
   }
   if (parsed.mode === "version") {
@@ -89,12 +107,13 @@ async function main() {
   const { ticketDir, options } = parsed;
   const log = makeLogger(options.json);
 
-  // §10 步驟 0：設定解析——DISPATCH_HOME → .env → providers 來源 → formatVersion。
-  // 全部在任何 API 呼叫之前，成本為零。§24.4：明文禁止讀 cwd 的 .env，故不用
-  // `import "dotenv/config"`（那會讀 cwd），改為明確指定 dispatchHome 下的路徑。
-  const dispatchHome = resolveDispatchHome();
-  loadDispatchEnv(dispatchHome);
-  registerSecrets(SECRET_ENV_VARS.map((k) => process.env[k]));
+  // plan_i18n_v1.3.md §二：--lang > DISPATCH_LANG > 內建預設，含九項組合判定
+  // （fail closed，無效值 exit 2）。help／version 已在上面短路，不會走到這裡。
+  //
+  // T1 驗收帶出的第一條（T3 執行）：語言的權威來源只有這行的回傳值。CLI 層訊息一律用
+  // 這個 lang，不得讀 options.langRaw——後者是未經 parseLang 驗證的原始字串，可能是
+  // undefined 或未正規化的 "ZH-TW"，誤用會靜默走中文分支且 typecheck 不會紅。
+  const lang = resolveLang(options.langRaw, process.env.DISPATCH_LANG);
 
   // v1.10 §9：--repo-root 只影響白名單邊界、.claude/agents 位置、_docs/ 拒絕判定；
   // 工單目錄仍相對 cwd 解析，不要求位於 repoRoot 內（見 resolveSpokes 呼叫處）。
@@ -102,7 +121,7 @@ async function main() {
   const ticketId = path.basename(path.resolve(ticketDir));
 
   // §10 步驟 1–2：工單解析＋允許清單存在性（loadTicket／resolveSpokes 內部 fail closed）
-  const ticket = await loadTicket(ticketDir);
+  const ticket = await loadTicket(ticketDir, lang);
 
   // §10 步驟 3／v1.10 §24.3：providers.json 隨工具出貨、不可覆寫（方案 D）；
   // --providers 是唯一逃生口，整檔取代，一樣過 formatVersion 檢查。
@@ -110,10 +129,10 @@ async function main() {
   const providersSource: ProvidersSource = options.providersPath
     ? { kind: "explicit", path: providersPath, formatVersion: PROVIDERS_FORMAT_VERSION }
     : { kind: "bundled", formatVersion: PROVIDERS_FORMAT_VERSION };
-  const providers = await loadProviders(providersPath);
+  const providers = await loadProviders(providersPath, lang);
 
   // §10 步驟 4–5：effort 值域、API key 齊備、models 白名單（resolveSpokes 內部）
-  const spokes = await resolveSpokes(ticket, providers, repoRoot);
+  const spokes = await resolveSpokes(ticket, providers, repoRoot, lang);
 
   // §10 步驟 6／§14 閘門一：呼叫前估算
   const estimates: SpokeEstimate[] = spokes.map((spoke) => {
@@ -131,7 +150,7 @@ async function main() {
       estimatedTokens: estimateTokens(systemPrompt, charsPerToken) + estimateTokens(firstUserText, charsPerToken),
     };
   });
-  checkGateOne(estimates, options.maxTokens);
+  checkGateOne(estimates, options.maxTokens, lang);
 
   // plan_dispatch_v2.0.md §14：允許清單總量估算，獨立於閘門一之外，只呈現不設閘門
   // （閘門一不含允許清單內容，見 gate.ts 的說明）。與 estimates 同一模式：算一次，
@@ -175,15 +194,20 @@ async function main() {
     });
 
   // §10 步驟 7／§11：派工報表
-  const report = buildReport(ticketId, spokes, estimates, allowlistEstimates, options, outDir, {
-    repoRoot,
-    providersSource,
-    gitignoreStatus,
-  });
+  const report = buildReport(
+    ticketId,
+    spokes,
+    estimates,
+    allowlistEstimates,
+    options,
+    outDir,
+    { repoRoot, providersSource, gitignoreStatus },
+    lang,
+  );
   log.info(report);
 
   if (options.dryRun) {
-    log.info("\n--dry-run：僅解析／驗證／估算／印報表，未呼叫任何 API。");
+    log.info("\n" + m(lang, "dryRunNotice"));
     if (options.json) {
       console.log(JSON.stringify(maskDeep(buildPayload("dry-run", [], new Map(), new Map(), 0))));
     }
@@ -191,13 +215,9 @@ async function main() {
   }
 
   if (!options.yes) {
-    const ok = await confirm("繼續？[y/N] ", options.json ? process.stderr : process.stdout);
+    const ok = await confirm(m(lang, "confirmPrompt"), options.json ? process.stderr : process.stdout);
     if (!ok) {
-      log.info(
-        process.stdin.isTTY
-          ? "已取消，未呼叫任何 API。"
-          : "非互動環境（stdin 不是 TTY）無人可確認，已取消，未呼叫任何 API。要在此環境派工請明確加上 --yes。",
-      );
+      log.info(process.stdin.isTTY ? m(lang, "cancelledInteractive") : m(lang, "cancelledNonInteractive"));
       if (options.json) {
         console.log(JSON.stringify(maskDeep(buildPayload("cancelled", [], new Map(), new Map(), 0))));
       }
@@ -210,15 +230,15 @@ async function main() {
     await ensureOutDir(outDir);
   } catch (err) {
     outDirReady = false;
-    console.error(`落檔目錄不可寫：${outDir}`);
+    console.error(m(lang, "outDirNotWritable", outDir));
     console.error(maskString(String(err)));
   }
 
-  const runLog = outDirReady ? new RunLogWriter(path.join(outDir, "run.jsonl")) : null;
+  const runLog = outDirReady ? new RunLogWriter(path.join(outDir, "run.jsonl"), lang) : null;
   const semaphore = new Semaphore(options.concurrency);
 
   const onEvent = (event: RunEvent) => {
-    log.info(formatEvent(event));
+    log.info(formatEvent(event, lang));
     runLog?.append(event as unknown as Record<string, unknown>);
   };
 
@@ -245,7 +265,7 @@ async function main() {
         // §13（一）：每支 spoke 完成即落檔，不等 Promise.allSettled——多 spoke 並行、
         // 其中一支慢很多時，快的那支已付費的產出不因慢的還在跑而暴露在中斷風險下。
         if (outDirReady) {
-          await persistSpokeResult(outDir, result, (msg) => console.error(msg));
+          await persistSpokeResult(outDir, result, (msg) => console.error(msg), lang);
         }
         return result;
       } finally {
@@ -310,15 +330,15 @@ async function main() {
   // rejected 分支的兜底——真實 result 重寫一次是冪等的（writeFile 覆蓋）。
   if (outDirReady) {
     for (const r of results) {
-      await persistSpokeResult(outDir, r, (msg) => console.error(msg));
+      await persistSpokeResult(outDir, r, (msg) => console.error(msg), lang);
     }
-    await writeSummary(outDir, ticketId, results, audits, toolCallAudits);
+    await writeSummary(outDir, ticketId, results, audits, toolCallAudits, lang);
     await runLog?.flush();
-    log.info(`\n落檔完成：${outDir}/`);
+    log.info("\n" + m(lang, "outDirWritten", outDir));
   } else {
     // 落檔目錄不可寫時，不讓已付費的結果消失——完整結果改印到 stderr（json 模式下
     // stdout 仍須維持只有最後那個單一 JSON 物件的契約，不能把這份診斷用資料混進去）。
-    log.info("\n落檔目錄不可寫，完整報告已改印於 stderr：");
+    log.info("\n" + m(lang, "outDirFallbackStderr"));
     console.error(JSON.stringify(maskDeep(results), null, 2));
   }
 
@@ -331,18 +351,8 @@ async function main() {
   if (options.json) {
     console.log(JSON.stringify(maskDeep(buildPayload("executed", results, audits, toolCallAudits, exitCode))));
   } else {
-    log.info("\n" + buildStdoutSummary(results));
+    log.info("\n" + buildStdoutSummary(results, lang));
   }
-}
-
-function buildStdoutSummary(results: SpokeRunResult[]): string {
-  return results
-    .map(
-      (r) =>
-        `${r.agent}: ${r.status}  model=${r.modelReturned ?? "—"}  token=${r.usage.totalTokens}  ` +
-        `cost=${r.costUsd === null ? "無價目資料" : `$${r.costUsd.toFixed(4)}`}  耗時=${r.latencyMs}ms`,
-    )
-    .join("\n");
 }
 
 main().catch((err) => {

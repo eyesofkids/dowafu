@@ -3,7 +3,8 @@
 // 此檢查在任何 API 呼叫之前，成本為零。
 
 import fs from "node:fs";
-import { DispatchError } from "./types.js";
+import { DispatchError, type Lang } from "./types.js";
+import { m } from "./messages.js";
 
 // §14：charsPerToken 預設 1.0（不是 chars/4）——實測 chars/4 對中文系統性低估 2.7–4 倍，
 // 低估比高估危險，此閘門寧可誤報。providers.json 可逐家覆寫（見 cli.ts 呼叫端）。
@@ -67,14 +68,11 @@ export function estimateSequentialRead(filePaths: string[], charsPerToken: numbe
   };
 }
 
-export function checkGateOne(estimates: SpokeEstimate[], maxTokens: number): number {
+export function checkGateOne(estimates: SpokeEstimate[], maxTokens: number, lang: Lang): number {
   const total = estimates.reduce((sum, e) => sum + e.estimatedTokens, 0);
   if (total > maxTokens) {
     const detail = estimates.map((e) => `  ${e.agent}: ${e.estimatedTokens}`).join("\n");
-    throw new DispatchError(
-      `閘門一超限：合計初始估算 ${total} tokens 超過 --max-tokens ${maxTokens}\n${detail}`,
-      3,
-    );
+    throw new DispatchError(m(lang, "gateOneExceeded", total, maxTokens, detail), 3);
   }
   return total;
 }

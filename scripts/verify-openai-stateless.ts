@@ -18,7 +18,8 @@ import { loadDispatchEnv, resolveDispatchHome } from "../src/dispatch-home.js";
 import OpenAI from "openai";
 import { writeFile, mkdir } from "node:fs/promises";
 
-loadDispatchEnv(resolveDispatchHome());
+const dispatchHome = resolveDispatchHome();
+if (dispatchHome !== null) loadDispatchEnv(dispatchHome);
 
 const MODEL = process.env.OPENAI_MODEL || "gpt-5.6-luna";
 const FAKE_PACKAGE_JSON_RESULT = '{"name":"dowafu"}';

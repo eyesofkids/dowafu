@@ -7,6 +7,7 @@ import OpenAI from "openai";
 import type {
   Adapter,
   Conversation,
+  Lang,
   ReasoningConfig,
   SendOptions,
   SendResult,
@@ -16,24 +17,29 @@ import type {
 import { normalizeFinishReason, normalizeResponsesUsage } from "../usage.js";
 import { ProviderHttpError } from "../mask.js";
 import { checkRawArrayIntegrity } from "../raw-integrity.js";
+import { readFileToolDescription } from "./read-file-tool-description.js";
+import { m } from "../messages.js";
 
-const READ_FILE_TOOL: OpenAI.Responses.FunctionTool = {
-  type: "function",
-  name: "read_file",
-  description: "讀取指定路徑的檔案內容",
-  parameters: {
-    type: "object",
-    properties: { path: { type: "string" } },
-    required: ["path"],
-  },
-  strict: false,
-};
+function buildReadFileTool(lang: Lang): OpenAI.Responses.FunctionTool {
+  return {
+    type: "function",
+    name: "read_file",
+    description: readFileToolDescription(lang),
+    parameters: {
+      type: "object",
+      properties: { path: { type: "string" } },
+      required: ["path"],
+    },
+    strict: false,
+  };
+}
 
 export type ResponsesAdapterConfig = {
   baseURL: string;
   apiKey: string;
   store: false | null; // §5：null 代表該 API 無此參數（v1 的 responses provider 恆為 false）
   reasoning: ReasoningConfig;
+  lang: Lang; // T5：read_file 工具 description 依 spoke.lang 選用（C 類雙語常數）
 };
 
 // plan_dispatch_v1.8.md §5「reasoning.style 的三種轉換」（實測確認，v1.7 兩處填錯已修正）：
@@ -47,6 +53,10 @@ function buildReasoningParams(
   if (!effort) return {}; // §4：留白則不送任何 reasoning 參數（v1 起 validate.ts 已解析為 default，實務上不會是 undefined）
   if (style === "openai") return { reasoning: { effort } };
   if (style === "deepseek") return { output_config: { effort } };
+  // T7a〈D. 全域中文字串最終覆核〉：providers.json 的 schema 已限定 reasoning.style 只能是
+  // "openai"／"deepseek"／"gemini"／"anthropic"／null（見 providers.ts 的 parseReasoning），
+  // 此分支理論上不可達，同 raw-integrity.ts 的實作缺陷斷言。明確決定維持中文不動，不搬進
+  // messages.ts——多語系對一段不可達的防禦性文字沒有實質效益。
   throw new Error(`responses adapter 不支援 reasoning.style=${style}`);
 }
 
@@ -69,13 +79,13 @@ export function buildResponsesRequest(
   config: ResponsesAdapterConfig,
 ): OpenAI.Responses.ResponseCreateParamsNonStreaming {
   const input: OpenAI.Responses.ResponseInputItem[] = conv.turns.flatMap(turnToInputItems);
-  checkRawArrayIntegrity(conv, input);
+  checkRawArrayIntegrity(conv, input, config.lang);
 
   return {
     model: opts.model,
     instructions: conv.systemPrompt,
     input,
-    ...(opts.enableTools === false ? {} : { tools: [READ_FILE_TOOL] }),
+    ...(opts.enableTools === false ? {} : { tools: [buildReadFileTool(config.lang)] }),
     ...(config.store === false ? { store: false as const } : {}),
     include: ["reasoning.encrypted_content"],
     ...buildReasoningParams(config.reasoning.style, opts.effort),
@@ -96,7 +106,7 @@ export function createResponsesAdapter(config: ResponsesAdapterConfig): Adapter 
         if (err && typeof err === "object" && "status" in err) {
           const anyErr = err as { status?: number; headers?: unknown; error?: unknown; message?: string };
           throw new ProviderHttpError(
-            anyErr.message ?? "responses adapter 呼叫失敗",
+            anyErr.message ?? m(config.lang, "responsesAdapterCallFailed"),
             anyErr.status ?? 0,
             (anyErr.headers as Record<string, string>) ?? {},
             anyErr.error,

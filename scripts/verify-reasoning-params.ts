@@ -17,7 +17,8 @@ import { loadDispatchEnv, resolveDispatchHome } from "../src/dispatch-home.js";
 import OpenAI from "openai";
 import { writeFile, mkdir } from "node:fs/promises";
 
-loadDispatchEnv(resolveDispatchHome());
+const dispatchHome = resolveDispatchHome();
+if (dispatchHome !== null) loadDispatchEnv(dispatchHome);
 
 const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-3.1-flash-lite";
 const DEEPSEEK_MODEL = process.env.DEEPSEEK_MODEL || "deepseek-v4-flash";

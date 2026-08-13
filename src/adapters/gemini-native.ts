@@ -6,24 +6,27 @@
 // 續接時原樣放回 contents（§8）——gemini-3.x 系列的 thoughtSignature 掛在 part 上，
 // 隨 raw 一起帶回，不需另闢欄位承接。
 
-import type { Adapter, Conversation, SendOptions, SendResult, ToolCall, Turn } from "../types.js";
+import type { Adapter, Conversation, Lang, SendOptions, SendResult, ToolCall, Turn } from "../types.js";
 import { normalizeFinishReason, normalizeGeminiUsage } from "../usage.js";
 import { ProviderHttpError } from "../mask.js";
 import { checkRawObjectIntegrity } from "../raw-integrity.js";
+import { readFileToolDescription } from "./read-file-tool-description.js";
 
-const GEMINI_TOOL = {
-  functionDeclarations: [
-    {
-      name: "read_file",
-      description: "讀取指定路徑的檔案內容",
-      parameters: {
-        type: "object",
-        properties: { path: { type: "string" } },
-        required: ["path"],
+function buildGeminiTool(lang: Lang) {
+  return {
+    functionDeclarations: [
+      {
+        name: "read_file",
+        description: readFileToolDescription(lang),
+        parameters: {
+          type: "object",
+          properties: { path: { type: "string" } },
+          required: ["path"],
+        },
       },
-    },
-  ],
-};
+    ],
+  };
+}
 
 type GeminiPart = {
   text?: string;
@@ -37,6 +40,7 @@ export type GeminiContent = { role: string; parts: GeminiPart[] };
 export type GeminiAdapterConfig = {
   apiKey: string;
   baseURL: string; // 例如 https://generativelanguage.googleapis.com/v1beta
+  lang: Lang; // T5：read_file 工具 description 依 spoke.lang 選用（C 類雙語常數）
 };
 
 function turnToContent(turn: Turn): GeminiContent {
@@ -73,14 +77,15 @@ function buildReasoningParams(effort: string | undefined): Record<string, unknow
 export function buildGeminiRequest(
   conv: Conversation,
   opts: SendOptions,
+  lang: Lang,
 ): { contents: GeminiContent[]; body: Record<string, unknown> } {
   const contents: GeminiContent[] = conv.turns.map(turnToContent);
-  checkRawObjectIntegrity(conv, contents);
+  checkRawObjectIntegrity(conv, contents, lang);
 
   const body: Record<string, unknown> = {
     contents,
     system_instruction: { parts: [{ text: conv.systemPrompt }] },
-    ...(opts.enableTools === false ? {} : { tools: [GEMINI_TOOL] }),
+    ...(opts.enableTools === false ? {} : { tools: [buildGeminiTool(lang)] }),
     ...buildReasoningParams(opts.effort),
   };
   return { contents, body };
@@ -89,7 +94,7 @@ export function buildGeminiRequest(
 export function createGeminiAdapter(config: GeminiAdapterConfig): Adapter {
   return {
     async send(conv: Conversation, opts: SendOptions): Promise<SendResult> {
-      const { body } = buildGeminiRequest(conv, opts);
+      const { body } = buildGeminiRequest(conv, opts, config.lang);
 
       const res = await fetch(`${config.baseURL}/models/${opts.model}:generateContent`, {
         method: "POST",

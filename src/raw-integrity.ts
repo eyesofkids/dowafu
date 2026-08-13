@@ -18,7 +18,8 @@
 // 內容相似但簽章欄位被序列化過程改寫的複製品）。若未來 adapter 需要對 raw 做任何正規化，
 // 這個判準本身就需要重新設計——那是規格問題，不是這裡的實作可以自行決定的。
 
-import type { Conversation } from "./types.js";
+import type { Conversation, Lang } from "./types.js";
+import { m } from "./messages.js";
 
 export class RawIntegrityError extends Error {
   constructor(message: string) {
@@ -27,32 +28,26 @@ export class RawIntegrityError extends Error {
   }
 }
 
-export function checkRawArrayIntegrity(conv: Conversation, builtInput: readonly unknown[]): void {
+export function checkRawArrayIntegrity(conv: Conversation, builtInput: readonly unknown[], lang: Lang): void {
   for (const turn of conv.turns) {
     if (turn.role !== "assistant") continue;
     if (!Array.isArray(turn.raw)) {
-      throw new RawIntegrityError(
-        "raw 完整性檢查失敗：assistant turn 的 raw 不是陣列（responses adapter 預期 raw 為上一輪 response.output 陣列）",
-      );
+      throw new RawIntegrityError(m(lang, "rawIntegrityNotArray"));
     }
     for (const item of turn.raw) {
       if (!builtInput.includes(item)) {
         const type = (item as { type?: string })?.type ?? "?";
-        throw new RawIntegrityError(
-          `raw 完整性檢查失敗：assistant turn 有一個 item（type=${type}）未以原樣出現在送出的請求中，疑似續接時被過濾掉`,
-        );
+        throw new RawIntegrityError(m(lang, "rawIntegrityItemNotFound", type));
       }
     }
   }
 }
 
-export function checkRawObjectIntegrity(conv: Conversation, builtContents: readonly unknown[]): void {
+export function checkRawObjectIntegrity(conv: Conversation, builtContents: readonly unknown[], lang: Lang): void {
   for (const turn of conv.turns) {
     if (turn.role !== "assistant") continue;
     if (!builtContents.includes(turn.raw)) {
-      throw new RawIntegrityError(
-        "raw 完整性檢查失敗：assistant turn 的 raw 未以原樣出現在送出的 contents 中，疑似續接時被重建或漏帶",
-      );
+      throw new RawIntegrityError(m(lang, "rawIntegrityObjectNotFound"));
     }
   }
 }

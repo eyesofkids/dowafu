@@ -19,10 +19,11 @@
 // 確認過（tool calling、tool_result 合併、usage 欄位名、effort 生效方向、cache_control
 // 生效、thinking.type:"enabled" 確實 400），結果見 facts_dispatch.md。
 
-import type { Adapter, Conversation, ReasoningConfig, SendOptions, SendResult, ToolCall, Turn } from "../types.js";
+import type { Adapter, Conversation, Lang, ReasoningConfig, SendOptions, SendResult, ToolCall, Turn } from "../types.js";
 import { normalizeAnthropicUsage, normalizeFinishReason } from "../usage.js";
 import { ProviderHttpError } from "../mask.js";
 import { checkRawObjectIntegrity } from "../raw-integrity.js";
+import { readFileToolDescription } from "./read-file-tool-description.js";
 
 const ANTHROPIC_VERSION = "2023-06-01";
 
@@ -32,15 +33,17 @@ const ANTHROPIC_VERSION = "2023-06-01";
 // 不會用到官方建議 64k 起跳的 xhigh／max。撞到 stop_reason:"max_tokens" 再調，不在此臆測。
 const ANTHROPIC_MAX_TOKENS = 32768;
 
-const READ_FILE_TOOL = {
-  name: "read_file",
-  description: "讀取指定路徑的檔案內容",
-  input_schema: {
-    type: "object",
-    properties: { path: { type: "string" } },
-    required: ["path"],
-  },
-};
+function buildReadFileTool(lang: Lang) {
+  return {
+    name: "read_file",
+    description: readFileToolDescription(lang),
+    input_schema: {
+      type: "object",
+      properties: { path: { type: "string" } },
+      required: ["path"],
+    },
+  };
+}
 
 type AnthropicContentBlock = Record<string, unknown> & { type: string };
 
@@ -50,6 +53,7 @@ export type AnthropicAdapterConfig = {
   baseURL: string;
   apiKey: string;
   reasoning: ReasoningConfig;
+  lang: Lang; // T5：read_file 工具 description 依 spoke.lang 選用（C 類雙語常數）
 };
 
 // §29 規格二：thinking.type:"enabled" 在 Opus 5／Sonnet 5 會 400（實測確認，見
@@ -59,6 +63,10 @@ export type AnthropicAdapterConfig = {
 function buildReasoningParams(style: ReasoningConfig["style"], effort: string | undefined): Record<string, unknown> {
   if (!effort) return {}; // §4：留白則不送任何 reasoning 參數（validate.ts 已解析為 default，實務上不會是 undefined）
   if (style === "anthropic") return { thinking: { type: "adaptive" }, output_config: { effort } };
+  // T7a〈D. 全域中文字串最終覆核〉：providers.json 的 schema 已限定 reasoning.style 只能是
+  // "openai"／"deepseek"／"gemini"／"anthropic"／null（見 providers.ts 的 parseReasoning），
+  // 此分支理論上不可達，同 raw-integrity.ts 的實作缺陷斷言。明確決定維持中文不動，不搬進
+  // messages.ts——多語系對一段不可達的防禦性文字沒有實質效益。
   throw new Error(`anthropic-messages adapter 不支援 reasoning.style=${style}`);
 }
 
@@ -99,10 +107,10 @@ function turnsToMessages(turns: readonly Turn[]): AnthropicMessage[] {
 export function buildAnthropicRequest(
   conv: Conversation,
   opts: SendOptions,
-  config: Pick<AnthropicAdapterConfig, "reasoning">,
+  config: Pick<AnthropicAdapterConfig, "reasoning" | "lang">,
 ): Record<string, unknown> {
   const messages = turnsToMessages(conv.turns);
-  checkRawObjectIntegrity(conv, messages);
+  checkRawObjectIntegrity(conv, messages, config.lang);
 
   return {
     model: opts.model,
@@ -112,7 +120,7 @@ export function buildAnthropicRequest(
     // §29 規格八：top-level 自動快取，由 API 自行管理斷點位置並隨對話推進。低於該模型最低
     // 可快取 token 數時 API 靜默不快取、不報錯，故此欄位可無條件加，不需前置估算。
     cache_control: { type: "ephemeral" },
-    ...(opts.enableTools === false ? {} : { tools: [READ_FILE_TOOL] }),
+    ...(opts.enableTools === false ? {} : { tools: [buildReadFileTool(config.lang)] }),
     ...buildReasoningParams(config.reasoning.style, opts.effort),
   };
 }

@@ -62,6 +62,8 @@ function mkAudit(overrides: Partial<AuditResult> = {}): AuditResult {
     citedPathsOutsideAllowlistDetail: [],
     cannotVerifySectionPresent: true,
     suspectPhrases: [],
+    suspectPhrasesZh: [],
+    suspectPhrasesEn: [],
     ...overrides,
   };
 }

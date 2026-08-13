@@ -13,15 +13,15 @@
 
 **spoke 產出的是意見，不是裁決。** 那些意見要怎麼處理，仍然由你決定。
 
-> ### 工單支援英文與中文，CLI 本身的輸出則使用中文。
+> ### 英文與繁體中文都是完整支援的語言。
 >
-> 只要把工單的段落標題寫成其中一種語言，後續就會跟著使用該語言：審查者會以該語言收到 Prompt、以該語言的範本產生報告，稽核也會用同一種語言的範本檢查。
+> 整次執行的語言由一個旗標決定：`--lang en` 或 `--lang zh-tw`。沒帶旗標時看 `DISPATCH_LANG`，兩者都沒有時**預設為英文**。旗標優先於環境變數；任一方填了無法辨識的值都會直接中止，不會猜。
 >
-> 語言是根據段落標題本身決定的——沒有另外的旗標可以指定語言。Dry run 會針對每個審查者列出最終判定的語言。
+> 語言涵蓋所有地方：審查者收到的 Prompt 與報告範本、稽核用來檢查報告的範本，以及 CLI 自己的輸出——`--help`、錯誤訊息、dry-run 報告、`summary.md`。Dry run 會針對每個審查者印出判定的語言，送出前就看得到。
 >
-> 目前仍然使用繁體中文的部分包括：`--help`、錯誤訊息、dry-run 報告以及 `summary.md`。
+> 工單的段落標題兩種語言都可以寫，與語言選擇無關——它們是欄位名稱，不是語言開關。見[工單格式](#工單格式)。
 >
-> 這是開發時使用的語言，目前尚未翻譯。
+> Skill 與審查者定義同樣有兩種語言，分別放在 `publish/en/` 與 `publish/zh-tw/`。**擇一安裝，不可混裝**——審查者的固定收尾句必須與稽核檢查用的範本是同一種語言。
 
 ## 安裝
 
@@ -35,21 +35,21 @@ npm install -g dowafu
 
 API Key 會從 `$DISPATCH_HOME/.env` 讀取，預設位置為：
 
-`~/.config/dispatch/.env`
+`~/.config/dowafu/.env`
 
 可以透過 `DISPATCH_HOME` 或 `XDG_CONFIG_HOME` 覆寫這個位置。
 
 如果環境變數中已經存在相同的變數，環境變數會優先於檔案中的值。因此在 CI 或臨時覆寫設定時，完全不需要建立 `.env` 檔案。
 
 ```bash
-mkdir -p ~/.config/dispatch
-cat > ~/.config/dispatch/.env <<'EOF'
+mkdir -p ~/.config/dowafu
+cat > ~/.config/dowafu/.env <<'EOF'
 DEEPSEEK_API_KEY=
 GEMINI_API_KEY=
 OPENAI_API_KEY=
 ANTHROPIC_API_KEY=
 EOF
-chmod 600 ~/.config/dispatch/.env
+chmod 600 ~/.config/dowafu/.env
 ```
 
 只需要為實際要執行 Dispatch 的 Provider 設定 Key 即可。
@@ -112,12 +112,9 @@ dowafu --help                   # 查看所有旗標
 - prisma/schema.prisma
 ```
 
-你所使用的標題組合會決定審查者使用的語言：
+兩組標題都收，而且**與審查者使用的語言無關**——語言由 `--lang`／`DISPATCH_LANG` 決定（見上方）。兩組只是同一批欄位的別名，所以英文工單可以用中文跑，反之亦然。
 
-- `# Questions` → 英文 Prompt + 英文報告範本
-- `# 具體問題` → 中文 Prompt + 中文報告範本
-
-不支援在同一個審查者檔案中混用兩組標題——第一個符合的標題會決定語言。
+不支援在同一個審查者檔案中混用兩組標題——第一個符合的標題會決定用哪一組欄位名，不是決定語言。
 
 審查者定義放在 Repository 根目錄下的：
 
@@ -173,24 +170,27 @@ tmp/spoke/<ticket-id>/
 
 其中 `.claude/` 包含 CLI 本身會讀取的審查者定義，因此無論你使用哪一種 Agent，都必須複製它。
 
+`publish/` 提供兩種語言：`publish/en/` 與 `publish/zh-tw/`。**擇一複製，不可混裝**——審查者的固定收尾句必須與稽核檢查用的範本是同一種語言。
+
 ```bash
 TARGET=<your project>
+SRC=publish/zh-tw               # 或 publish/en
 
 mkdir -p "$TARGET/.claude/skills" "$TARGET/.claude/agents" "$TARGET/.agents/skills"
 
-cp -R publish/.claude/skills/. "$TARGET/.claude/skills/"
-cp -R publish/.agents/skills/. "$TARGET/.agents/skills/"
-cp publish/.claude/agents/*.md "$TARGET/.claude/agents/"
-cp publish/workflow_spec.md "$TARGET/"
+cp -R "$SRC/.claude/skills/." "$TARGET/.claude/skills/"
+cp -R "$SRC/.agents/skills/." "$TARGET/.agents/skills/"
+cp "$SRC"/.claude/agents/*.md "$TARGET/.claude/agents/"
+cp "$SRC/workflow_spec.md" "$TARGET/"
 ```
 
-詳細內容請參考：
+詳細內容請參考該語言目錄下的 README：
 
 ```text
-publish/README.md
+publish/zh-tw/README.md   （或 publish/en/README.md）
 ```
 
-這些文件目前都是以繁體中文撰寫。
+兩份各自以該語言撰寫。
 
 ## License
 

@@ -55,25 +55,31 @@ fi
 # 兩者內容刻意不同——衍生版拿掉了只有某一種 host 才成立的段落——所以不能逐位元組比對。
 # 改成在衍生版的 frontmatter 記下來源檔的 sha256：來源一改、雜湊就對不上，
 # 逼你回來看衍生版要不要跟著改。漏改是靜默的，這條就是為了讓它出聲。
+#
+# T6：publish/ 分語言之後，同一組 skill 在 en/ 與 zh-tw/ 底下各有一份，兩邊都要查——
+# 語言迴圈包在外層，「少了一邊」（整個語言目錄漏放某個 skill）跟「來源改了衍生版沒跟上」
+# 是兩種不同的漏，都要各自的語言都抓到。
 check_derived() {
-  local name="$1"
-  local src="$TARGET/.claude/skills/$name/SKILL.md"
-  local dst="$TARGET/.agents/skills/$name/SKILL.md"
-  [ -f "$src" ] && [ -f "$dst" ] || { echo "✗ $name 少了一邊"; echo; fail=1; return; }
+  local lang="$1" name="$2"
+  local src="$TARGET/$lang/.claude/skills/$name/SKILL.md"
+  local dst="$TARGET/$lang/.agents/skills/$name/SKILL.md"
+  [ -f "$src" ] && [ -f "$dst" ] || { echo "✗ $lang/$name 少了一邊"; echo; fail=1; return; }
   local want have
   want=$(shasum -a 256 "$src" | cut -d' ' -f1)
   have=$(grep -o 'derived-from-sha256: "[0-9a-f]*"' "$dst" | cut -d'"' -f2)
   if [ "$want" != "$have" ]; then
-    echo "✗ $name 的來源已變動，衍生版沒跟上"
-    echo "    來源 publish/.claude/skills/$name/SKILL.md  $want"
-    echo "    衍生 publish/.agents/skills/$name/SKILL.md  ${have:-（沒記）}"
+    echo "✗ $lang/$name 的來源已變動，衍生版沒跟上"
+    echo "    來源 publish/$lang/.claude/skills/$name/SKILL.md  $want"
+    echo "    衍生 publish/$lang/.agents/skills/$name/SKILL.md  ${have:-（沒記）}"
     echo "  → 檢視衍生版要不要跟著改，改完把新的 sha 填回它的 frontmatter"
     echo
     fail=1
   fi
 }
 
-for s in find-holes-external preflight wrap; do check_derived "$s"; done
+for lang in en zh-tw; do
+  for s in find-holes-external preflight wrap; do check_derived "$lang" "$s"; done
+done
 
 if [ "$fail" -eq 0 ]; then
   # 「通過」要講清楚是通過了什麼。沒有樣式檔的地方沒跑洩漏掃描，卻印「沒有洩漏」，

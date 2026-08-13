@@ -14,7 +14,7 @@ test("checkRawArrayIntegrity：raw 全部出現在 input 中 → 不拋錯", () 
     ],
   };
   const builtInput = [{ role: "user" }, reasoningItem, functionCallItem];
-  assert.doesNotThrow(() => checkRawArrayIntegrity(conv, builtInput));
+  assert.doesNotThrow(() => checkRawArrayIntegrity(conv, builtInput, "zh"));
 });
 
 test("checkRawArrayIntegrity：漏帶其中一個 item（Test C 那種過濾 bug）→ 拋 RawIntegrityError", () => {
@@ -30,7 +30,7 @@ test("checkRawArrayIntegrity：漏帶其中一個 item（Test C 那種過濾 bug
   // 模擬「只留 function_call，過濾掉 reasoning item」的錯誤心智模型（facts Test C 的成因）
   const builtInputMissingReasoning = [{ role: "user" }, functionCallItem];
   assert.throws(
-    () => checkRawArrayIntegrity(conv, builtInputMissingReasoning),
+    () => checkRawArrayIntegrity(conv, builtInputMissingReasoning, "zh"),
     (err: unknown) => {
       assert.ok(err instanceof RawIntegrityError);
       assert.match(err.message, /reasoning/);
@@ -44,7 +44,7 @@ test("checkRawArrayIntegrity：raw 不是陣列（形狀錯誤）→ 拋錯，�
     systemPrompt: "sys",
     turns: [{ role: "assistant", raw: { not: "an array" }, toolCalls: [] }],
   };
-  assert.throws(() => checkRawArrayIntegrity(conv, []), RawIntegrityError);
+  assert.throws(() => checkRawArrayIntegrity(conv, [], "zh"), RawIntegrityError);
 });
 
 test("checkRawArrayIntegrity：多個 assistant turn，每個都要驗證，不只驗最後一個", () => {
@@ -60,9 +60,9 @@ test("checkRawArrayIntegrity：多個 assistant turn，每個都要驗證，不�
     ],
   };
   // 只把第一輪的 item 放進 input，第二輪的漏掉
-  assert.throws(() => checkRawArrayIntegrity(conv, [item1]), RawIntegrityError);
+  assert.throws(() => checkRawArrayIntegrity(conv, [item1], "zh"), RawIntegrityError);
   // 兩輪都在才過
-  assert.doesNotThrow(() => checkRawArrayIntegrity(conv, [item1, item2]));
+  assert.doesNotThrow(() => checkRawArrayIntegrity(conv, [item1, item2], "zh"));
 });
 
 test("checkRawArrayIntegrity：user/tool turn 不受檢查（只驗 assistant）", () => {
@@ -73,7 +73,7 @@ test("checkRawArrayIntegrity：user/tool turn 不受檢查（只驗 assistant）
       { role: "tool", callId: "x", result: "y" },
     ],
   };
-  assert.doesNotThrow(() => checkRawArrayIntegrity(conv, []));
+  assert.doesNotThrow(() => checkRawArrayIntegrity(conv, [], "zh"));
 });
 
 test("checkRawObjectIntegrity（gemini-native 形狀）：raw 整個物件出現在 contents → 不拋錯", () => {
@@ -86,7 +86,7 @@ test("checkRawObjectIntegrity（gemini-native 形狀）：raw 整個物件出現
     ],
   };
   const builtContents = [{ role: "user", parts: [{ text: "hi" }] }, modelContent];
-  assert.doesNotThrow(() => checkRawObjectIntegrity(conv, builtContents));
+  assert.doesNotThrow(() => checkRawObjectIntegrity(conv, builtContents, "zh"));
 });
 
 test("checkRawObjectIntegrity：raw 被重建成結構相似但非同一物件（例如漏帶 thoughtSignature）→ 拋錯", () => {
@@ -100,5 +100,73 @@ test("checkRawObjectIntegrity：raw 被重建成結構相似但非同一物件�
     systemPrompt: "sys",
     turns: [{ role: "assistant", raw: modelContent, toolCalls: [] }],
   };
-  assert.throws(() => checkRawObjectIntegrity(conv, [rebuiltCopy]), RawIntegrityError);
+  assert.throws(() => checkRawObjectIntegrity(conv, [rebuiltCopy], "zh"), RawIntegrityError);
+});
+
+// T7a2：三個拋錯點先前完全未走 messages.ts，--lang en 下產生「英文外殼＋中文內容」
+// （runner.ts 的 rawIntegrityCheckFailed 已英文化，但包住的 err.message 是這三則之一）。
+// 逐一鎖住 zh／en 的完整訊息文字，不只驗「有沒有拋錯」。
+test("checkRawArrayIntegrity：raw 不是陣列——訊息依 lang 輸出（zh／en）", () => {
+  const conv: Conversation = {
+    systemPrompt: "sys",
+    turns: [{ role: "assistant", raw: { not: "an array" }, toolCalls: [] }],
+  };
+  assert.throws(
+    () => checkRawArrayIntegrity(conv, [], "zh"),
+    (err: unknown) =>
+      err instanceof RawIntegrityError &&
+      err.message ===
+        "raw 完整性檢查失敗：assistant turn 的 raw 不是陣列（responses adapter 預期 raw 為上一輪 response.output 陣列）",
+  );
+  assert.throws(
+    () => checkRawArrayIntegrity(conv, [], "en"),
+    (err: unknown) =>
+      err instanceof RawIntegrityError &&
+      err.message ===
+        "Raw integrity check failed: assistant turn's raw is not an array (the responses adapter expects raw to be the prior round's response.output array)",
+  );
+});
+
+test("checkRawArrayIntegrity：item 漏帶——訊息依 lang 輸出，插值帶 type（zh／en）", () => {
+  const item = { type: "reasoning", id: "r1" };
+  const conv: Conversation = {
+    systemPrompt: "sys",
+    turns: [{ role: "assistant", raw: [item], toolCalls: [] }],
+  };
+  assert.throws(
+    () => checkRawArrayIntegrity(conv, [], "zh"),
+    (err: unknown) =>
+      err instanceof RawIntegrityError &&
+      err.message ===
+        "raw 完整性檢查失敗：assistant turn 有一個 item（type=reasoning）未以原樣出現在送出的請求中，疑似續接時被過濾掉",
+  );
+  assert.throws(
+    () => checkRawArrayIntegrity(conv, [], "en"),
+    (err: unknown) =>
+      err instanceof RawIntegrityError &&
+      err.message ===
+        "Raw integrity check failed: an assistant-turn item (type=reasoning) was not found verbatim in the outgoing request — possibly filtered out during continuation",
+  );
+});
+
+test("checkRawObjectIntegrity：raw 未原樣出現——訊息依 lang 輸出（zh／en）", () => {
+  const modelContent = { role: "model", parts: [] };
+  const conv: Conversation = {
+    systemPrompt: "sys",
+    turns: [{ role: "assistant", raw: modelContent, toolCalls: [] }],
+  };
+  assert.throws(
+    () => checkRawObjectIntegrity(conv, [], "zh"),
+    (err: unknown) =>
+      err instanceof RawIntegrityError &&
+      err.message ===
+        "raw 完整性檢查失敗：assistant turn 的 raw 未以原樣出現在送出的 contents 中，疑似續接時被重建或漏帶",
+  );
+  assert.throws(
+    () => checkRawObjectIntegrity(conv, [], "en"),
+    (err: unknown) =>
+      err instanceof RawIntegrityError &&
+      err.message ===
+        "Raw integrity check failed: assistant turn's raw was not found verbatim in the outgoing contents — possibly rebuilt or dropped during continuation",
+  );
 });

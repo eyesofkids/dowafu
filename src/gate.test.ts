@@ -20,14 +20,33 @@ test("checkGateOne：合計超過 --max-tokens 時拋 DispatchError（exit 3）"
     { agent: "b", estimatedTokens: 60_000 },
   ];
   assert.throws(
-    () => checkGateOne(estimates, 200_000),
+    () => checkGateOne(estimates, 200_000, "zh"),
     (err: unknown) => err instanceof DispatchError && err.exitCode === 3,
   );
 });
 
 test("checkGateOne：未超過時回傳合計，不拋錯", () => {
   const estimates: SpokeEstimate[] = [{ agent: "a", estimatedTokens: 100 }];
-  assert.equal(checkGateOne(estimates, 200_000), 100);
+  assert.equal(checkGateOne(estimates, 200_000, "zh"), 100);
+});
+
+// T7a2：gate.ts 先前完全未走 messages.ts，--lang en 下依然印死的中文。手寫字面量斷言
+// （total／maxTokens 為同型 number 參數，數字不對稱以擋參數對調）。
+test("checkGateOne：訊息依 lang 輸出（zh／en，手寫字面量，total／maxTokens 不對稱）", () => {
+  const estimates: SpokeEstimate[] = [{ agent: "hole-finder", estimatedTokens: 12_345 }];
+  assert.throws(
+    () => checkGateOne(estimates, 999, "zh"),
+    (err: unknown) =>
+      err instanceof DispatchError &&
+      err.message === "閘門一超限：合計初始估算 12345 tokens 超過 --max-tokens 999\n  hole-finder: 12345",
+  );
+  assert.throws(
+    () => checkGateOne(estimates, 999, "en"),
+    (err: unknown) =>
+      err instanceof DispatchError &&
+      err.message ===
+        "Gate one exceeded: total initial estimate 12345 tokens exceeds --max-tokens 999\n  hole-finder: 12345",
+  );
 });
 
 test("estimateAllowlistTokens：加總所有檔案的 chars 後套用同一公式，不是逐檔各自無條件進位", () => {

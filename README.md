@@ -12,16 +12,24 @@ read them from. Everything lands on disk for you to check.
 
 **Spokes produce observations, not verdicts.** What to do about them stays with you.
 
-> ### Tickets work in English or Chinese. The CLI's own output is Chinese.
+> ### English and Traditional Chinese are both fully supported.
 >
-> Write the ticket's section headings in either language and the rest follows: the
-> reviewer is prompted in that language, asked for its report in that language's
-> template, and the audit checks it against the matching one. The language is decided by
-> the headings themselves — there is no flag to forget — and the dry run prints which one
-> it resolved to, per reviewer.
+> One flag decides the language for the whole run: `--lang en` or `--lang zh-tw`. Without
+> it, `DISPATCH_LANG` applies; without that either, the default is **English**. The flag
+> wins over the environment variable, and an unrecognized value in either is rejected
+> rather than guessed at.
 >
-> What is still Traditional Chinese: `--help`, error messages, the dry-run report and
-> `summary.md`. That is the development language and it has not been translated.
+> The language reaches everything: the reviewer's prompt and report template, the audit
+> that checks the report against it, and the CLI's own output — `--help`, error messages,
+> the dry-run report, `summary.md`. The dry run prints the resolved language per reviewer,
+> so you can see it before anything is sent.
+>
+> A ticket's section headings may be written in either language regardless — they are
+> field names, not a language switch. See [Ticket format](#ticket-format).
+>
+> The skills and reviewer definitions come in both languages too, under `publish/en/` and
+> `publish/zh-tw/`. **Install one or the other, never a mix** — a reviewer's closing line
+> has to match the template the audit checks it against.
 
 ## Install
 
@@ -33,19 +41,19 @@ The command is `dowafu`.
 
 ## API keys
 
-Keys are read from `$DISPATCH_HOME/.env`, which defaults to `~/.config/dispatch/.env`
+Keys are read from `$DISPATCH_HOME/.env`, which defaults to `~/.config/dowafu/.env`
 (`DISPATCH_HOME` or `XDG_CONFIG_HOME` override it). Variables already present in the
 environment win over the file, so CI and one-off overrides need no file at all.
 
 ```bash
-mkdir -p ~/.config/dispatch
-cat > ~/.config/dispatch/.env <<'EOF'
+mkdir -p ~/.config/dowafu
+cat > ~/.config/dowafu/.env <<'EOF'
 DEEPSEEK_API_KEY=
 GEMINI_API_KEY=
 OPENAI_API_KEY=
 ANTHROPIC_API_KEY=
 EOF
-chmod 600 ~/.config/dispatch/.env
+chmod 600 ~/.config/dowafu/.env
 ```
 
 Only the providers you actually dispatch to need a key. The file is plain text — it is
@@ -106,9 +114,10 @@ parser matches** — use one of the two sets below, exactly as written.
 - prisma/schema.prisma
 ```
 
-The set you use decides the reviewer's language: `# Questions` gets an English prompt and
-an English report template, `# 具體問題` gets the Chinese ones. Mixing the two sets inside
-one reviewer's file is not supported — the first heading that matches wins.
+Either set is accepted, and the choice does **not** decide the reviewer's language —
+that comes from `--lang` / `DISPATCH_LANG` (see above). The two sets are aliases for the
+same fields, so an English ticket can run in Chinese and vice versa. Mixing both sets
+inside one reviewer's file is not supported — the first heading that matches wins.
 
 Reviewer definitions live in `.claude/agents/<agent>.md` under the repo root — they are
 the source of each spoke's system prompt, and the CLI reads them directly. Results are
@@ -146,17 +155,22 @@ an agent working there knows how to write a ticket, what to check before spendin
 how to read the results. Copy both directories — `.claude/` holds the reviewer
 definitions the CLI itself reads, so it is required no matter which agent you use.
 
+It ships in both languages, `publish/en/` and `publish/zh-tw/`. **Pick one.** A mix does
+not work: a reviewer's fixed closing line has to match the template the audit checks it
+against.
+
 ```bash
 TARGET=<your project>
+SRC=publish/en                  # or publish/zh-tw
 mkdir -p "$TARGET/.claude/skills" "$TARGET/.claude/agents" "$TARGET/.agents/skills"
-cp -R publish/.claude/skills/. "$TARGET/.claude/skills/"
-cp -R publish/.agents/skills/. "$TARGET/.agents/skills/"
-cp publish/.claude/agents/*.md "$TARGET/.claude/agents/"
-cp publish/workflow_spec.md "$TARGET/"
+cp -R "$SRC/.claude/skills/." "$TARGET/.claude/skills/"
+cp -R "$SRC/.agents/skills/." "$TARGET/.agents/skills/"
+cp "$SRC"/.claude/agents/*.md "$TARGET/.claude/agents/"
+cp "$SRC/workflow_spec.md" "$TARGET/"
 ```
 
-See `publish/README.md` for the details. Those documents are currently written in
-Traditional Chinese.
+See `publish/en/README.md` — or `publish/zh-tw/README.md` — for the details, each written
+in its own language.
 
 ## License
 
