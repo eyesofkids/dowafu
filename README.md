@@ -39,6 +39,18 @@ npm install -g dowafu
 
 The command is `dowafu`.
 
+## First run
+
+Five steps, in this order. The first three cost nothing.
+
+1. **Install the CLI** — see above. `dowafu --version` should print a version number.
+2. **Copy one language pack into your project** — the commands are under "Driving it from an agent" below. Pick `publish/en/` or `publish/zh-tw/`; never mix the two.
+3. **Ask your agent to run `preflight`** — "run the preflight skill". It reports whether the wiring took, whether the lens definitions are where the CLI expects them, and whether `tmp/` is ignored by git. It reads and reports; it changes nothing.
+4. **Put your keys in place** — see "API keys" below. Only the providers you actually dispatch to need one. Your agent can create the directory and an empty template for you, but **do not paste a key into the conversation**: it stays in that conversation's history. Type the value into the file yourself.
+5. **Check the setup** — `dowafu --doctor`. It prints where the config directory resolved to, whether `.env` is there, which providers have a key (presence only, never the value), the bundled model whitelist, and the lens definitions it found. No API call, no cost, and no ticket required.
+
+Then write a ticket (below) and dry-run it — `dowafu <ticket-dir> --dry-run` is still free. The first thing that costs money is `--yes`.
+
 ## API keys
 
 Keys are read from `$DISPATCH_HOME/.env`, which defaults to `~/.config/dowafu/.env`
@@ -168,6 +180,8 @@ cp -R "$SRC/.agents/skills/." "$TARGET/.agents/skills/"
 cp "$SRC"/.claude/agents/*.md "$TARGET/.claude/agents/"
 cp "$SRC/workflow_spec.md" "$TARGET/"
 ```
+
+Once the files are in place, have the agent run `preflight` before anything else — it is the check that tells you whether the copy actually took effect in this project's setup.
 
 See `publish/en/README.md` — or `publish/zh-tw/README.md` — for the details, each written
 in its own language.
