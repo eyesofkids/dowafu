@@ -168,6 +168,52 @@ test("parseDispatchTable：派工表沒有任何資料列（zh／en）", () => {
   );
 });
 
+test("parseDispatchTable：agent 欄重複兩列即中止（exit 2），訊息含 agent 名", () => {
+  const md = `<!-- format: v1 -->
+| agent | provider | model | effort |
+| --- | --- | --- | --- |
+| hole-finder-safety | openai | gpt-5.6-luna | |
+| hole-finder-safety | deepseek | deepseek-v4-flash | |
+`;
+  assert.throws(
+    () => parseDispatchTable(md, "zh"),
+    (err: unknown) => {
+      assert.ok(err instanceof DispatchError);
+      assert.equal(err.exitCode, 2);
+      assert.equal(err.message, m("zh", "duplicateAgentInDispatchTable", "hole-finder-safety", 2));
+      return true;
+    },
+  );
+});
+
+test("parseDispatchTable：agent 欄重複三列時，次數印 3（數的是出現次數，不是有沒有重複）", () => {
+  const md = `<!-- format: v1 -->
+| agent | provider | model | effort |
+| --- | --- | --- | --- |
+| hole-finder-safety | openai | gpt-5.6-luna | |
+| hole-finder-safety | deepseek | deepseek-v4-flash | |
+| hole-finder-safety | gemini | gemini-3.6-flash | |
+`;
+  assert.throws(
+    () => parseDispatchTable(md, "zh"),
+    (err: unknown) => {
+      assert.equal((err as DispatchError).message, m("zh", "duplicateAgentInDispatchTable", "hole-finder-safety", 3));
+      return true;
+    },
+  );
+});
+
+test("parseDispatchTable：不同 agent 的兩列照常通過（回歸保護：不擋正常的多 lens 派工）", () => {
+  const md = `<!-- format: v1 -->
+| agent | provider | model | effort |
+| --- | --- | --- | --- |
+| hole-finder-safety | openai | gpt-5.6-luna | |
+| hole-finder-cost | deepseek | deepseek-v4-flash | |
+`;
+  const rows = parseDispatchTable(md, "zh");
+  assert.equal(rows.length, 2);
+});
+
 test("parseSharedDoc：待審段落缺失即中止（zh／en）", () => {
   const md = `# 前提（不受審）
 - 一行結論

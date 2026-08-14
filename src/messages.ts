@@ -82,6 +82,7 @@ type MessageArgs = {
   blankPlaceholder: [];
   dispatchTableMissingHeader: [];
   dispatchRowMissingFields: [n: number, line: string];
+  duplicateAgentInDispatchTable: [agent: string, n: number];
   dispatchTableEmpty: [];
   strayHeadingsCutReviewSection: [strayNames: string[]];
   missingReviewSection: [];
@@ -197,6 +198,28 @@ type MessageArgs = {
   rawIntegrityNotArray: [];
   rawIntegrityItemNotFound: [type: string];
   rawIntegrityObjectNotFound: [];
+
+  // 工單 W1 §一：doctor.ts——`--doctor` 五列報表。行本身（label＋固定縮排）與其內容值
+  // 分開建鍵，縮排照工單〈輸出形狀〉裁定的字元數，不可自行調整。
+  doctorHeader: [cmd: string];
+  doctorConfigDirLine: [value: string];
+  doctorConfigDirSourceDispatchHome: [dir: string];
+  doctorConfigDirSourceXdgConfigHome: [dir: string];
+  doctorConfigDirSourceDefault: [dir: string];
+  doctorConfigDirUnresolved: [];
+  doctorEnvLine: [value: string];
+  doctorEnvPresentValue: [];
+  doctorEnvMissingValue: [path: string];
+  doctorEnvUnresolvedValue: [];
+  doctorApiKeyLine: [value: string];
+  doctorProviderCountItem: [name: string, count: number];
+  doctorModelListLine: [value: string];
+  doctorModelListValue: [formatVersion: number, items: string];
+  doctorModelListLoadFailedValue: [reason: string];
+  doctorLensLine: [value: string];
+  doctorLensFoundValue: [dirPath: string, count: number, names: string];
+  doctorLensDirMissingValue: [dirPath: string];
+  doctorFooter: [];
 };
 
 type MessageDefs = {
@@ -229,6 +252,7 @@ const MESSAGES: Record<Lang, MessageDefs> = {
   --max-tool-calls <n>     單一 spoke 的 read_file 呼叫上限，預設 30
   --dry-run                解析、驗證、估算、印報表，不呼叫 API
   --yes                    略過派工確認。非互動環境（stdin 不是 TTY）沒帶就中止
+  --doctor                 印出設定自檢（不呼叫 API、不花錢）後結束（exit 0）
   --help, -h               印本說明後結束（exit 0）
   --version, -V            印版本號後結束（exit 0）`,
     availableLangValues: () => "en、zh-tw、zh",
@@ -264,7 +288,9 @@ const MESSAGES: Record<Lang, MessageDefs> = {
       `輸出目錄已有產物，未派工、未呼叫任何 API：${outDir}\n` +
       `那是上一次跑出來的東西，覆蓋掉就沒了。兩條路：\n` +
       `  1. 換一個沒用過的 ticket-id 再派（建議，零成本）\n` +
-      `  2. 由使用者自行清掉那個目錄之後重跑——這是他的決定，不是你的`,
+      `  2. 由使用者自行清掉那個目錄之後重跑——這是他的決定，不是你的\n` +
+      `  * 上一次若是失敗收場（summary 全 failed、token 0），那底下沒有花過錢的東西，\n` +
+      `    換 id 或請使用者清掉都行——但仍然由使用者決定要不要清`,
     outDirNotEmptyDryRunWarning: (outDir) =>
       `⚠ 輸出目錄已有產物：${outDir}\n  乾跑不受影響，但實跑會被擋下。換一個 ticket-id 即可。`,
     outDirWritten: (outDir) => `落檔完成：${outDir}/`,
@@ -277,6 +303,11 @@ const MESSAGES: Record<Lang, MessageDefs> = {
     dispatchTableMissingHeader: () => "_dispatch.md 找不到派工表（缺 | agent | ... | 表頭或分隔列）",
     dispatchRowMissingFields: (n, line) =>
       `_dispatch.md 第 ${n} 行缺 agent/provider/model 必填欄位（留白或寫 "default" 視為缺失）：${line}`,
+    duplicateAgentInDispatchTable: (agent, n) =>
+      `_dispatch.md 的 agent 欄重複：「${agent}」出現 ${n} 次。未派工、未呼叫任何 API。\n` +
+      `同一份 _dispatch.md 裡一個 agent 只能有一列。兩列同名會兩支都派出去、都計費，\n` +
+      `而 ${agent}.md 與 raw/${agent}.* 由後完成的那支覆蓋先完成的——留下哪一支不可控。\n` +
+      `要用同一個 lens 跑多個型號，拆成多個工單目錄（例如 <ticket-id>-luna、<ticket-id>-ds），各派一次。`,
     dispatchTableEmpty: () => "_dispatch.md 派工表沒有任何資料列",
     strayHeadingsCutReviewSection: (strayNames) =>
       `_shared.md 的「# 待審段落」有標題但內容為空——被後面這些 \`#\` 標題切斷了：` +
@@ -399,6 +430,26 @@ const MESSAGES: Record<Lang, MessageDefs> = {
       `raw 完整性檢查失敗：assistant turn 有一個 item（type=${type}）未以原樣出現在送出的請求中，疑似續接時被過濾掉`,
     rawIntegrityObjectNotFound: () =>
       "raw 完整性檢查失敗：assistant turn 的 raw 未以原樣出現在送出的 contents 中，疑似續接時被重建或漏帶",
+
+    doctorHeader: (cmd) => `${cmd} doctor`,
+    doctorConfigDirLine: (value) => `  設定目錄    ${value}`,
+    doctorConfigDirSourceDispatchHome: (dir) => `${dir}（來源：DISPATCH_HOME）`,
+    doctorConfigDirSourceXdgConfigHome: (dir) => `${dir}（來源：XDG_CONFIG_HOME）`,
+    doctorConfigDirSourceDefault: (dir) => `${dir}（來源：預設；DISPATCH_HOME 與 XDG_CONFIG_HOME 都沒設）`,
+    doctorConfigDirUnresolved: () => "無法解析（沒有 HOME）",
+    doctorEnvLine: (value) => `  .env        ${value}`,
+    doctorEnvPresentValue: () => "有（不讀內容）",
+    doctorEnvMissingValue: (path) => `沒有：${path}`,
+    doctorEnvUnresolvedValue: () => "無法判定（設定目錄無法解析）",
+    doctorApiKeyLine: (value) => `  API key     ${value}（只看有沒有值，不看內容）`,
+    doctorProviderCountItem: (name, count) => `${name} ${count} 個`,
+    doctorModelListLine: (value) => `  型號白名單  ${value}`,
+    doctorModelListValue: (formatVersion, items) => `providers.json formatVersion ${formatVersion}：${items}`,
+    doctorModelListLoadFailedValue: (reason) => `無法載入：${reason}`,
+    doctorLensLine: (value) => `  lens 定義   ${value}`,
+    doctorLensFoundValue: (dirPath, count, names) => `${dirPath} 找到 ${count} 支：${names}`,
+    doctorLensDirMissingValue: (dirPath) => `目錄不存在：${dirPath}`,
+    doctorFooter: () => "本指令不呼叫任何 API，不會花錢。缺的項目怎麼補，見 README 的〈API keys〉一節。",
   },
   en: {
     unknownOption: (arg, helpText) => `Unknown option: ${arg}\n\n${helpText}`,
@@ -425,6 +476,7 @@ const MESSAGES: Record<Lang, MessageDefs> = {
   --max-tool-calls <n>     Per-spoke read_file call cap, default 30
   --dry-run                Parse, validate, estimate, and print the report only; no API calls
   --yes                    Skip the dispatch confirmation. Aborts in non-interactive environments (stdin not a TTY) unless given
+  --doctor                 Print the configuration self-check (no API call, no cost) and exit (exit 0)
   --help, -h               Print this help and exit (exit 0)
   --version, -V            Print the version and exit (exit 0)`,
     availableLangValues: () => "en, zh-tw, zh",
@@ -460,7 +512,9 @@ const MESSAGES: Record<Lang, MessageDefs> = {
       `The output directory already holds artifacts. Nothing was dispatched; no API was called: ${outDir}\n` +
       `Those came from a previous run, and overwriting them loses them. Two ways forward:\n` +
       `  1. Pick a ticket-id you have not used and dispatch under that (recommended; it costs nothing)\n` +
-      `  2. Have the user clear that directory themselves, then rerun — that call is theirs, not yours`,
+      `  2. Have the user clear that directory themselves, then rerun — that call is theirs, not yours\n` +
+      `  * If the previous run ended in failure (all failed, zero tokens), nothing under there was\n` +
+      `    paid for — a new id or the user clearing it are both fine, but it is still their call to clear`,
     outDirNotEmptyDryRunWarning: (outDir) =>
       `⚠ The output directory already holds artifacts: ${outDir}\n  The dry run is unaffected, but the real run will be stopped. Pick a different ticket-id.`,
     outDirWritten: (outDir) => `Files written to: ${outDir}/`,
@@ -473,6 +527,13 @@ const MESSAGES: Record<Lang, MessageDefs> = {
     dispatchTableMissingHeader: () => "_dispatch.md: dispatch table not found (missing | agent | ... | header or separator row)",
     dispatchRowMissingFields: (n, line) =>
       `_dispatch.md line ${n} is missing required field(s) agent/provider/model (blank or "default" counts as missing): ${line}`,
+    duplicateAgentInDispatchTable: (agent, n) =>
+      `Duplicate agent in _dispatch.md: "${agent}" appears ${n} times. Nothing was dispatched; no API was called.\n` +
+      `One agent gets one row per _dispatch.md. Two rows with the same name dispatch both spokes and bill for both,\n` +
+      `while ${agent}.md and raw/${agent}.* are overwritten by whichever finishes last — which one survives is not\n` +
+      `under your control.\n` +
+      `To run one lens across several models, split it into separate ticket directories\n` +
+      `(for example <ticket-id>-luna and <ticket-id>-ds) and dispatch each once.`,
     dispatchTableEmpty: () => "_dispatch.md's dispatch table has no data rows",
     strayHeadingsCutReviewSection: (strayNames) =>
       `_shared.md's "# Under review" heading exists but its content is empty — it was cut off by these ` +
@@ -614,6 +675,28 @@ const MESSAGES: Record<Lang, MessageDefs> = {
       `Raw integrity check failed: an assistant-turn item (type=${type}) was not found verbatim in the outgoing request — possibly filtered out during continuation`,
     rawIntegrityObjectNotFound: () =>
       "Raw integrity check failed: assistant turn's raw was not found verbatim in the outgoing contents — possibly rebuilt or dropped during continuation",
+
+    doctorHeader: (cmd) => `${cmd} doctor`,
+    doctorConfigDirLine: (value) => `  Config dir   ${value}`,
+    doctorConfigDirSourceDispatchHome: (dir) => `${dir} (source: DISPATCH_HOME)`,
+    doctorConfigDirSourceXdgConfigHome: (dir) => `${dir} (source: XDG_CONFIG_HOME)`,
+    doctorConfigDirSourceDefault: (dir) =>
+      `${dir} (source: default; neither DISPATCH_HOME nor XDG_CONFIG_HOME is set)`,
+    doctorConfigDirUnresolved: () => "could not resolve (no HOME)",
+    doctorEnvLine: (value) => `  .env         ${value}`,
+    doctorEnvPresentValue: () => "present (contents not read)",
+    doctorEnvMissingValue: (path) => `not found: ${path}`,
+    doctorEnvUnresolvedValue: () => "cannot determine (config directory could not resolve)",
+    doctorApiKeyLine: (value) => `  API keys     ${value} (presence only; values are never read)`,
+    doctorProviderCountItem: (name, count) => `${name} ${count}`,
+    doctorModelListLine: (value) => `  Model list   ${value}`,
+    doctorModelListValue: (formatVersion, items) => `providers.json formatVersion ${formatVersion}: ${items}`,
+    doctorModelListLoadFailedValue: (reason) => `failed to load: ${reason}`,
+    doctorLensLine: (value) => `  Lens defs    ${value}`,
+    doctorLensFoundValue: (dirPath, count, names) => `${dirPath} holds ${count}: ${names}`,
+    doctorLensDirMissingValue: (dirPath) => `directory not found: ${dirPath}`,
+    doctorFooter: () =>
+      'This command calls no API and costs nothing. To fill in what is missing, see "API keys" in the README.',
   },
 };
 

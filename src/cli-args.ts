@@ -39,6 +39,7 @@ const DEFAULTS: CliOptions = {
 export type ParsedArgs =
   | { mode: "help" }
   | { mode: "version" }
+  | { mode: "doctor" }
   | { mode: "run"; ticketDir: string; options: CliOptions };
 
 // plan_i18n_v1.3.md §二之1：--lang 與 DISPATCH_LANG 走同一個判定函式，接受 en／zh-tw／zh，
@@ -112,6 +113,7 @@ export function parseArgs(argv: string[], lang: Lang): ParsedArgs {
 
   const options = { ...DEFAULTS };
   let ticketDir: string | undefined;
+  let doctorMode = false;
 
   const numFlag = (name: string, apply: (n: number) => void) => {
     flagHandlers[name] = (v) => {
@@ -149,6 +151,11 @@ export function parseArgs(argv: string[], lang: Lang): ParsedArgs {
       options.yes = true;
     } else if (arg === "--json") {
       options.json = true;
+    } else if (arg === "--doctor") {
+      // 工單 W1 §一之1：與 --help／--version 同一層短路，但要能分辨「多給了 ticket-dir」，
+      // 故不在頂部用 argv.includes() 直接短路，而是隨主迴圈掃完，迴圈後統一判定
+      // （見迴圈後方）——這樣 --doctor 與 --lang 之類的已知旗標仍可同時給、彼此不衝突。
+      doctorMode = true;
     } else if (arg.startsWith("--")) {
       const name = arg.slice(2);
       const handler = flagHandlers[name];
@@ -168,6 +175,15 @@ export function parseArgs(argv: string[], lang: Lang): ParsedArgs {
       // 與設計原則 2（fail closed）不一致，改為中止。
       throw new DispatchError(m(lang, "tooManyArgs", arg, ticketDir, helpText), 2);
     }
+  }
+
+  if (doctorMode) {
+    // 工單 W1 §一之1：doctor 不接受也不需要 ticket-dir——多給了（任何 positional）
+    // 就照既有的 tooManyArgs 處理，不悄悄忽略。
+    if (ticketDir !== undefined) {
+      throw new DispatchError(m(lang, "tooManyArgs", ticketDir, "--doctor", helpText), 2);
+    }
+    return { mode: "doctor" };
   }
 
   if (!ticketDir) {

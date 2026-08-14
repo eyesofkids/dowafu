@@ -59,6 +59,8 @@ Do not split the questions and the file list into two separate blocks — that m
 
 **This is the most common mistake** — "asking a question without providing the file needed to answer it". Listing it per question lets the user see at a glance what is missing. **That column is not a formality; it is currently the only thing standing between you and a missing file.**
 
+**Before writing a path into that column, confirm the answer is in that file** — grep for the symbol, or open it. Filled in from memory the column catches nothing: a plausible-looking filename passes the format check exactly as well as the right one does, and the difference only surfaces a full dispatch later. **Two spokes may end up with the same files, but say why** — an identical list is a result you can explain, not a starting point.
+
 **Any change the user makes to the count, the models, or the lenses is followed without argument.**
 
 ### 3.1 Once confirmed, every prompt must contain
@@ -67,6 +69,7 @@ Do not split the questions and the file list into two separate blocks — that m
 - **The list of source-code files the spoke may read**, with an explicit prohibition on browsing any other document under `_docs/`
 
   When trimming that list, **ask yourself question by question: "where is the answer to this one? is that file on the list?"** Matching files to the lens's name (giving the safety lens the security-related files) produces the wrong list — **the lens is the angle you look from, the list is the material you look at**. If the list does not line up with where the answers live, the spoke is physically incapable of answering correctly. **A missing file is the dispatcher's failure, not the spoke's.** **Each spoke's list is trimmed against its own questions** — do not give two lenses the same list because one list is less work to assemble; whatever only one of them needed is what goes missing.
+  **A file you did not open is not evidence that the answer is elsewhere** — if you cannot point to the file that answers a question, that question has no file behind it yet, whatever the table says.
 
 - **Put the large files last on the list** (ascending by file size). Spokes read files in list order, and every round resends everything read so far, so the earlier a file sits, the more times it is billed again — the gap can approach a factor of two. In-process dispatch has a different context mechanism and the effect may not be the same, but ordering costs nothing and has no side effects; doing it anyway cannot hurt.
 
@@ -102,6 +105,8 @@ You revise the plan for the items that were adopted (a new version writes only t
 **Three: line numbers must be re-verified.** A spoke's citations can be off by anywhere from a few to dozens of lines while **the description of the content is usually right**: usable at the fact level, unusable at the location level.
 
 > **A wrong location is not a hallucination.** A hallucination is "that passage does not exist in that file at all", and the remedy is a rerun or a different model; a wrong location only needs you to locate it again. Mistaking the former for the latter throws away an entire usable output.
+
+**A spoke reporting "I could not read X" is a correct report, not a false alarm.** It names a file you did not put on its list, which makes it your gap and not its mistake — filing it under "false alarm", or quietly resolving it yourself and moving on, hides the one signal that tells you the list was wrong. Resolve it if you can, and still say plainly that the list was short.
 
 ## Red lines
 

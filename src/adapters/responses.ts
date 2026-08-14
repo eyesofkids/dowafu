@@ -107,6 +107,9 @@ export function createResponsesAdapter(config: ResponsesAdapterConfig): Adapter 
           const anyErr = err as { status?: number; headers?: unknown; error?: unknown; message?: string };
           throw new ProviderHttpError(
             anyErr.message ?? m(config.lang, "responsesAdapterCallFailed"),
+            // 連線層錯誤（APIConnectionError）帶著 status 欄位但值為 undefined，於是落到
+            // 這個 `?? 0`。**0 是「沒有 HTTP 回應」的哨兵**，`classifyError` 據此判暫時性
+            // 並重試——改動這裡的預設值之前先看 error-classify.ts 的註解。
             anyErr.status ?? 0,
             (anyErr.headers as Record<string, string>) ?? {},
             anyErr.error,

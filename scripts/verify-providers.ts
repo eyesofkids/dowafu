@@ -21,6 +21,31 @@ import { writeFile, mkdir } from "node:fs/promises";
 const dispatchHome = resolveDispatchHome();
 if (dispatchHome !== null) loadDispatchEnv(dispatchHome);
 
+// --model <provider>=<model>：覆寫該 provider 的預設型號，可重複帶，供單一新型號 smoke 用。
+const KNOWN_PROVIDERS = new Set(["openai", "deepseek", "gemini", "anthropic"]);
+const modelOverrides = new Map<string, string>();
+for (let i = 0; i < process.argv.length; i++) {
+  if (process.argv[i] !== "--model") continue;
+  const spec = process.argv[++i] ?? "";
+  const eq = spec.indexOf("=");
+  const provider = eq < 0 ? spec : spec.slice(0, eq);
+  if (eq < 0 || !KNOWN_PROVIDERS.has(provider)) {
+    console.error(
+      `--model 格式錯誤或 provider 不存在：「${spec}」，應為 <provider>=<model>，provider 須為 ${[...KNOWN_PROVIDERS].join("/")} 之一`,
+    );
+    process.exit(1);
+  }
+  modelOverrides.set(provider, spec.slice(eq + 1));
+}
+
+// 取型號的單一入口：`--model` 覆寫 > 環境變數 > 預設。三條 provider 路徑
+// （responses／gemini-native／anthropic）都要走這裡——只套在其中一條的話，`--model`
+// 對其餘兩家會通過驗證卻靜默無效，而那正是這支腳本存在的目的要排除的失敗形態。
+// 一律用 `||` 而非 `??`：環境變數設成空字串等同沒設，要退回預設，不是把空字串當型號送出去。
+function resolveModel(provider: string, modelEnv: string, defaultModel: string): string {
+  return modelOverrides.get(provider) || process.env[modelEnv] || defaultModel;
+}
+
 const USER_PROMPT =
   '請呼叫 read_file 工具讀取路徑 "package.json"，並用一句話告訴我它的 "name" 欄位值。';
 const FAKE_TOOL_RESULT = '{"name":"dowafu"}';
@@ -175,7 +200,7 @@ async function verifyResponsesProvider(
   config: ResponsesProviderConfig,
 ): Promise<ProviderResult> {
   const apiKey = process.env[config.apiKeyEnv];
-  const model = process.env[config.modelEnv] || config.defaultModel;
+  const model = resolveModel(config.name, config.modelEnv, config.defaultModel);
   const result = emptyResult(config.name, model);
 
   if (!apiKey) {
@@ -340,7 +365,7 @@ async function callGeminiNative(
 
 async function verifyGemini(config: GeminiConfig): Promise<ProviderResult> {
   const apiKey = process.env[config.apiKeyEnv];
-  const model = process.env[config.modelEnv] || config.defaultModel;
+  const model = resolveModel(config.name, config.modelEnv, config.defaultModel);
   const result = emptyResult(config.name, model);
 
   if (!apiKey) {
@@ -424,7 +449,7 @@ async function verifyGemini(config: GeminiConfig): Promise<ProviderResult> {
 // ---------------------------------------------------------------------------
 
 const ANTHROPIC_API_KEY_ENV = "ANTHROPIC_API_KEY";
-const ANTHROPIC_MODEL = process.env.ANTHROPIC_MODEL || "claude-sonnet-5";
+const ANTHROPIC_MODEL = resolveModel("anthropic", "ANTHROPIC_MODEL", "claude-sonnet-5");
 const ANTHROPIC_BASE_URL = "https://api.anthropic.com";
 const ANTHROPIC_VERSION = "2023-06-01";
 

@@ -3,7 +3,7 @@ name: preflight
 description: 開工前檢查這個專案的環境有沒有把工作流程靜默停用：流程規範那一章的內容讀不讀得到、skill 與 lens 齊不齊、tmp/ 有沒有被 gitignore、dowafu 跑不跑得起來。只讀、只報告，不改任何設定。
 metadata:
   derived-from: ".claude/skills/preflight/SKILL.md"
-  derived-from-sha256: "76de7252b80e1de0256a858467415a99607914f49afae3e1b181f5db43ab796e"
+  derived-from-sha256: "ad8b06b543347a387f44eb0fdaffad343b332040477d1b0ac047600a49b26ee6"
 ---
 
 # preflight — 環境前置檢查
@@ -31,7 +31,8 @@ cd <repo 根的絕對路徑>
 echo "=== 流程規範 ==="
 ls CLAUDE.md AGENTS.md workflow_spec.md 2>&1
 # 這條只幫你定位「內容寫在哪個檔」。它有命中 ≠ 你讀得到——判準見下。
-grep -n "規劃→實作→驗收流程規範" CLAUDE.md AGENTS.md workflow_spec.md 2>/dev/null
+# 兩種寫法都要找：專案本來那一章的語言，未必和你裝的語言套件相同。
+grep -nE "規劃→實作→驗收|Plan → Implement → Accept" CLAUDE.md AGENTS.md workflow_spec.md 2>/dev/null
 
 echo "=== skill 與 lens ==="
 ls .claude/skills/ 2>/dev/null
@@ -44,6 +45,10 @@ git check-ignore -q tmp && echo "已忽略" || echo "未忽略"
 ### 流程規範讀不讀得到
 
 **判準只有一條：「規劃→實作→驗收流程規範（主從形態）」這一章的內容，你現在讀得到嗎？**
+
+**那一章可能是以另一種語言的標題存在的。** 語言套件各帶各的副本，所以本來就有這一章的專案
+最後會變成兩份——兩種語言，而只有一份會自動載入。上面那道 grep 兩種寫法都找就是為了這個；
+**命中超過一個檔時，先讀下一段再下判斷。**
 
 讀得到就算通過。內容是直接貼在入口檔裡、還是用 `@` 之類的方式引入的，**那是使用者的
 選擇，不在檢查範圍內**。
@@ -89,7 +94,7 @@ session 又會漏掉。
 
 ---
 
-## 2. 這個工具鏈另外要查的三件事
+## 2. 這個工具鏈另外要查的四件事
 
 按這個順序——前一項不成立，後面查了也沒有意義。
 
@@ -111,6 +116,10 @@ dowafu --version
 
 **`command -v dowafu` 查不到不代表沒安裝**，別拿那個當判準。
 
+**既沒回來也沒報錯，是第三種情況：它在等。** 不帶 `--yes` 時 CLI 會印出確認提示並卡在
+stdin 上，而這在不同 host 會表現成逾時、表現成沒有輸出、或表現成「要不要幫你送出輸入」。
+**記下你的環境是哪一種**——派工當下會再遇到一次，而那個時機點知道就晚了。
+
 ### 二、lens 定義與 skill 在不在
 
 見第 1 節的「skill 與 lens」。有一點對你特別重要：
@@ -125,6 +134,22 @@ dowafu --version
 **這一項最容易踩空**，值得多看一眼。`@xxx.md` 是 Claude Code 的 import
 語法，你不會展開它——入口檔裡若只有那一行，你看到的就是一行字，而**你很可能以為自己
 已經讀過規範了**。實際檢查你的 context 裡有沒有那章的內容，別憑印象。
+
+### 四、CLI 的設定到位了嗎——`dowafu --doctor`
+
+```bash
+dowafu --doctor
+```
+
+它會印出設定目錄解析到哪、`.env` 在不在、**哪幾家有 key**（只看有沒有，不印值）、
+內建的型號白名單、以及找到哪幾支 lens 定義。不呼叫 API、不花錢，**而且不需要工單**——
+這正是它在「什麼都還沒有」的時候能用的原因。
+
+缺的項目照它印的回報。**不要主動幫使用者寫 key，也不要請他把 key 貼進這段對話**——
+貼進來的東西會留在這段對話的歷史裡。幫他建目錄、放一份空範本可以，值要由他自己填進檔案。
+
+`dowafu --doctor` 只印得出錯誤時，那與第一項是同一個發現：CLI 從這裡跑不起來，
+下面幾項都還輪不到。
 
 ---
 

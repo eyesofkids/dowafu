@@ -24,6 +24,7 @@ import { ensureOutDir, outDirHasArtifacts, persistSpokeResult, RunLogWriter, wri
 import { registerSecrets, maskString, maskDeep } from "./mask.js";
 import { SECRET_ENV_VARS } from "./secret-env.js";
 import { resolveDispatchHome, loadDispatchEnv } from "./dispatch-home.js";
+import { buildDoctorReport, type DoctorProvidersResult } from "./doctor.js";
 import { bundledProvidersPath, getPackageVersion, getCommandName } from "./pkg-info.js";
 import { checkGitignore } from "./gitignore-check.js";
 import { buildJsonPayload, buildJsonPlan } from "./json-output.js";
@@ -101,6 +102,22 @@ async function main() {
   }
   if (parsed.mode === "version") {
     console.log(getPackageVersion());
+    return;
+  }
+  if (parsed.mode === "doctor") {
+    // 工單 W1 §一之2：語言走 messageLang（resolveFallbackLang），不受 --lang 影響——
+    // --doctor 可能正是拿來診斷 --lang／DISPATCH_LANG 本身壞掉的工具。
+    // §一之6：型號白名單走既有的 loadProviders／bundledProvidersPath，載入失敗印失敗原因、
+    // 不中止（doctor 本身 exit 一律 0，見下方 buildDoctorReport 的呼叫沒有任何 throw 路徑）。
+    let providersResult: DoctorProvidersResult;
+    try {
+      const providers = await loadProviders(bundledProvidersPath(), messageLang);
+      providersResult = { ok: true, providers };
+    } catch (err) {
+      const reason = err instanceof DispatchError ? err.message : maskString(String(err));
+      providersResult = { ok: false, reason };
+    }
+    console.log(buildDoctorReport(messageLang, getCommandName(), providersResult));
     return;
   }
 

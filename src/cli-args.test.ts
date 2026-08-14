@@ -57,6 +57,39 @@ test("parseArgs：--version／-V 不需要 ticketDir，回傳 mode:version", () 
   assert.deepEqual(parseArgs(["-V"], "en"), { mode: "version" });
 });
 
+// 工單 W1（fix_batch_4）§一之1／§一之7：--doctor 是第三個 mode，不接受也不需要 ticket-dir；
+// 與 --help 同時給時 --help 優先（help > version > doctor）。
+
+test("parseArgs：--doctor 不需要 ticketDir，回傳 mode:doctor", () => {
+  assert.deepEqual(parseArgs(["--doctor"], "en"), { mode: "doctor" });
+});
+
+test("parseArgs：--doctor 與已知旗標（如 --lang）同時給仍生效，不因此中止", () => {
+  const parsed = parseArgs(["--doctor", "--lang", "zh-tw"], "en");
+  assert.deepEqual(parsed, { mode: "doctor" });
+});
+
+test("parseArgs：--doctor 與 --help 同時給，--help 優先", () => {
+  assert.deepEqual(parseArgs(["--doctor", "--help"], "en"), { mode: "help" });
+  assert.deepEqual(parseArgs(["--help", "--doctor"], "en"), { mode: "help" });
+});
+
+test("parseArgs：--doctor 與 --version 同時給，--version 優先", () => {
+  assert.deepEqual(parseArgs(["--doctor", "--version"], "en"), { mode: "version" });
+});
+
+test("parseArgs：--doctor 帶了 ticket-dir 這種多餘的 positional → 中止，走既有的 tooManyArgs", () => {
+  assert.throws(
+    () => parseArgs(["some-ticket-dir", "--doctor"], "en"),
+    (err: unknown) => {
+      assert.ok(err instanceof DispatchError);
+      assert.equal(err.exitCode, 2);
+      assert.equal(err.message, m("en", "tooManyArgs", "some-ticket-dir", "--doctor", HELP_EN));
+      return true;
+    },
+  );
+});
+
 test("parseArgs：無任何引數 → 拋 DispatchError，訊息為完整用法，exit 2", () => {
   assert.throws(
     () => parseArgs([], "en"),

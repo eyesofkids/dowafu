@@ -31,13 +31,18 @@
       "allowed": ["low", "high", "max"],
       "default": "high"
     },
-    "models": ["deepseek-v4-flash"],
+    "models": ["deepseek-v4-flash", "deepseek-v4-pro"],
     "charsPerToken": 1.0,
     "tpmLimit": null,
     "maxSpokeTokens": null,
-    "pricingSource": { "url": "https://api-docs.deepseek.com/quick_start/pricing/", "asOf": "2026-08-09", "note": "官方預告近期將調漲，且幅度顯著" },
+    "pricingSource": {
+      "url": "https://api-docs.deepseek.com/quick_start/pricing/",
+      "asOf": "2026-08-14",
+      "note": "本表填的是 2026-08-16 16:00 UTC 起生效的尖峰價。在此之前官方仍收舊價（flash 0.0028／0.14／0.28、pro 0.003625／0.435／0.87），所以生效前本表偏高。離峰（尖峰時段 01:00-04:00 與 06:00-10:00 UTC 以外）為尖峰的一半；本檔一個型號只放得下一組價，取尖峰＝取上限。"
+    },
     "pricing": {
-      "deepseek-v4-flash": { "inputPerM": 0.14, "cachedInputPerM": 0.0028, "outputPerM": 0.28 }
+      "deepseek-v4-flash": { "inputPerM": 0.44, "cachedInputPerM": 0.014, "outputPerM": 1.32 },
+      "deepseek-v4-pro": { "inputPerM": 1.32, "cachedInputPerM": 0.044, "outputPerM": 3.96 }
     }
   },
   "gemini": {

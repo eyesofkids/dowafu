@@ -51,6 +51,8 @@ Four things differ.
 cd <absolute path to the repo root> && dowafu <ticket dir> --repo-root . --dry-run
 ```
 
+**`--lang` sets the language of the CLI output and of the spoke prompts; it defaults to `en`.** This is the English pack and its lens files are in English, so the default already matches — pass `--lang en` explicitly only if `DISPATCH_LANG` is set to something else in this environment. Precedence is `--lang` > `DISPATCH_LANG` > the built-in `en`. A pack and a run language that disagree raise no error at all; you simply get a report in one language and spoke prompts in the other.
+
 There is no guarantee which workspace folder your terminal lands in, and `--repo-root` defaults to the cwd. A wrong cwd fails **silently** — the ticket still parses, the spokes still go out, only the allowlist boundary and the lens definitions point somewhere else.
 
 **Two: `dowafu` is an external global CLI and is not inside the workspace. Do not go looking for it; just run:**
@@ -89,6 +91,7 @@ Poll `tmp/spoke/<ticket-id>/run.jsonl` with your file-reading tool: the CLI writ
 | Each spoke's provider / model | See below |
 | **The per-question "question → which file holds the answer → is it on the list?" mapping** | **Mandatory; format below** |
 | Estimated cost magnitude | For reference: three spokes on a medium ticket run about 40k tokens |
+| **Where each spoke's artifacts land** | **Mandatory**, see "One spoke, one landing spot" below |
 
 ### Questions and the allowlist **must be listed against each other, question by question**
 
@@ -107,11 +110,38 @@ Listing it per question lets the user see at a glance what is missing. **That co
 
 **When deciding the allowlist, ask yourself question by question: "where is the answer to this one? is that file on the list?"** Matching files to the lens's name (giving the safety lens the security-related files) produces the wrong list — the lens is **the angle you look from**, the list is **the material you look at**. When the list contains only the **producing** side of some behavior while the question asks about the **displaying** side, the spoke is physically incapable of answering correctly; swap in a set of files aimed at where the answers live and the same lens finds it. **The point of this self-check is to catch the gap before dispatching, not after.**
 
-### One table per spoke — the list is cut per lens, not once for the dispatch
+### One table per spoke — and the table is the deliverable, not a claim about one
 
-**Fill in that table once per spoke.** Each spoke gets its own questions, so it gets its own list; handing two lenses the same list because assembling one is less work is how a file that only one of them needed goes missing. If two spokes do end up with the same files, be able to say why — an identical list is a result, not a starting point.
+**Fill in that table once per spoke, and put both tables in front of the user.** Saying the lists were checked, or that they cover what is needed, does not replace showing them: "the allowlist covers every question" is a sentence, and a sentence costs nothing to write whether or not it is true.
 
-**One list shared by two lenses converges on the intersection, not the union.** What drops out first is whatever only one lens needed, which is precisely what that lens was dispatched to look at; the spoke can then only record the gap in its "cannot verify" section, and finding out that way costs a full dispatch. Trimming for cost is legitimate — trim each spoke's list against its own questions.
+Each row needs **the path you actually expect the answer in** — not a directory, not "the tags routes", not the lens's name. Write it the way it appears in the allowlist so the two can be read against each other:
+
+| Q | Question | Which file holds the answer | On the list? |
+| --- | --- | --- | --- |
+| 1 | Does `requireAuth` return the userId the delete-self check needs | `lib/auth-guard.ts` | ✅ |
+| 2 | Is the last-admin guard atomic | `prisma/schema.prisma` (the passage itself is the rest) | ✅ |
+
+**Before writing a path into that column, confirm the answer is in that file.** Grep for the symbol, or open it. The column exists to catch a missing file before dispatch; filled in from memory it catches nothing — a plausible-looking filename passes the format check exactly as well as the right one does, and the spoke pays for the difference.
+
+**Two spokes may end up with the same files, but say why.** An identical list is a result you can explain, not a starting point — and a list you trimmed until the two differed is the same mistake wearing the opposite mask.
+
+**One list shared by two lenses converges on the intersection, not the union.** What drops out first is whatever only one lens needed, which is precisely what that lens was dispatched to look at; the spoke can then only record the gap in its "cannot verify" section, and finding out that way costs a full dispatch. Trimming for cost is legitimate — trim each spoke's list against its own questions, never against the other spoke's.
+
+### One spoke, one landing spot — dig the holes before you dispatch
+
+A spoke's artifacts land in `tmp/spoke/<ticket-id>/` under the group of files named after its agent: `<agent>.md` plus `raw/<agent>.request.json` / `.response.json` / `.errors.json`. That group moves together, so the landing spot is the pair `<ticket-id>` + `<agent>`.
+
+**List the landing spot for every spoke in the dispatch plan. The criterion is one line: as many landing spots as spokes, all distinct.**
+
+| Spoke | Lens | Provider / model | Artifacts land in |
+| --- | --- | --- | --- |
+| 1 | safety | openai / gpt-5.6-luna | `tmp/spoke/auth-review-luna/hole-finder-safety.md` |
+| 2 | safety | deepseek / deepseek-v4-flash | `tmp/spoke/auth-review-ds/hole-finder-safety.md` |
+| 3 | feasibility | gemini / gemini-3.6-flash | `tmp/spoke/auth-review-luna/hole-finder-feasibility.md` |
+
+**Two spokes resolving to the same path means you are one hole short** — and the fix is not a different filename, it is a separate ticket directory: one model per directory, suffix the ticket-id, dispatch each once. Different lenses can share a directory; their agent names already differ.
+
+Count that column, do not eyeball it. **You do not need to know what a collision does** — if the count is off, stop and split the directories.
 
 ### Lenses
 
@@ -128,7 +158,7 @@ Dispatching one is fine; dispatching all three is fine. **Do not rule a lens out
 | provider | model |
 | --- | --- |
 | `openai` | `gpt-5.6-luna` / `gpt-5.6-terra` / `gpt-5.6-sol` |
-| `deepseek` | `deepseek-v4-flash` |
+| `deepseek` | `deepseek-v4-flash` / `deepseek-v4-pro` |
 | `gemini` | `gemini-3.1-flash-lite` / `gemini-3.5-flash-lite` / `gemini-3.6-flash` |
 | `anthropic` | `claude-opus-5` / `claude-sonnet-5` |
 
@@ -158,6 +188,8 @@ Write into `tmp/dispatch/<ticket-id>/`, using a topic slug as `<ticket-id>` (for
 ```
 
 The first line `<!-- format: v1 -->` is **required**; `model` is required; list only the spokes you are dispatching. `effort` may be left blank, meaning **`high`** — all four providers currently default `reasoning.default` to `high`. To change it, check `providers.json`'s `reasoning.allowed`: **each provider's range differs** (for example `deepseek` has no `medium`); a value outside that range is rejected with the list of allowed values shown, never silently downgraded.
+
+**No agent may appear twice in the same `_dispatch.md`.** One row per agent; to run one lens across several models, split it into separate ticket directories (see "One spoke, one landing spot" in §2). **The CLI rejects a duplicate agent at parse time, so the dry run stops as well** — that is the last line of defence, not a reason to skip counting landing spots.
 
 ### `_shared.md` (shared by every spoke)
 
@@ -190,7 +222,7 @@ The first line `<!-- format: v1 -->` is **required**; `model` is required; list 
 
 2. **Keep questions open; do not point at what you have already found.** Write the answer into the question and the spoke finding it is just the ticket read back to you.
 
-3. **The allowlist must cover the files actually needed to answer those questions.** Ask yourself per question: which files do I have to read to answer this? If one is missing, all the spoke can do is note what it lacked in its "cannot verify" section — **that is the dispatcher's failure, not its own**. Paths are **relative to the repo root**. An empty list is legal (a pure text review), but then it cannot read code and you lose the most valuable class of finding: "the document says X, but `src/foo.ts:42` actually does Y". **The list belongs to this `<agent>.md`, not to the dispatch** — do not copy another spoke's list over wholesale: a file that spoke needs and this one does not is dead weight in the read order, and the reverse is a hole.
+3. **The allowlist must cover the files actually needed to answer those questions.** Ask yourself per question: which files do I have to read to answer this? If one is missing, all the spoke can do is note what it lacked in its "cannot verify" section — **that is the dispatcher's failure, not its own**. Paths are **relative to the repo root**. An empty list is legal (a pure text review), but then it cannot read code and you lose the most valuable class of finding: "the document says X, but `src/foo.ts:42` actually does Y". **The list belongs to this `<agent>.md`, not to the dispatch** — do not copy another spoke's list over wholesale: a file that spoke needs and this one does not is dead weight in the read order, and the reverse is a hole. **A file you did not open is not evidence that the answer is elsewhere** — if you cannot point to the file that answers a question, the question has no file behind it yet, whatever the table says.
 
 4. **Put the large files last — this alone can halve the cost.** Spokes read files in **strict list order**, most models **call for one file per round**, and every round resends everything read so far. So the number of times a file is billed again = **total rounds − the round it was read in** — **the earlier it sits, the more times it is resent**. For a file of a dozen-odd k tokens, first versus last can nearly double that spoke's total. The method is simple: **sort ascending by file size**, largest last. If you are unsure of the size, `wc -l` first. **This still applies when you shuffle the list order** — pin the large files at the end and shuffle only the rest.
 
@@ -222,6 +254,8 @@ What it catches: `repoRoot` pointing at the wrong project, a wrong model name, m
 dowafu tmp/dispatch/<ticket-id> --repo-root . --dry-run
 ```
 
+**One dry run covers one ticket directory.** If this batch was split across several directories — which it is whenever one lens runs across several models — **dry-run each of them**, and add the estimates together before putting any number in front of the user. Dry-running the first one and going straight to the real run leaves every other directory unchecked.
+
 **Explain what this step is for before you run it.** The user has probably never used this tool, and seeing you issue a command will make them think dispatching — and billing — has already started:
 
 > This step only parses the ticket, validates the configuration, and estimates usage. **It calls no API and incurs no cost.** Its purpose is to confirm that what is about to go out is correct, before any money is spent.
@@ -239,6 +273,22 @@ dowafu tmp/dispatch/<ticket-id> --repo-root . --dry-run
 **Relay it in your own words, in a table — and never inside a code fence unless you are pasting the output byte for byte.** A fenced block means "this is what the tool printed"; putting a rewritten version inside one claims an accuracy you did not deliver. Rewriting is fine, and often reads better than the raw output. Passing a rewrite off as the raw output is not.
 
 **Whatever you relay, the qualifiers come with it.** The report's hedges are what stop the numbers being misread: that a total is a ceiling rather than an expectation, which day the price list was drawn from, what assumptions an estimate rests on, the lines confirming each lens's closing line. They are the first things to look droppable and the only things that make the numbers safe to act on. **Drop a qualifier and you have handed the user a firmer number than the tool gave you.**
+
+**Lines the tool marks with `⚠` or `ℹ` are relayed word for word, never paraphrased.** A `⚠` line is the tool telling you something is wrong right now — that the output directory already holds artifacts, that the list order is costing you money, that a spoke read nothing. Rewriting one into a calmer sentence is the single most expensive thing you can do to this report, because the reader loses the only signal that asked for a decision. In particular: `⚠ Sorting large files last could bring this down to N` means **your order is not sorted**; it does not mean "already sorted, reordering would save a little".
+
+The qualifiers that must survive, by name:
+
+| Where | What must come with the number |
+| --- | --- |
+| Each spoke's line | `effort=`, `lang=`, `store=`, and its `cap` |
+| Price sub-line | the per-M figures **and** `priced as of <date>` |
+| `ℹ` closing-line checks | one line per spoke, as printed |
+| Initial prompt estimate | that it excludes the ticket and the allowlist, and the gate's cap |
+| Allowlist estimate | that it is an upper bound, **not deduplicated**, and the chars-per-token basis |
+| Read-order amplification | that it is an upper bound assuming sequential reads and does not apply to batching providers; the ordering verdict; and that the figure excludes the initial prompt and ticket |
+| Worst-case total | that it is a **ceiling, not an expectation**, and that it is the sum of the per-spoke caps |
+
+Numbers without these read as firmer than the tool meant them. If you convert tokens to money yourself, say that the conversion is yours and which price line you used.
 
 The report gives tokens, not money, and that **only holds for the dry run**. To convert to money, **the price list is `providers.json`'s `pricing`** (`inputPerM` / `cachedInputPerM` / `outputPerM`) — **do not look it up on the vendor's website**: those numbers are exactly what the CLI bills against, and pulling from the website would make "what you reported" and "what the CLI actually charges" disagree. If `pricingSource.asOf` looks stale, report it to the user rather than editing the number yourself (fix `providers.json` instead). **For the real run**, `summary.md` has an "estimated cost" column, and each spoke also prints a `cost=` line when it finishes — that figure is already computed by the CLI, so **just relay it; do not compute it yourself**.
 
@@ -304,6 +354,8 @@ dowafu tmp/dispatch/<ticket-id> --repo-root . --yes
 
 The artifacts are in `tmp/spoke/<ticket-id>/`: `<agent>.md` (the report), `summary.md` (the audit table), `run.jsonl` (the execution log), and `raw/` (complete requests and responses).
 
+**`run.jsonl` is appended event by event and is never overwritten.** If the artifacts and `raw/` were clobbered — by a rerun, or by another spoke writing to the same name — that file still holds each spoke's `spoke_start` (provider and model), per-round usage, every read attempt including the refused ones, any errors, and the `spoke_end` token and cost figures. The report text is gone; what was spent and what was read can still be reconstructed.
+
 > **Confirm §5's startup check passed before collecting.** No file in this directory will tell you whether it belongs to this run.
 
 **The order of presentation must not be changed**:
@@ -323,7 +375,7 @@ The artifacts are in `tmp/spoke/<ticket-id>/`: `<agent>.md` (the report), `summa
    **A segment beginning with `⚠` is never dropped, and neither is `(audit unavailable)`.** Those are not decoration sitting outside the named columns; they are the audit telling you something went wrong, and dropping them leaves the user holding only the parts that said nothing did.
 
    **Any segment carrying content is reproduced word for word.** Only `pass` and the CLI's own empty-value word may be compressed. The segments saying "nothing here" are the cheap ones to keep, and the one saying something is the one worth dropping — so this rule is deliberately asymmetric: **the more a segment has to say, the less freedom you have with it.**
-3. **Then open a separate "hub assessment" section** — deduplicate, and annotate each item with your preliminary judgment (holds / does not hold + why / needs the user's ruling).
+3. **Then open a separate "hub assessment" section** — deduplicate, and annotate each item with your preliminary judgment (holds / does not hold + why / needs the user's ruling). **Every item carries the observations it came from**, by spoke and number (`safety 2, 3; feasibility 9`), and **every observation appears against at least one item**. Two spokes' worth of numbered observations either all show up in that column or the ones that did not are visible at a glance — which is the point: without the numbers, an observation that quietly failed to make it into the assessment cannot be told apart from one you judged and dismissed.
 
 ### Merging multiple runs
 
@@ -337,7 +389,11 @@ The artifacts are in `tmp/spoke/<ticket-id>/`: `<agent>.md` (the report), `summa
 
 **Line numbers must be re-verified.** A spoke's citations can be off by anywhere from a few to dozens of lines while **the description of the content is usually right** — usable at the fact level, unusable at the location level. **A wrong location is not a hallucination** (a hallucination is "that passage does not exist in that file at all"), and the two are handled differently: a hallucination calls for a rerun or a different model, a wrong location only needs you to locate it again. **Mistaking a wrong location for a hallucination throws away an entire usable output.**
 
+**This applies to the line numbers you write, too.** Re-verifying a spoke's citation and then citing it from memory a few paragraphs later puts the drift back in under your own name — and yours carries more weight with the user, because you said you opened the file.
+
 **Three: when verifying a spoke's citation, a comment is not evidence.** "The spoke says a comment backs this conclusion" is not enough — you also have to verify **whether what the comment says still holds**. Comments drift away from the code, and a drifted comment reads exactly like a correct one, so verifying only that "the comment exists and matches" turns a wrong claim into an accepted one. The first item of the MUST checklist in AGENTS.md, "a filename, a comment, or a line number is not enough", was written for authoring plans; here it extends to accepting a spoke's citations.
+
+**A spoke reporting "I could not read X" is a correct report, not a false alarm.** It names a file you did not put on its list, which makes it your gap and not its mistake — filing it under "false alarm", or quietly resolving it yourself and moving on, hides the one signal that tells you the allowlist was wrong. Resolve it if you can, and still say plainly that the list was short.
 
 ### Reading the audit table
 

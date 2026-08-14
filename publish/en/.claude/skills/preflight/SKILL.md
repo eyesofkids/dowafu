@@ -35,7 +35,8 @@ cd <absolute path to the repo root>
 echo "=== workflow specification ==="
 ls CLAUDE.md AGENTS.md workflow_spec.md 2>&1
 # This only locates which file holds the content. A hit here ≠ you can read it — see the criterion below.
-grep -n "Plan → Implement → Accept" CLAUDE.md AGENTS.md workflow_spec.md 2>/dev/null
+# Both spellings: a project may carry this chapter in another language than the pack you installed.
+grep -nE "Plan → Implement → Accept|規劃→實作→驗收" CLAUDE.md AGENTS.md workflow_spec.md 2>/dev/null
 
 echo "=== skills and lenses ==="
 ls .claude/skills/ 2>/dev/null
@@ -48,6 +49,8 @@ git check-ignore -q tmp && echo "ignored" || echo "not ignored"
 ### Is the workflow specification readable
 
 **There is only one criterion: can you, right now, read the contents of the chapter "Plan → Implement → Accept (hub-and-spoke form)"?**
+
+**The chapter may be there under the other language's heading.** Language packs install their own copy, so a project that already had this chapter can end up with two — in two languages, only one of which auto-loads. The grep above looks for both spellings for exactly this reason; if it returns hits in more than one file, read the next paragraph before deciding anything.
 
 If you can read it, it passes. Whether the content is pasted directly into the entry file or pulled in via something like `@` is **the user's choice and outside the scope of this check**.
 
@@ -81,6 +84,8 @@ If it is not gitignored, mark it as failing: spoke reports contain the verbatim 
 ---
 
 ## 2. If you are a Claude Code agent
+
+**If you are going to dispatch externally (`/find-holes-external`), items one and four of §3 apply to you too** — the CLI has to be runnable and configured no matter which host is driving it. The rest of §3 is about hosts other than this one.
 
 The two items below affect **only Claude Code's own in-process sub-agents**. For external dispatch (`find-holes-external` via `dowafu`), the spoke's model is decided by the ticket's `_dispatch.md` and is **unaffected by either of them** — if this project only uses external dispatch, checking this section changes nothing.
 
@@ -132,7 +137,7 @@ The `availableModels` allowlist then filters the three layers above: a blocked f
 
 ## 3. If you are not a Claude Code agent
 
-The two items in section 2 do not exist for you; skip them. What you need to confirm is the three things below, **in this order** — if an earlier one does not hold, checking the later ones is pointless.
+The two items in section 2 do not exist for you; skip them. What you need to confirm is the four things below, **in this order** — if an earlier one does not hold, checking the later ones is pointless.
 
 ### One: where `dowafu` is, and whether it runs
 
@@ -151,6 +156,8 @@ Printing a version number passes. Failing to print one means exactly one of two 
 
 **`command -v dowafu` finding nothing does not mean it is not installed** — do not use that as the criterion.
 
+**A command that neither returns nor errors is a third case: it is waiting.** Without `--yes` the CLI prints a confirmation prompt and blocks on stdin; depending on the host that surfaces as a timeout, as silence, or as an offer to send input on your behalf. Note which one your environment does — you will meet it again at dispatch time, and that is a much worse moment to find out.
+
 ### Two: whether the lens definitions and skills are present
 
 See "skills and lenses" in section 1. One point matters especially for you:
@@ -162,6 +169,18 @@ See "skills and lenses" in section 1. One point matters especially for you:
 See "is the workflow specification readable" in section 1; the criterion is the same: **can you, right now, read the contents of that chapter.**
 
 **You are more likely than Claude Code to trip on this one**, so it is worth a second look. `@xxx.md` is Claude Code's import syntax and you will not expand it — if the entry file contains only that line, what you see is one line of text, and **you may well believe you have already read the specification**. Actually check whether that chapter's content is in your context; do not go by impression.
+
+### Four: is the CLI configured — `dowafu --doctor`
+
+```bash
+dowafu --doctor
+```
+
+It prints where the config directory resolved to, whether `.env` is there, **which providers have a key** (presence only — it never prints a value), the bundled model whitelist, and which lens definitions it found. It calls no API and costs nothing, and it needs no ticket, which is what makes it usable before anything else exists.
+
+Report the missing rows as they are printed. **Do not offer to write the key for the user, and do not ask them to paste one into this conversation** — whatever is pasted here stays in this conversation's history. Creating the directory and an empty template is fine; the value itself is theirs to type into the file.
+
+A `dowafu --doctor` that prints nothing but an error is the same finding as item one: the CLI is not runnable from here, and nothing below it matters yet.
 
 ---
 

@@ -93,6 +93,15 @@ export function parseDispatchTable(markdown: string, lang: Lang): DispatchRow[] 
   if (rows.length === 0) {
     throw new DispatchError(m(lang, "dispatchTableEmpty"), 2);
   }
+
+  const distinctAgents = new Set(rows.map((r) => r.agent));
+  if (distinctAgents.size !== rows.length) {
+    const counts = new Map<string, number>();
+    for (const row of rows) counts.set(row.agent, (counts.get(row.agent) ?? 0) + 1);
+    const [dupAgent, dupCount] = [...counts.entries()].find(([, count]) => count > 1)!;
+    throw new DispatchError(m(lang, "duplicateAgentInDispatchTable", dupAgent, dupCount), 2);
+  }
+
   return rows;
 }
 
