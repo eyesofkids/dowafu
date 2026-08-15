@@ -77,10 +77,10 @@ Do not split the questions and the file list into two separate blocks — that m
 
 ### 4. Collection — summary by default, verbatim the exception
 
-The user must see each spoke's content, labeled with lens and model. **Synthesis is the default**, satisfying four required conditions:
+The user must see each spoke's content, labeled with lens and model. **A summary is the default**, satisfying four required conditions:
 
 1. **Declare the trade-off explicitly** — state at the top of the section that "this is a summary, not verbatim"; never summarize silently
-2. **The reading must cover every item, skipping none** — every observation from every spoke has to appear in the "hub reading" below, which is what replaces verbatim reproduction as the source of auditability: an original not laid out in front of the user does not mean it went unread
+2. **The assessment must cover every item, skipping none** — every observation from every spoke has to appear in the "hub assessment" below, which is what replaces verbatim reproduction as the source of auditability: an original not laid out in front of the user does not mean it went unread
 3. **The original is still in this conversation turn** — the sub-agent's full response stays in context, and it can be pasted back in full if the user asks
 4. **This only holds while the original can still be found** — once it has fallen out of context there is no original to check against
 

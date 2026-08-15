@@ -15,7 +15,12 @@ Three kinds, each landing in a different place:
 
 ## Installation
 
+First, fetch this language pack with degit — it lands you exactly in this directory, so the commands below can run as-is:
+
 ```bash
+npx degit eyesofkids/dowafu/publish/en#v0.4.0 .claude-pack
+cd .claude-pack
+
 TARGET=<path to the target project>
 mkdir -p "$TARGET/.claude/skills" "$TARGET/.claude/agents" "$TARGET/.agents/skills"
 cp -R .claude/skills/. "$TARGET/.claude/skills/"
@@ -23,6 +28,8 @@ cp -R .agents/skills/. "$TARGET/.agents/skills/"
 cp .claude/agents/*.md "$TARGET/.claude/agents/"
 cp workflow_spec.md "$TARGET/"
 ```
+
+Once fetched, run `dowafu --doctor` to confirm it recognizes all the lenses.
 
 **Every file is overwritten whole**; there is no part that needs to be spliced together by hand.
 

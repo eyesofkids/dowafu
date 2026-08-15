@@ -246,6 +246,8 @@ When reordering, **the large files still stay pinned at the end** (rule 4 above)
 
 What it catches: `repoRoot` pointing at the wrong project, a wrong model name, missing lens definitions, files on the allowlist that do not exist, `tmp/` not being ignored, an estimate over the gate's ceiling — all of it stopped before any API is actually called.
 
+**There is also one thing it warns about but does not block**: when the material under review looks like it was cut off by a `#` heading from an embedded document, the report prints an extra `⚠` line (what it looks like and what to do about it are in the report-item table below). The dry run still passes and no money has been spent yet, but what this guards against is "pay in full, review only half" — the same priority as everything above.
+
 > You already confirmed the lens definitions and `tmp/` in section 1. This is not asking you to redo it; it is telling you that **even if section 1 was skipped, this gate still catches them** — but not the other way round, so section 1 still has to be done.
 
 **What it cannot catch is the ticket's content**: whether the questions are good, and whether the allowlist lines up with them, are both invisible to a dry run. That is what you were supposed to finish in section 2 (the per-question table), and the dry run will not do it for you.
@@ -269,6 +271,7 @@ dowafu tmp/dispatch/<ticket-id> --repo-root . --dry-run
 | Initial prompt estimate | How much gets sent at the very start |
 | Allowlist estimate + file count | What the spoke can read, and how much of it |
 | Worst-case total | **This is a ceiling, not an expectation** (the sum of each spoke's cap); the actual figure is usually far below it |
+| `⚠ under-review text may have been cut off` | Demote the embedded document's `#` headings to `##`, or wrap it in a quadruple-backtick fence — a triple-backtick fence cannot contain a document that already carries its own triple-backtick fences. The ticket-writing section already says this; this is the second reminder |
 
 **Relay it in your own words, in a table — and never inside a code fence unless you are pasting the output byte for byte.** A fenced block means "this is what the tool printed"; putting a rewritten version inside one claims an accuracy you did not deliver. Rewriting is fine, and often reads better than the raw output. Passing a rewrite off as the raw output is not.
 
@@ -402,11 +405,16 @@ The artifacts are in `tmp/spoke/<ticket-id>/`: `<agent>.md` (the report), `summa
 | `Tool calls:N (allowed N / rejected N)` | How many reads, how many rejected — the statistics from `toolCalls[]` in `run.jsonl`. **Printed first**, ahead of the closing line |
 | `Closing line:` | pass / fail |
 | `Observations:N` | The item count; `uncountable` means the format could not be recognized — go read the original |
-| `Citations outside allowlist:` | Paths cited from outside the allowlist, **possibly guessed at** — judge against `toolCalls[]`. **This column has never once caught a genuine hallucination**: what it catches is usually the spoke copying an abbreviated path out of the material, relaying a path the material mentioned while stating it could not read it, or mixing absolute and relative paths. Check first whether that path appears in your own `_shared.md`, or is merely written differently; do not assume it was invented |
 | `Cannot-verify section:` | Whether that section was written per the template. **When judging output quality, look at how specific this section is** (for example, noting per item which conclusion depended on which unreadable file), not at the observation count — counts are unreliable, since overlap and padding both inflate them without indicating quality |
-| `Suspect phrases:` | **Suspected only** — keyword matching always produces false positives; read the matched sentence and judge for yourself |
+| `Template placeholders:<literal>×N` | The report still contains a template placeholder's literal text (the spoke forgot to fill it in). **It only hurts that field's readability — the observation content is usually still intact** — check the original first to see whether it's just a header field turned into noise. Prints `none` when there are no hits |
 
 **If the columns are preceded by `⚠ Zero source reads (allowed N file(s))`** — see "what to do on zero reads" below, and handle that before reading any other column.
+
+### Why the "Citations outside allowlist" column is gone
+
+0.3.2 dropped this column, not by oversight — each of the three candidate questions has a better place to be answered: "did the spoke read something it shouldn't have" is hard-blocked by the allowlist before it ever reaches audit; "did the hub's list have a gap" is answered more fully by the cannot-verify section; the remaining question, "did it cite something it never read", needs to distinguish **citing** from **paraphrasing** — that is a judgment about content, not something the engine should be deciding.
+
+This column **never once caught a genuine hallucination**: what it caught was usually the spoke copying an abbreviated path out of the material, relaying a path the material mentioned while stating it could not read it, or mixing absolute and relative paths.
 
 ### What to do on zero reads
 

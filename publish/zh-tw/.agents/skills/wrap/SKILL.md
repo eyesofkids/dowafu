@@ -3,7 +3,7 @@ name: wrap
 description: 實作收尾與驗收前置檢查：自檢專案的完成條件全綠、確認 report/runbook/issue_log 齊備、產出使用者手測清單與 diff 對照摘要、提示切 session（不 compact）。實作 session 完工或 context 吃緊時使用。
 metadata:
   derived-from: ".claude/skills/wrap/SKILL.md"
-  derived-from-sha256: "2ec2f5c1597808e908d418c16a34bea86ea86db91b9e03bf48321cd3f7fa3d31"
+  derived-from-sha256: "fb94653d29953999794e3e394a38a5ee8946a86d5fd165bf8ea810f12aa29718"
 ---
 
 # wrap — 實作收尾
@@ -44,7 +44,7 @@ metadata:
 ## 4. 收尾提醒
 
 - **不建議 commit**——依 AGENTS.md Git 安全規範，先呈 diff 給使用者確認。
-- **不用 compact**：若 context 已吃緊，明講「本 session 建議收工，後續修補可續用本 session（熱修補）；若本 session 已冷或被切割，開新 session 依 report＋issue_log 冷啟動」。
+- **不得 compact**：若 context 已吃緊，明講「本 session 建議收工，後續修補可續用本 session（熱修補）；若本 session 已冷或被切割，開新 session 依 report＋issue_log 冷啟動」。
 - 修補波期間：每修一筆 append issue_log。
 
 ## 5. 中途交接（context 吃緊、未完工）

@@ -14,7 +14,12 @@
 
 ## 安裝
 
+先用 degit 把這個語言包抓下來——抓下來就正好站在這個目錄裡，下面的指令照跑即可：
+
 ```bash
+npx degit eyesofkids/dowafu/publish/zh-tw#v0.4.0 .claude-pack
+cd .claude-pack
+
 TARGET=<目標專案路徑>
 mkdir -p "$TARGET/.claude/skills" "$TARGET/.claude/agents" "$TARGET/.agents/skills"
 cp -R .claude/skills/. "$TARGET/.claude/skills/"
@@ -22,6 +27,8 @@ cp -R .agents/skills/. "$TARGET/.agents/skills/"
 cp .claude/agents/*.md "$TARGET/.claude/agents/"
 cp workflow_spec.md "$TARGET/"
 ```
+
+抓完跑 `dowafu --doctor` 確認 lens 都認得出來。
 
 **全部整檔覆蓋**，沒有需要手工拼接的部分。
 

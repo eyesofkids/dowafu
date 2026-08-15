@@ -335,3 +335,53 @@ test("auditSpoke：回歸——正常回報（無佔位符）→ templatePlaceho
   assert.equal(result.finalLinePass, true);
   assert.equal(result.observationCount, 1);
 });
+
+// 工單 B2 §五：i18n 12 格重跑三格「無法計數」的實際形態，字面取自那三格的真實產物。
+
+test("auditSpoke：「**觀察 N-N**」連字號分隔正確計數（i18n-readme-dsfl-r2 實際格式）", () => {
+  const text = withClosing(`# 觀察
+
+**觀察 1-1**：第一條
+依據：a.ts
+
+**觀察 2-1**：第二條
+依據：b.ts
+
+# 無法驗證
+無`);
+  const result = auditSpoke(text);
+  assert.equal(result.observationCount, 2);
+});
+
+test("auditSpoke：「**觀察 N-N（註記）**」括號註記不擋計數（i18n-wrap-dsfl-r2 實際格式）", () => {
+  const text = withClosing(`# 觀察
+
+**觀察 1-1**：第一條
+依據：a.ts
+
+**觀察 1-2（問題）**：第二條
+依據：b.ts
+
+**觀察 1-3（反向增強）**：第三條
+依據：c.ts
+
+# 無法驗證
+無`);
+  const result = auditSpoke(text);
+  assert.equal(result.observationCount, 3);
+});
+
+test("auditSpoke：「Q<題號>-<序號>」掛在題號底下的觀察形式正確計數（i18n-fh-dsfl-r2 實際格式）", () => {
+  const text = withClosing(`# 觀察
+
+Q1-1 「**本 skill 只管內派。**」→ 這句在允許讀取清單裡找不到對應說明。
+
+Q1-2 「**改用 find-holes-external**」→ 對照英文版一致。
+
+Q2-1 步驟 2 的三樣內容，英文版只列了兩樣。
+
+# 無法驗證
+無`);
+  const result = auditSpoke(text);
+  assert.equal(result.observationCount, 3);
+});

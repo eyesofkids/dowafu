@@ -3,7 +3,7 @@ name: preflight
 description: 開工前檢查這個專案的環境有沒有把工作流程靜默停用：流程規範那一章的內容讀不讀得到、skill 與 lens 齊不齊、tmp/ 有沒有被 gitignore、dowafu 跑不跑得起來。只讀、只報告，不改任何設定。
 metadata:
   derived-from: ".claude/skills/preflight/SKILL.md"
-  derived-from-sha256: "ad8b06b543347a387f44eb0fdaffad343b332040477d1b0ac047600a49b26ee6"
+  derived-from-sha256: "abbc2abbfa804679256c63480a3c6af36cc8d68cb8d76b115458c73cd412bc03"
 ---
 
 # preflight — 環境前置檢查
@@ -142,8 +142,8 @@ dowafu --doctor
 ```
 
 它會印出設定目錄解析到哪、`.env` 在不在、**哪幾家有 key**（只看有沒有，不印值）、
-內建的型號白名單、以及找到哪幾支 lens 定義。不呼叫 API、不花錢，**而且不需要工單**——
-這正是它在「什麼都還沒有」的時候能用的原因。
+內建的型號白名單、以及找到哪幾支 lens 定義，**並標明哪些具備固定收尾句**。不呼叫 API、
+不花錢，**而且不需要工單**——這正是它在「什麼都還沒有」的時候能用的原因。
 
 缺的項目照它印的回報。**不要主動幫使用者寫 key，也不要請他把 key 貼進這段對話**——
 貼進來的東西會留在這段對話的歷史裡。幫他建目錄、放一份空範本可以，值要由他自己填進檔案。

@@ -41,7 +41,7 @@ description: 實作收尾與驗收前置檢查：自檢專案的完成條件全�
 ## 4. 收尾提醒
 
 - **不建議 commit**——依 AGENTS.md Git 安全規範，先呈 diff 給使用者確認。
-- **不用 compact**：若 context 已吃緊，明講「本 session 建議收工，後續修補可續用本 session（熱修補）；若本 session 已冷或被切割，開新 session 依 report＋issue_log 冷啟動」。
+- **不得 compact**：若 context 已吃緊，明講「本 session 建議收工，後續修補可續用本 session（熱修補）；若本 session 已冷或被切割，開新 session 依 report＋issue_log 冷啟動」。
 - 修補波期間：每修一筆 append issue_log。
 
 ## 5. 中途交接（context 吃緊、未完工）

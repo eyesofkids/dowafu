@@ -42,7 +42,7 @@
 ### 實作 session 紀律
 
 - 開場先列 todo（TodoWrite，穿越 context 壓縮的錨）；大量讀檔偵察派 sub-agent（context 防火牆）。
-- **不用 compact**（有損，且 compact 後熱 session 價值已死）：context 吃緊 → 在最後一個自然斷點收尾——完工走 `/wrap`，**未完工走 `/wrap` 中途交接模式**（寫交接文 `handoff_<主題>.md`，之後每次交接開新版本檔 `handoff_<主題>_v<n>.md`、表頭指出取代哪一份，不 append 舊份）→ 關 session → 新 session 依規劃書＋交接文冷啟動。發現對話開頭是 "This session is being continued" → 重讀規劃書，不信摘要裡的規格。
+- **不得 compact**（有損，且 compact 後熱 session 價值已死）：context 吃緊 → 在最後一個自然斷點收尾——完工走 `/wrap`，**未完工走 `/wrap` 中途交接模式**（寫交接文 `handoff_<主題>.md`，之後每次交接開新版本檔 `handoff_<主題>_v<n>.md`、表頭指出取代哪一份，不 append 舊份）→ 關 session → 新 session 依規劃書＋交接文冷啟動。發現對話開頭是 "This session is being continued" → 重讀規劃書，不信摘要裡的規格。
   **「context 吃緊」由使用者判斷，不要憑感覺自行宣告**——模型量不到自己的 context，主觀判斷的誤報遠多於命中。除非使用者說了、或有實際數字，否則只在自然斷點提一句「要不要收尾」，不要反覆提醒、更不要因此中斷正在做的工作項。
 - 施工中偏離規劃 → 記入 report（施工中修正節）；同檔順手修（無關 lint 錯等）允許，記 issue_log。
 

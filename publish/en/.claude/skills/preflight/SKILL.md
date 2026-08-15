@@ -176,9 +176,9 @@ See "is the workflow specification readable" in section 1; the criterion is the 
 dowafu --doctor
 ```
 
-It prints where the config directory resolved to, whether `.env` is there, **which providers have a key** (presence only — it never prints a value), the bundled model whitelist, and which lens definitions it found. It calls no API and costs nothing, and it needs no ticket, which is what makes it usable before anything else exists.
+It prints where the config directory resolved to, whether `.env` is there, **which providers have a key** (presence only — it never prints a value), the bundled model whitelist, and which lens definitions it found, **flagging which ones have a fixed closing line**. It calls no API and costs nothing, and it needs no ticket, which is what makes it usable before anything else exists.
 
-Report the missing rows as they are printed. **Do not offer to write the key for the user, and do not ask them to paste one into this conversation** — whatever is pasted here stays in this conversation's history. Creating the directory and an empty template is fine; the value itself is theirs to type into the file.
+Report the missing rows as they are printed. **Do not write the key for the user or offer to, and do not ask them to paste one into this conversation** — whatever is pasted here stays in this conversation's history. Creating the directory and an empty template is fine; the value itself is theirs to type into the file.
 
 A `dowafu --doctor` that prints nothing but an error is the same finding as item one: the CLI is not runnable from here, and nothing below it matters yet.
 
