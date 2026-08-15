@@ -133,25 +133,25 @@ type MessageArgs = {
   budgetTriggerLabel: [trigger: BudgetTrigger];
   anomalySpikeFlag: [];
   noneLabel: [];
-  outsideAllowlistSection: [section: string];
-  outsideAllowlistNoSection: [];
-  outsideAllowlistSuffixNote: [suffixOf: string];
-  outsideAllowlistEntry: [path: string, detail: string];
   unknownUsageKeysWarning: [provider: string, keys: string];
   zeroSourceReadWarning: [n: number];
   toolCallStats: [total: number, allowed: number, rejected: number];
   closingLineCell: [passFail: string];
   observationCountCell: [display: string];
   cannotCountObservations: [];
-  outsideAllowlistCell: [detail: string];
   cannotVerifySectionCell: [passFail: string];
-  suspectPhrasesCell: [detail: string];
+  // 工單 X1 v1.1 §二：模板佔位符稽核欄——單一佔位符字面＋次數的格式化，以及整格組裝。
+  templatePlaceholderEntry: [placeholder: string, count: number];
+  templatePlaceholdersCell: [detail: string];
   auditUnavailable: [];
   summaryHeader: [ticketId: string];
 
   // T5：report.ts——buildReport
   providersBundled: [formatVersion: number];
   providersExplicit: [path: string, formatVersion: number];
+  // 2026-08-15：待審段落非空、但另有可疑頂層章節——切在段落中間的形態。中止路徑的
+  // strayHeadingsCutReviewSection 只涵蓋「整段被切光」，這一則是警告不是錯誤。
+  strayHeadingsWarning: [reviewChars: number, strayNames: string[]];
   gitignoreNotIgnored: [outDir: string];
   gitignoreUnknown: [outDir: string];
   aboutToDispatch: [ticketId: string];
@@ -217,7 +217,10 @@ type MessageArgs = {
   doctorModelListValue: [formatVersion: number, items: string];
   doctorModelListLoadFailedValue: [reason: string];
   doctorLensLine: [value: string];
-  doctorLensFoundValue: [dirPath: string, count: number, names: string];
+  // 工單 X1 v1.1 §三：三段式（總數／有收尾句清單／無收尾句一段，命中才附加）取代舊版
+  // 「只算 hole-finder 開頭」的單段式。
+  doctorLensFoundValue: [dirPath: string, total: number, closingCount: number, closingNames: string, noClosingSuffix: string];
+  doctorLensNoClosingSuffix: [count: number, names: string];
   doctorLensDirMissingValue: [dirPath: string];
   doctorFooter: [];
 };
@@ -366,19 +369,15 @@ const MESSAGES: Record<Lang, MessageDefs> = {
       ({ total: "總量", reasoning: "推理累積", reasoning_round: "推理單輪尖峰" })[trigger],
     anomalySpikeFlag: () => "⚠ 異常尖峰・",
     noneLabel: () => "無",
-    outsideAllowlistSection: (section) => `「${section}」節`,
-    outsideAllowlistNoSection: () => "章節外",
-    outsideAllowlistSuffixNote: (suffixOf) => `；疑似 ${suffixOf} 的縮寫`,
-    outsideAllowlistEntry: (path, detail) => `${path}（${detail}）`,
     unknownUsageKeysWarning: (provider, keys) => `⚠ 未知 usage 欄位：${provider} ${keys}`,
     zeroSourceReadWarning: (n) => `⚠ 零原始碼讀取（允許 ${n} 檔）`,
     toolCallStats: (total, allowed, rejected) => `工具呼叫:${total}（允許 ${allowed}／拒絕 ${rejected}）`,
     closingLineCell: (passFail) => `收尾句:${passFail}`,
     observationCountCell: (display) => `觀察:${display}`,
     cannotCountObservations: () => "無法計數",
-    outsideAllowlistCell: (detail) => `清單外引用:${detail}`,
     cannotVerifySectionCell: (passFail) => `無法驗證欄:${passFail}`,
-    suspectPhrasesCell: (detail) => `疑似禁止內容:${detail}`,
+    templatePlaceholderEntry: (placeholder, count) => `${placeholder}×${count}`,
+    templatePlaceholdersCell: (detail) => `佔位符:${detail}`,
     auditUnavailable: () => "(無法稽核)",
     summaryHeader: (ticketId) => `# dispatch summary — ${ticketId}
 
@@ -387,6 +386,11 @@ const MESSAGES: Record<Lang, MessageDefs> = {
 
     providersBundled: (formatVersion) => `出貨（formatVersion ${formatVersion}）`,
     providersExplicit: (path, formatVersion) => `外部檔 ${path}（formatVersion ${formatVersion}）`,
+    strayHeadingsWarning: (reviewChars, strayNames) =>
+      `  ⚠ _shared.md 的「# 待審段落」只有 ${reviewChars} 字，另有 ${strayNames.length} 個頂層章節：` +
+      `${strayNames.map((s) => `「# ${s}」`).join("、")}` +
+      `——待審段落可能被它們切斷了。工單以 \`#\` 切分區塊，內嵌文件若自帶 \`#\` 標題請降成 \`##\`，` +
+      `或用 \`\`\` 圍籬包起來。確認過是刻意的就忽略本行`,
     gitignoreNotIgnored: (outDir) => `  ⚠ 輸出目錄 ${outDir} 未被輸出目錄所在的 git repo 忽略`,
     gitignoreUnknown: (outDir) =>
       `  ℹ 無法判定輸出目錄 ${outDir} 是否被 .gitignore 涵蓋（非 git repo 或 git 不可用）`,
@@ -447,7 +451,9 @@ const MESSAGES: Record<Lang, MessageDefs> = {
     doctorModelListValue: (formatVersion, items) => `providers.json formatVersion ${formatVersion}：${items}`,
     doctorModelListLoadFailedValue: (reason) => `無法載入：${reason}`,
     doctorLensLine: (value) => `  lens 定義   ${value}`,
-    doctorLensFoundValue: (dirPath, count, names) => `${dirPath} 找到 ${count} 支：${names}`,
+    doctorLensFoundValue: (dirPath, total, closingCount, closingNames, noClosingSuffix) =>
+      `${dirPath} 找到 ${total} 個定義檔，其中 ${closingCount} 個具備固定收尾句：\n${" ".repeat(14)}${closingNames}${noClosingSuffix}`,
+    doctorLensNoClosingSuffix: (count, names) => `\n${" ".repeat(14)}（另 ${count} 個無收尾句：${names}）`,
     doctorLensDirMissingValue: (dirPath) => `目錄不存在：${dirPath}`,
     doctorFooter: () => "本指令不呼叫任何 API，不會花錢。缺的項目怎麼補，見 README 的〈API keys〉一節。",
   },
@@ -605,19 +611,15 @@ const MESSAGES: Record<Lang, MessageDefs> = {
       ],
     anomalySpikeFlag: () => "⚠ anomalous spike - ",
     noneLabel: () => "none",
-    outsideAllowlistSection: (section) => `the "${section}" section`,
-    outsideAllowlistNoSection: () => "outside any section",
-    outsideAllowlistSuffixNote: (suffixOf) => `; possibly an abbreviation of ${suffixOf}`,
-    outsideAllowlistEntry: (path, detail) => `${path} (${detail})`,
     unknownUsageKeysWarning: (provider, keys) => `⚠ Unknown usage field(s): ${provider} ${keys}`,
     zeroSourceReadWarning: (n) => `⚠ Zero source reads (allowed ${n} file(s))`,
     toolCallStats: (total, allowed, rejected) => `Tool calls:${total} (allowed ${allowed} / rejected ${rejected})`,
     closingLineCell: (passFail) => `Closing line:${passFail}`,
     observationCountCell: (display) => `Observations:${display}`,
     cannotCountObservations: () => "uncountable",
-    outsideAllowlistCell: (detail) => `Citations outside allowlist:${detail}`,
     cannotVerifySectionCell: (passFail) => `Cannot-verify section:${passFail}`,
-    suspectPhrasesCell: (detail) => `Suspect phrases:${detail}`,
+    templatePlaceholderEntry: (placeholder, count) => `${placeholder}×${count}`,
+    templatePlaceholdersCell: (detail) => `Template placeholders:${detail}`,
     auditUnavailable: () => "(audit unavailable)",
     summaryHeader: (ticketId) => `# dispatch summary — ${ticketId}
 
@@ -626,6 +628,11 @@ const MESSAGES: Record<Lang, MessageDefs> = {
 
     providersBundled: (formatVersion) => `bundled (formatVersion ${formatVersion})`,
     providersExplicit: (path, formatVersion) => `external file ${path} (formatVersion ${formatVersion})`,
+    strayHeadingsWarning: (reviewChars, strayNames) =>
+      `  ⚠ _shared.md's "# Under review" holds only ${reviewChars} characters, and ${strayNames.length} other ` +
+      `top-level heading(s) follow: ${strayNames.map((s) => `"# ${s}"`).join(", ")} — the section under review ` +
+      `may have been cut off by them. The ticket splits into sections by \`#\`; if an embedded document has its ` +
+      `own \`#\` headings, demote them to \`##\` or wrap the block in \`\`\` fences. Ignore this line if it is intended`,
     gitignoreNotIgnored: (outDir) => `  ⚠ Output directory ${outDir} is not ignored by the git repo it lives in`,
     gitignoreUnknown: (outDir) =>
       `  ℹ Cannot determine whether output directory ${outDir} is covered by .gitignore (not a git repo, or git unavailable)`,
@@ -693,7 +700,9 @@ const MESSAGES: Record<Lang, MessageDefs> = {
     doctorModelListValue: (formatVersion, items) => `providers.json formatVersion ${formatVersion}: ${items}`,
     doctorModelListLoadFailedValue: (reason) => `failed to load: ${reason}`,
     doctorLensLine: (value) => `  Lens defs    ${value}`,
-    doctorLensFoundValue: (dirPath, count, names) => `${dirPath} holds ${count}: ${names}`,
+    doctorLensFoundValue: (dirPath, total, closingCount, closingNames, noClosingSuffix) =>
+      `${dirPath} holds ${total} definition file(s), ${closingCount} with a fixed closing line:\n${" ".repeat(15)}${closingNames}${noClosingSuffix}`,
+    doctorLensNoClosingSuffix: (count, names) => `\n${" ".repeat(15)}(${count} more without a closing line: ${names})`,
     doctorLensDirMissingValue: (dirPath) => `directory not found: ${dirPath}`,
     doctorFooter: () =>
       'This command calls no API and costs nothing. To fill in what is missing, see "API keys" in the README.',

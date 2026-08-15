@@ -75,7 +75,9 @@ function formatGitignoreWarning(status: GitignoreStatus, outDir: string, lang: L
 // （同既有 gitignore 警告），讓 lens 檔案本身的收尾句指示（如「回報最後一行固定為：...」）
 // 在真正付費呼叫之前先被人看到有沒有漂移。agentBody 已在 resolveSpokes 剝過 frontmatter，
 // 這裡再跑一次 stripFrontmatter 是冪等的（不再以 --- 開頭，regex 不命中），不需重讀檔。
-function lensClosingLineStatus(agentBody: string): "zh" | "en" | "none" {
+// 工單 X1 v1.1 §三：doctor.ts 的 lens 偵測要判定同一件事（檔案內文最後一句是不是固定收尾句），
+// 匯出供其重用，不得在 doctor.ts 重寫一份判定。
+export function lensClosingLineStatus(agentBody: string): "zh" | "en" | "none" {
   const lines = stripFrontmatter(agentBody).split(/\r?\n/).map((l) => l.trim());
   const lastNonEmpty = [...lines].reverse().find((l) => l.length > 0) ?? "";
   if (lastNonEmpty.includes(FIXED_CLOSING_LINE)) return "zh";
@@ -119,7 +121,14 @@ export function buildReport(
   allowlistEstimates: AllowlistEstimate[],
   cli: CliOptions,
   outDir: string,
-  meta: { repoRoot: string; providersSource: ProvidersSource; gitignoreStatus: GitignoreStatus },
+  meta: {
+    repoRoot: string;
+    providersSource: ProvidersSource;
+    gitignoreStatus: GitignoreStatus;
+    // 2026-08-15：待審段落的字數與 `_shared.md` 裡的可疑頂層章節，供付費前的截斷警告使用。
+    reviewTextChars: number;
+    strayHeadings: string[];
+  },
   lang: Lang,
 ): string {
   const estByAgent = new Map(estimates.map((e) => [e.agent, e.estimatedTokens]));
@@ -205,6 +214,12 @@ export function buildReport(
 
   const allowedCount = spokes.reduce((s, spoke) => s + spoke.allowedReadsResolved.length, 0);
   lines.push(m(lang, "allowedReadsSummary", allowedCount, outDir));
+
+  // 2026-08-15：待審段落疑似被切斷的警告，排在 gitignore 警告之前——後者關係到產物落在哪，
+  // 前者關係到這次派工有沒有意義（付全額、審半份）。
+  if (meta.strayHeadings.length > 0) {
+    lines.push(m(lang, "strayHeadingsWarning", meta.reviewTextChars, meta.strayHeadings));
+  }
 
   const gitignoreWarning = formatGitignoreWarning(meta.gitignoreStatus, outDir, lang);
   if (gitignoreWarning) lines.push(gitignoreWarning);

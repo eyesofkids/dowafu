@@ -73,7 +73,7 @@ test("buildReport：repoRoot 明列於報表", () => {
     NO_ALLOWLIST,
     CLI,
     "tmp/spoke/t1",
-    { repoRoot: "/Users/x/some-project", providersSource: BUNDLED, gitignoreStatus: "ignored" },
+    { repoRoot: "/Users/x/some-project", providersSource: BUNDLED, gitignoreStatus: "ignored", reviewTextChars: 100, strayHeadings: [] },
     "zh",
   );
   assert.match(report, /repoRoot\s+\/Users\/x\/some-project/);
@@ -87,7 +87,7 @@ test("buildReport：providers 來源——出貨版本印 formatVersion", () => 
     NO_ALLOWLIST,
     CLI,
     "tmp/spoke/t1",
-    { repoRoot: "/x", providersSource: BUNDLED, gitignoreStatus: "ignored" },
+    { repoRoot: "/x", providersSource: BUNDLED, gitignoreStatus: "ignored", reviewTextChars: 100, strayHeadings: [] },
     "zh",
   );
   assert.match(report, /providers\s+出貨（formatVersion 1）/);
@@ -101,7 +101,7 @@ test("buildReport：providers 來源——外部檔標明路徑", () => {
     NO_ALLOWLIST,
     CLI,
     "tmp/spoke/t1",
-    { repoRoot: "/x", providersSource: { kind: "explicit", path: "/custom/providers.json", formatVersion: 1 }, gitignoreStatus: "ignored" },
+    { repoRoot: "/x", providersSource: { kind: "explicit", path: "/custom/providers.json", formatVersion: 1 }, gitignoreStatus: "ignored", reviewTextChars: 100, strayHeadings: [] },
     "zh",
   );
   assert.match(report, /providers\s+外部檔 \/custom\/providers\.json（formatVersion 1）/);
@@ -115,11 +115,58 @@ test("buildReport：gitignore 已涵蓋時不印警告", () => {
     NO_ALLOWLIST,
     CLI,
     "tmp/spoke/t1",
-    { repoRoot: "/x", providersSource: BUNDLED, gitignoreStatus: "ignored" },
+    { repoRoot: "/x", providersSource: BUNDLED, gitignoreStatus: "ignored", reviewTextChars: 100, strayHeadings: [] },
     "zh",
   );
   assert.equal(report.includes("⚠"), false);
   assert.equal(report.includes("ℹ"), false);
+});
+
+// 2026-08-15：待審段落疑似被切斷的警告。真實事故：tmp/dispatch 的 12 份 i18n 翻譯審查
+// 工單待審段落被切成 25–248 字，$0.1780 全部無效，而當時報表上沒有任何一行提到這件事。
+test("buildReport：strayHeadings 非空時印 ⚠ 警告，含待審段落字數與被切出的章節名（zh）", () => {
+  const report = buildReport(
+    "t1",
+    [SPOKE],
+    ESTIMATES,
+    NO_ALLOWLIST,
+    CLI,
+    "tmp/spoke/t1",
+    { repoRoot: "/x", providersSource: BUNDLED, gitignoreStatus: "ignored", reviewTextChars: 25, strayHeadings: ["工作流程規範"] },
+    "zh",
+  );
+  assert.match(report, /⚠ _shared\.md 的「# 待審段落」只有 25 字，另有 1 個頂層章節：「# 工作流程規範」/);
+  assert.match(report, /待審段落可能被它們切斷了/);
+});
+
+test("buildReport：strayHeadings 非空時印 ⚠ 警告（en）", () => {
+  const report = buildReport(
+    "t1",
+    [SPOKE],
+    ESTIMATES,
+    NO_ALLOWLIST,
+    CLI,
+    "tmp/spoke/t1",
+    { repoRoot: "/x", providersSource: BUNDLED, gitignoreStatus: "ignored", reviewTextChars: 25, strayHeadings: ["Workflow spec"] },
+    "en",
+  );
+  assert.match(report, /⚠ _shared\.md's "# Under review" holds only 25 characters/);
+  assert.match(report, /"# Workflow spec"/);
+});
+
+test("buildReport：strayHeadings 為空時完全不提（回歸：不得對正常工單製造雜訊）", () => {
+  const report = buildReport(
+    "t1",
+    [SPOKE],
+    ESTIMATES,
+    NO_ALLOWLIST,
+    CLI,
+    "tmp/spoke/t1",
+    { repoRoot: "/x", providersSource: BUNDLED, gitignoreStatus: "ignored", reviewTextChars: 12842, strayHeadings: [] },
+    "zh",
+  );
+  assert.equal(report.includes("⚠"), false);
+  assert.equal(report.includes("待審段落"), false);
 });
 
 test("buildReport：gitignore 未涵蓋時印 ⚠ 警告", () => {
@@ -130,7 +177,7 @@ test("buildReport：gitignore 未涵蓋時印 ⚠ 警告", () => {
     NO_ALLOWLIST,
     CLI,
     "tmp/spoke/t1",
-    { repoRoot: "/x", providersSource: BUNDLED, gitignoreStatus: "not_ignored" },
+    { repoRoot: "/x", providersSource: BUNDLED, gitignoreStatus: "not_ignored", reviewTextChars: 100, strayHeadings: [] },
     "zh",
   );
   assert.match(report, /⚠ 輸出目錄 tmp\/spoke\/t1 未被輸出目錄所在的 git repo 忽略/);
@@ -144,7 +191,7 @@ test("buildReport：無法判定時印 ℹ 提示，措辭與警告不同（三�
     NO_ALLOWLIST,
     CLI,
     "tmp/spoke/t1",
-    { repoRoot: "/x", providersSource: BUNDLED, gitignoreStatus: "unknown" },
+    { repoRoot: "/x", providersSource: BUNDLED, gitignoreStatus: "unknown", reviewTextChars: 100, strayHeadings: [] },
     "zh",
   );
   assert.match(report, /ℹ 無法判定輸出目錄/);
@@ -163,7 +210,7 @@ test("buildReport：允許清單總量估算獨立成行，加總所有 spoke �
     allowlistEstimates,
     CLI,
     "tmp/spoke/t1",
-    { repoRoot: "/x", providersSource: BUNDLED, gitignoreStatus: "ignored" },
+    { repoRoot: "/x", providersSource: BUNDLED, gitignoreStatus: "ignored", reviewTextChars: 100, strayHeadings: [] },
     "zh",
   );
   assert.match(report, /允許清單總量估算 87,300 tokens（35 檔）/);
@@ -182,7 +229,7 @@ test("buildReport：允許清單總量估算附口徑說明（上限估計、不
     allowlistEstimates,
     CLI,
     "tmp/spoke/t1",
-    { repoRoot: "/x", providersSource: BUNDLED, gitignoreStatus: "ignored" },
+    { repoRoot: "/x", providersSource: BUNDLED, gitignoreStatus: "ignored", reviewTextChars: 100, strayHeadings: [] },
     "zh",
   );
   assert.match(report, /上限估計/);
@@ -199,7 +246,7 @@ test("buildReport：初始 prompt 估算那行不受允許清單估算影響—�
     allowlistEstimates,
     CLI,
     "tmp/spoke/t1",
-    { repoRoot: "/x", providersSource: BUNDLED, gitignoreStatus: "ignored" },
+    { repoRoot: "/x", providersSource: BUNDLED, gitignoreStatus: "ignored", reviewTextChars: 100, strayHeadings: [] },
     "zh",
   );
   assert.match(report, /初始 prompt 估算 100 tokens（僅 system prompt＋首則訊息，不含工單與允許清單；本閘門的估算上限 200,000）/);
@@ -214,7 +261,7 @@ test("buildReport：初始 prompt 估算行須明講不含工單與允許清單�
     allowlistEstimates,
     CLI,
     "tmp/spoke/t1",
-    { repoRoot: "/x", providersSource: BUNDLED, gitignoreStatus: "ignored" },
+    { repoRoot: "/x", providersSource: BUNDLED, gitignoreStatus: "ignored", reviewTextChars: 100, strayHeadings: [] },
     "zh",
   );
   assert.match(report, /不含工單與允許清單/);
@@ -234,7 +281,7 @@ test("buildReport：順序放大量與可省比例獨立成行，且百分比達
     allowlistEstimates,
     CLI,
     "tmp/spoke/t1",
-    { repoRoot: "/x", providersSource: BUNDLED, gitignoreStatus: "ignored" },
+    { repoRoot: "/x", providersSource: BUNDLED, gitignoreStatus: "ignored", reviewTextChars: 100, strayHeadings: [] },
     "zh",
   );
   assert.match(report, /逐個讀的順序放大量 100,000 tokens/);
@@ -255,7 +302,7 @@ test("buildReport：順序節省比例須標明不含初始 prompt 與工單，�
     allowlistEstimates,
     CLI,
     "tmp/spoke/t1",
-    { repoRoot: "/x", providersSource: BUNDLED, gitignoreStatus: "ignored" },
+    { repoRoot: "/x", providersSource: BUNDLED, gitignoreStatus: "ignored", reviewTextChars: 100, strayHeadings: [] },
     "zh",
   );
   assert.match(report, /不含初始 prompt 與工單/);
@@ -273,7 +320,7 @@ test("buildReport：順序已接近最佳時不印 ⚠，改用不同措辭（�
     allowlistEstimates,
     CLI,
     "tmp/spoke/t1",
-    { repoRoot: "/x", providersSource: BUNDLED, gitignoreStatus: "ignored" },
+    { repoRoot: "/x", providersSource: BUNDLED, gitignoreStatus: "ignored", reviewTextChars: 100, strayHeadings: [] },
     "zh",
   );
   assert.match(report, /目前順序已接近最佳/);
@@ -288,7 +335,7 @@ test("buildReport：允許清單為空時不印順序放大量那幾行", () => 
     NO_ALLOWLIST,
     CLI,
     "tmp/spoke/t1",
-    { repoRoot: "/x", providersSource: BUNDLED, gitignoreStatus: "ignored" },
+    { repoRoot: "/x", providersSource: BUNDLED, gitignoreStatus: "ignored", reviewTextChars: 100, strayHeadings: [] },
     "zh",
   );
   assert.equal(report.includes("逐個讀的順序放大量"), false);
@@ -297,7 +344,7 @@ test("buildReport：允許清單為空時不印順序放大量那幾行", () => 
 // 語言是工單標記推出來的，不是使用者填的——所以它必須印在報表上。看得見才擋得住
 // 「英文問題被判成中文工單」這種在花錢之前唯一能發現的錯。
 test("buildReport：每個 spoke 印出解析到的語言", () => {
-  const meta = { repoRoot: "/repo", providersSource: BUNDLED, gitignoreStatus: "ignored" as const };
+  const meta = { repoRoot: "/repo", providersSource: BUNDLED, gitignoreStatus: "ignored" as const, reviewTextChars: 100, strayHeadings: [] };
   const zh = buildReport("t1", [SPOKE], ESTIMATES, NO_ALLOWLIST, CLI, "tmp/spoke/t1", meta, "zh");
   assert.match(zh, /lang=zh/);
 
@@ -328,7 +375,7 @@ test("buildReport：英文版逐行格式（手寫字面量，數字不對稱，
     allowlistEstimates,
     CLI,
     "tmp/spoke/t1",
-    { repoRoot: "/x", providersSource: BUNDLED, gitignoreStatus: "not_ignored" },
+    { repoRoot: "/x", providersSource: BUNDLED, gitignoreStatus: "not_ignored", reviewTextChars: 100, strayHeadings: [] },
     "en",
   );
   assert.match(report, /providers\s+bundled \(formatVersion 1\)/);
@@ -354,7 +401,7 @@ const UNPRICED: ResolvedSpoke = {
 
 function reportFor(spoke: ResolvedSpoke, lang: "zh" | "en") {
   return buildReport("t1", [spoke], ESTIMATES, NO_ALLOWLIST, CLI, "tmp/spoke/t1",
-    { repoRoot: "/r", providersSource: BUNDLED, gitignoreStatus: "ignored" }, lang);
+    { repoRoot: "/r", providersSource: BUNDLED, gitignoreStatus: "ignored", reviewTextChars: 100, strayHeadings: [] }, lang);
 }
 
 test("buildReport：有價目時印出 input／output／cached 單價與查證日（中文）", () => {

@@ -4,7 +4,7 @@
 import { appendFile, mkdir, readdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { Lang, SpokeRunResult } from "./types.js";
-import type { AuditResult, OutsideAllowlistCitation } from "./audit.js";
+import type { AuditResult, TemplatePlaceholderHit } from "./audit.js";
 import type { ToolCallAudit } from "./tool-call-audit.js";
 import { maskDeep, maskString } from "./mask.js";
 import { m } from "./messages.js";
@@ -145,26 +145,11 @@ function formatStatusCell(r: SpokeRunResult, lang: Lang): string {
   return `${r.status}（${flag}${label}）`;
 }
 
-// plan_dispatch_v2.0.md §15（二）：清單外引用附出現章節與疑似縮寫來源，讓讀者不必自己去猜
-// （issue_log_v2.0.md 2026-08-07：曾有 hub 因為裸字串誤判成稽核器的 bug，推錯了方向）。
-function formatOutsideAllowlistCell(detail: OutsideAllowlistCitation[], lang: Lang): string {
-  if (detail.length === 0) return m(lang, "noneLabel");
-  return detail
-    .map((d) => {
-      const sectionPart = d.section ? m(lang, "outsideAllowlistSection", d.section) : m(lang, "outsideAllowlistNoSection");
-      const suffixPart = d.suffixOf ? m(lang, "outsideAllowlistSuffixNote", d.suffixOf) : "";
-      return m(lang, "outsideAllowlistEntry", d.path, `${sectionPart}${suffixPart}`);
-    })
-    .join(",");
-}
-
-// plan_i18n_v1.2.md §4.1：SUSPECT_PHRASES 中英兩套並存比對，summary.md 分開標示是哪一套
-// 命中——日後調整這份清單時才有資料可依據，不必再猜一次。
-function formatSuspectPhrasesDetail(a: AuditResult, lang: Lang): string {
-  const parts: string[] = [];
-  if (a.suspectPhrasesZh.length > 0) parts.push(`zh:${a.suspectPhrasesZh.join(",")}`);
-  if (a.suspectPhrasesEn.length > 0) parts.push(`en:${a.suspectPhrasesEn.join(",")}`);
-  return parts.length > 0 ? parts.join(" / ") : m(lang, "noneLabel");
+// 工單 X1 v1.1 §二：模板佔位符若被留在回報裡，列出是哪幾個、各幾次；沒有命中維持既有
+// 風格印「無」。
+function formatPlaceholdersCell(hits: TemplatePlaceholderHit[], lang: Lang): string {
+  if (hits.length === 0) return m(lang, "noneLabel");
+  return hits.map((h) => m(lang, "templatePlaceholderEntry", h.placeholder, h.count)).join(", ");
 }
 
 export function buildSummaryMarkdown(
@@ -199,9 +184,8 @@ export function buildSummaryMarkdown(
           "observationCountCell",
           a.observationCount !== null ? String(a.observationCount) : m(lang, "cannotCountObservations"),
         ),
-        m(lang, "outsideAllowlistCell", formatOutsideAllowlistCell(a.citedPathsOutsideAllowlistDetail, lang)),
         m(lang, "cannotVerifySectionCell", a.cannotVerifySectionPresent ? "pass" : "fail"),
-        m(lang, "suspectPhrasesCell", formatSuspectPhrasesDetail(a, lang)),
+        m(lang, "templatePlaceholdersCell", formatPlaceholdersCell(a.templatePlaceholdersFound, lang)),
       );
     }
     const auditCell = cells.length > 0 ? cells.join(" / ") : m(lang, "auditUnavailable");

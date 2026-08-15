@@ -218,7 +218,13 @@ async function main() {
     allowlistEstimates,
     options,
     outDir,
-    { repoRoot, providersSource, gitignoreStatus },
+    {
+      repoRoot,
+      providersSource,
+      gitignoreStatus,
+      reviewTextChars: ticket.shared.reviewText.length,
+      strayHeadings: ticket.shared.strayHeadings,
+    },
     lang,
   );
   log.info(report);
@@ -340,12 +346,7 @@ async function main() {
   });
 
   // §10 步驟 9：確定性稽核
-  const audits = new Map(
-    results.map((r) => {
-      const spoke = spokes.find((sp) => sp.agent === r.agent)!;
-      return [r.agent, auditSpoke(r.finalText, spoke.allowedReadsRelative)] as const;
-    }),
-  );
+  const audits = new Map(results.map((r) => [r.agent, auditSpoke(r.finalText)] as const));
   // plan_dispatch_v2.0.md §15（一）：tool 呼叫是執行資料不是文字，獨立於 auditSpoke 之外判定。
   const toolCallAudits = new Map(
     results.map((r) => {

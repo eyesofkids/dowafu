@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { buildFinalizeUserText, buildFirstUserText, buildSystemPrompt } from "./prompt.js";
+import { buildFinalizeUserText, buildFirstUserText, buildSystemPrompt, REPORT_PLACEHOLDERS } from "./prompt.js";
 import { FIXED_CLOSING_LINE, FIXED_CLOSING_LINE_EN } from "./audit.js";
 
 // prompt.ts 先前無測試覆蓋。plan_dispatch_v2.0.md §16：回報模板追加「引用路徑須與允許讀取
@@ -151,4 +151,46 @@ test("buildFirstUserText：lang=en 時四個步驟與清單說明都是英文", 
 test("buildFinalizeUserText：lang=en 時給英文收束指示", () => {
   assert.match(buildFinalizeUserText("en"), /do not call any more tools/);
   assert.match(buildFinalizeUserText("zh"), /不要再呼叫工具/);
+});
+
+// 工單 X1 v1.1 §二驗收補件：REPORT_PLACEHOLDERS 是從 REPORT_TEMPLATE／REPORT_TEMPLATE_EN
+// 手打出來的第二份清單，兩者之間沒有任何機制強制同源——改模板的人要自己記得同步改常數，
+// 沒有東西會擋。這裡把雙向一致性鎖住，兩個方向都要測：
+//   方向一：清單裡的每一條都真的在模板裡（清單多寫、模板沒有 → 紅）
+//   方向二：模板裡用到的每一個佔位符都在清單裡（模板加了新的、清單沒跟上 → 紅，這是重點）
+// 刻意不重構 REPORT_TEMPLATE／REPORT_TEMPLATE_EN 字面（prompt.ts:10-12：那些措辭對 spoke
+// 的行為敏感，實測描述句會被當建議略過），也不把模板常數另外 export 出來給測試用——
+// buildSystemPrompt("", lang) 用空字串 agent body 就能拿到「工具說明＋回報模板」的完整文本，
+// 不必擴大對外 API。
+
+test("REPORT_PLACEHOLDERS：清單裡每一條都真的出現在其中一份 system prompt 裡（清單有、模板沒有 → 紅）", () => {
+  const zhPrompt = buildSystemPrompt("", "zh");
+  const enPrompt = buildSystemPrompt("", "en");
+  for (const placeholder of REPORT_PLACEHOLDERS) {
+    assert.ok(
+      zhPrompt.includes(placeholder) || enPrompt.includes(placeholder),
+      `REPORT_PLACEHOLDERS 裡的 "${placeholder}" 沒有出現在任何一份 system prompt 裡——清單與模板已經不同源`,
+    );
+  }
+});
+
+// 尖括號形態 <…> 在 system prompt 裡只有回報模板的佔位符會用到——agent body 這裡傳空字串，
+// TOOL_NOTE／TOOL_NOTE_EN 本身完全不含尖括號（見上面「工具說明」相關測試比對的字串）。
+// 所以直接從組好的完整文本抽取 <…> 子字串，就是「模板實際用了哪些佔位符」的權威來源，
+// 不必另外把模板字串剝出來比對。這個方向是重點：方向一測不出模板加了新佔位符這件事
+// （清單裡沒有的東西，模板有沒有跟著加，方向一無從得知），只有反過來從模板抽取才抓得到。
+test("REPORT_PLACEHOLDERS：兩份 system prompt 裡出現的每一個 <…> 形態都要在清單裡（模板加了新佔位符、清單沒跟上 → 紅）", () => {
+  const zhPrompt = buildSystemPrompt("", "zh");
+  const enPrompt = buildSystemPrompt("", "en");
+  const angleBracketPattern = /<[^<>]+>/g;
+  const found = new Set(
+    [...zhPrompt.matchAll(angleBracketPattern), ...enPrompt.matchAll(angleBracketPattern)].map((m) => m[0]),
+  );
+  assert.ok(found.size > 0, "抽取邏輯本身要先抓到東西，抓到 0 個代表抽取方式壞了，不是模板真的沒有佔位符");
+  for (const literal of found) {
+    assert.ok(
+      REPORT_PLACEHOLDERS.includes(literal),
+      `system prompt 裡出現了 "${literal}"，但 REPORT_PLACEHOLDERS 沒有這一條——清單與模板已經不同源`,
+    );
+  }
 });

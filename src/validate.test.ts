@@ -23,7 +23,7 @@ function mkTicket(agent: string, effort?: string, model = "model-a"): Ticket {
   return {
     ticketDir: "tmp/dispatch/fake-ticket-for-validate-test",
     rows: [{ agent, provider: "testprovider", model, effort }],
-    shared: { premises: [], reviewText: "待審段落" },
+    shared: { premises: [], reviewText: "待審段落", strayHeadings: [] },
     perAgent: new Map([[agent, { questions: "具體問題", allowedReads: [] }]]),
   };
 }
@@ -63,7 +63,7 @@ test("resolveSpokes：中文標記的工單配注入 lang=\"en\"，ResolvedSpoke
   const ticket: Ticket = {
     ticketDir: "tmp/dispatch/fake-ticket-for-validate-test",
     rows: [{ agent: "hole-finder-cost", provider: "testprovider", model: "model-a", effort: "low" }],
-    shared: { premises: [], reviewText: "待審段落" },
+    shared: { premises: [], reviewText: "待審段落", strayHeadings: [] },
     perAgent: new Map([["hole-finder-cost", agentTicket]]),
   };
   const spokesEn = await resolveSpokes(ticket, mkProviders(), process.cwd(), "en");
@@ -254,7 +254,7 @@ test("resolveSpokes：內部錯誤——rows 引用的 agent 不在 perAgent 內
   const ticket: Ticket = {
     ticketDir: "tmp/dispatch/fake-ticket-for-validate-test",
     rows: [{ agent: "hole-finder-cost", provider: "testprovider", model: "model-a", effort: "low" }],
-    shared: { premises: [], reviewText: "待審段落" },
+    shared: { premises: [], reviewText: "待審段落", strayHeadings: [] },
     perAgent: new Map(),
   };
   await assert.rejects(
@@ -355,7 +355,7 @@ test("resolveSpokes：允許讀取清單相對 --repo-root 解析，repoRoot 下
     const ticket: Ticket = {
       ticketDir: "tmp/dispatch/fake-ticket-for-validate-test",
       rows: [{ agent: "hole-finder-cost", provider: "testprovider", model: "model-a", effort: "low" }],
-      shared: { premises: [], reviewText: "待審段落" },
+      shared: { premises: [], reviewText: "待審段落", strayHeadings: [] },
       perAgent: new Map([["hole-finder-cost", { questions: "具體問題", allowedReads: ["allowed.txt"] }]]),
     };
     const spokes = await resolveSpokes(ticket, mkProviders(), repoRoot, "zh");
@@ -373,7 +373,7 @@ test("resolveSpokes：_docs/ 拒絕判定相對 --repo-root，不是相對 proce
     const ticket: Ticket = {
       ticketDir: "tmp/dispatch/fake-ticket-for-validate-test",
       rows: [{ agent: "hole-finder-cost", provider: "testprovider", model: "model-a", effort: "low" }],
-      shared: { premises: [], reviewText: "待審段落" },
+      shared: { premises: [], reviewText: "待審段落", strayHeadings: [] },
       perAgent: new Map([["hole-finder-cost", { questions: "具體問題", allowedReads: ["_docs/secret.md"] }]]),
     };
     await assert.rejects(
@@ -406,7 +406,7 @@ test("resolveSpokes：允許讀取清單指向不存在的路徑 → 中止，�
     const ticket: Ticket = {
       ticketDir: "tmp/dispatch/fake-ticket-for-validate-test",
       rows: [{ agent: "hole-finder-cost", provider: "testprovider", model: "model-a", effort: "low" }],
-      shared: { premises: [], reviewText: "待審段落" },
+      shared: { premises: [], reviewText: "待審段落", strayHeadings: [] },
       perAgent: new Map([["hole-finder-cost", { questions: "具體問題", allowedReads: ["does-not-exist.txt"] }]]),
     };
     await assert.rejects(

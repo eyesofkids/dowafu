@@ -37,6 +37,20 @@ const REPORT_TEMPLATE = `# 觀察
 
 以上為觀察與問題，採用與否由 hub 與使用者裁決。`;
 
+// 工單 X1 v1.1 §二：模板要求 spoke 填空，卻沒有檢查空有沒有被填——四格產物實測中過招
+// （`<觀察>` 字面留在回報裡）。清單從這裡匯出，audit.ts 不得重打一份字串，否則模板改了
+// 檢查就會跟著失效。
+export const REPORT_PLACEHOLDERS = [
+  "<觀察>",
+  "<檔案:行號 或 明確推理>",
+  "<引用檔案時，逐字複製該處的一行原文；依據為推理時寫「推理」>",
+  "<需要但讀不到的檔案，或清單不足之處>",
+  "<observation>",
+  "<file:line, or explicit reasoning>",
+  '<when citing a file, copy that one line verbatim; write "reasoning" when the evidence is reasoning>',
+  "<files you needed but could not read, or gaps in the list>",
+];
+
 // plan_dispatch_v2.1.md §8（二）：工具說明只提「工單」，從未說允許清單的程式碼也要讀——
 // 零讀取的第二個成因（issue_log_v2.0.md 2026-08-07「provider 端完整 log」）。
 const TOOL_NOTE = "你有一個工具 `read_file(path)`。工單與允許讀取的程式碼檔案都不在本 prompt 中，\n須自行讀取；未讀過的檔案不得出現在「依據」中。";
@@ -79,6 +93,8 @@ function buildStep3(allowedReadsRelative: string[], lang: Lang): string {
 //
 // 但工單目錄**不保證位於 repoRoot 內**——cli.ts 明文「工單目錄仍相對 cwd 解析，不要求位於
 // repoRoot 內」。在外時轉相對會得到 ../.. 這種更難讀、也更容易被誤用的字串，故維持絕對。
+// export：稽核端（cli.ts → auditSpoke）要組出「spoke 實際會看到的那兩個工單檔路徑」，
+// 必須與這裡給 spoke 的字串同源，否則豁免會對不上（issue_log_v2.7.md 2026-08-14）。
 function displayTicketDir(ticketDir: string, repoRoot?: string): string {
   if (!repoRoot) return ticketDir;
   const rel = path.relative(repoRoot, ticketDir);

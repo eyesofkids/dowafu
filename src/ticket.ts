@@ -16,6 +16,10 @@ export type DispatchRow = {
 export type SharedDoc = {
   premises: string[];
   reviewText: string;
+  // 2026-08-15：`_shared.md` 裡「前提／待審段落」以外的頂層章節。幾乎必然是內嵌文件自帶的
+  // `#` 標題把待審段落切斷後留下的殘骸——但 `reviewText` 非空時無法斷定（可能是刻意的），
+  // 故只記錄、由 report.ts 出警告，不在此中止。空陣列＝沒有可疑章節。
+  strayHeadings: string[];
 };
 
 // 語言曾經由工單的區塊標記決定（使用者裁示 2026-08-10：語言不另設旗標；理由是旗標會被
@@ -112,12 +116,21 @@ export function stripFrontmatter(markdown: string): string {
   return (match ? match[1] : markdown).trim();
 }
 
+// 工單 X1 v1.1 §一：圍籬內的行一律不視為標題比對對象，避免內嵌規劃書的 code block
+// 挾帶行首 `#` 把待審段落（或回報稽核）切斷。
+function matchFence(line: string): { char: string; len: number } | null {
+  const match = line.match(/^\s*(`{3,}|~{3,})/);
+  if (!match) return null;
+  return { char: match[1][0], len: match[1].length };
+}
+
 // 匯出供 audit.ts 重用（回報模板同樣是 `# 標題` 結構）。
 export function splitTopLevelSections(markdown: string): Map<string, string> {
   const lines = markdown.split(/\r?\n/);
   const sections = new Map<string, string>();
   let currentHeading: string | null = null;
   let buffer: string[] = [];
+  let openFence: { char: string; len: number } | null = null;
 
   const flush = () => {
     if (currentHeading !== null) {
@@ -126,6 +139,20 @@ export function splitTopLevelSections(markdown: string): Map<string, string> {
   };
 
   for (const line of lines) {
+    const fence = matchFence(line);
+    if (openFence) {
+      if (fence && fence.char === openFence.char && fence.len >= openFence.len) {
+        openFence = null;
+      }
+      if (currentHeading !== null) buffer.push(line);
+      continue;
+    }
+    if (fence) {
+      openFence = fence;
+      if (currentHeading !== null) buffer.push(line);
+      continue;
+    }
+
     const match = line.match(/^#\s+(.+?)\s*$/);
     if (match) {
       flush();
@@ -146,6 +173,15 @@ function parseBulletList(body: string): string[] {
     .filter((v): v is string => Boolean(v && v.length > 0));
 }
 
+// `_shared.md` 裡「前提／待審段落」以外的頂層章節。判準與下方中止路徑共用同一份
+// ——2026-08-15 的清查證實它可靠：tmp/dispatch 底下 21 份真實工單，12 份中招全中、
+// 9 份正常零誤報。
+function findStrayHeadings(sections: Map<string, string>): string[] {
+  return [...sections.keys()].filter(
+    (k) => k !== "待審段落" && k !== "Under review" && !k.startsWith("前提") && k !== "Premises",
+  );
+}
+
 // §4：`_shared.md`。「待審段落」缺失或空即中止；「前提」缺失為警告（空前提合法）。
 export function parseSharedDoc(markdown: string, lang: Lang): SharedDoc {
   const sections = splitTopLevelSections(markdown);
@@ -157,9 +193,7 @@ export function parseSharedDoc(markdown: string, lang: Lang): SharedDoc {
     // 原訊息「缺或內容為空」會讓人先去查自己有沒有寫，方向就錯了。標題存在卻空白時，
     // 直接指名是誰切斷了它。
     if (sections.has("待審段落") || sections.has("Under review")) {
-      const stray = [...sections.keys()].filter(
-        (k) => k !== "待審段落" && k !== "Under review" && !k.startsWith("前提") && k !== "Premises",
-      );
+      const stray = findStrayHeadings(sections);
       if (stray.length > 0) {
         throw new DispatchError(m(lang, "strayHeadingsCutReviewSection", stray), 2);
       }
@@ -170,7 +204,13 @@ export function parseSharedDoc(markdown: string, lang: Lang): SharedDoc {
   const premisesBody = sections.get("前提（不受審）") ?? sections.get("前提") ?? sections.get("Premises");
   const premises = premisesBody ? parseBulletList(premisesBody) : [];
 
-  return { premises, reviewText };
+  // 2026-08-15：**上面那道防護只擋得住「整段被切光」。** 切在段落中間時 reviewText 非空，
+  // 先前一路靜默放行——tmp/dispatch 的 12 份 i18n 翻譯審查工單就是這樣派出去的，
+  // 待審段落最短只剩 25 字元（引言句），中文原文全被切走，而允許清單裡只有英文譯文，
+  // spoke 手上沒有可比對的原文。$0.1780、12 次派工、結論全部無效，稽核六格沒有一格會說。
+  // 這裡只記錄，警告由 report.ts 在付費前的報表印出——非空時無法斷定是不是刻意的，
+  // 中止會擋掉合法用法。
+  return { premises, reviewText, strayHeadings: findStrayHeadings(sections) };
 }
 
 // §4：`<agent>.md`。「具體問題」缺失或空即中止；「允許讀取」缺失為警告（空清單合法）。

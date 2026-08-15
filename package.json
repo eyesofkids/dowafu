@@ -1,6 +1,6 @@
 {
   "name": "dowafu",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "description": "Send a section of your design doc to external LLMs for review. They read only the files you whitelist, and nothing is billed until you confirm.",
   "keywords": [
     "llm",

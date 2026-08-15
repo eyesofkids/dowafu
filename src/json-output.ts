@@ -8,7 +8,7 @@
 // 就已完全確定，三種 mode（dry-run／cancelled／executed）皆有，與是否實際執行無關；
 // `spokes` 維持「執行結果」語意，dry-run／cancelled 時仍是空陣列——這是對的，不要改。
 
-import type { AuditResult } from "./audit.js";
+import type { AuditResult, TemplatePlaceholderHit } from "./audit.js";
 import type { BudgetTrigger, SpokeRunResult } from "./types.js";
 import type { CliOptions, ProvidersSource } from "./report.js";
 import { effectiveCap } from "./report.js";
@@ -73,9 +73,8 @@ export type JsonSpoke = {
   audit: {
     closingLine: boolean;
     observationCount: number | null;
-    pathsOutsideAllowlist: string[];
     hasUnverifiableSection: boolean;
-    suspectMatches: string[];
+    templatePlaceholdersFound: TemplatePlaceholderHit[];
     zeroSourceRead: boolean; // §15（一）：toolCalls 全落在工單目錄內，而允許清單非空
   };
 };
@@ -122,17 +121,15 @@ export function buildJsonSpoke(
       ? {
           closingLine: audit.finalLinePass,
           observationCount: audit.observationCount, // number | null 原樣保留，不得降級為 0
-          pathsOutsideAllowlist: audit.citedPathsOutsideAllowlist,
           hasUnverifiableSection: audit.cannotVerifySectionPresent,
-          suspectMatches: audit.suspectPhrases,
+          templatePlaceholdersFound: audit.templatePlaceholdersFound,
           zeroSourceRead: toolCallAudit?.zeroSourceRead ?? false,
         }
       : {
           closingLine: false,
           observationCount: null,
-          pathsOutsideAllowlist: [],
           hasUnverifiableSection: false,
-          suspectMatches: [],
+          templatePlaceholdersFound: [],
           zeroSourceRead: toolCallAudit?.zeroSourceRead ?? false,
         },
   };

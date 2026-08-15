@@ -3,9 +3,10 @@ import assert from "node:assert/strict";
 import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { parseDispatchTable, parseSharedDoc, parseAgentTicket, loadTicket } from "./ticket.js";
+import { parseDispatchTable, parseSharedDoc, parseAgentTicket, loadTicket, splitTopLevelSections } from "./ticket.js";
 import { DispatchError } from "./types.js";
 import { m } from "./messages.js";
+import { auditSpoke } from "./audit.js";
 
 // plan_i18n_impl_tickets T4／plan_i18n_v1.2.md §5.5：這些函式現在依 lang 產出不同語言的
 // 訊息。訊息斷言改比對 m(lang, key, ...args) 重建出的期望值（驗的是「用了正確的 key 與
@@ -282,6 +283,67 @@ test("parseSharedDoc：待審段落完全沒寫時，維持原訊息（不誤報
   );
 });
 
+// 2026-08-15：**切在段落中間**的形態——reviewText 非空，上面那道中止防護不會觸發。
+// tmp/dispatch 的 12 份 i18n 翻譯審查工單就是這樣派出去的（待審段落最短只剩 25 字，
+// 中文原文全被切走，而允許清單裡只有英文譯文），$0.1780 全部無效、稽核六格沒有一格會說。
+// 記錄在 SharedDoc.strayHeadings，警告由 report.ts 在付費前印，**不中止**——非空時無法斷定
+// 是不是刻意的，中止會擋掉合法用法。
+test("parseSharedDoc：待審段落非空、但後面有頂層標題把它切斷 → 記錄 strayHeadings，不中止", () => {
+  const md = `# 前提（不受審）
+- 無
+
+# 待審段落
+以下是中文原文（基準）。英文譯文在允許讀取清單裡。
+
+# 工作流程規範
+
+真正要審的內容全在這裡，但它已經被切成另一個章節了。
+`;
+  const shared = parseSharedDoc(md, "zh");
+  // 事實照記：reviewText 就是被切斷後的殘骸，不去修復它
+  assert.equal(shared.reviewText, "以下是中文原文（基準）。英文譯文在允許讀取清單裡。");
+  assert.deepEqual(shared.strayHeadings, ["工作流程規範"]);
+});
+
+test("parseSharedDoc：正常工單（只有前提與待審段落）→ strayHeadings 為空", () => {
+  const md = `# 前提（不受審）
+- 前提一
+
+# 待審段落
+規劃書原文逐字內嵌，沒有自帶的頂層標題。
+`;
+  assert.deepEqual(parseSharedDoc(md, "zh").strayHeadings, []);
+});
+
+test("parseSharedDoc：圍籬內的 # 標題不算 strayHeadings（與 §一 的修補一致，不得誤報）", () => {
+  const md = `# 待審段落
+規劃書片段：
+
+\`\`\`markdown
+# 這是圍籬內的假標題
+\`\`\`
+
+段落結尾。
+`;
+  const shared = parseSharedDoc(md, "zh");
+  assert.deepEqual(shared.strayHeadings, []);
+  assert.match(shared.reviewText, /段落結尾/);
+});
+
+test("parseSharedDoc：英文標記同樣記錄（Under review ／ Premises 不算 stray）", () => {
+  const md = `# Premises
+- none
+
+# Under review
+Intro line only.
+
+# Workflow spec
+The actual content got cut into its own section.
+`;
+  const shared = parseSharedDoc(md, "en");
+  assert.deepEqual(shared.strayHeadings, ["Workflow spec"]);
+});
+
 test("parseSharedDoc：前提缺失時合法（空前提，警告不中止）", () => {
   const md = `# 待審段落
 規劃書原文逐字內嵌
@@ -467,6 +529,111 @@ test("loadTicket：_shared.md 不存在 → fileNotFound（zh／en）", async ()
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+// 工單 X1 v1.1 §一：splitTopLevelSections 要認得 code fence，圍籬內的行首 `#` 不得被當成
+// 頂層標題——待審段落是逐字內嵌的，規劃書含 markdown code block 是常態。
+
+test("splitTopLevelSections：待審段落內的 ```markdown 區塊含 # Questions（與真欄位同名）→ reviewText 完整不被切斷", () => {
+  const md = `# 待審段落
+規劃書片段如下：
+
+\`\`\`markdown
+# Questions
+這是規劃書裡示範用的欄位，不是真正的工單欄位。
+\`\`\`
+
+段落結尾。
+`;
+  const shared = parseSharedDoc(md, "zh");
+  assert.match(shared.reviewText, /# Questions/);
+  assert.match(shared.reviewText, /段落結尾/);
+});
+
+test("splitTopLevelSections：圍籬內出現 # 前提 時不會把待審段落中間截斷（回歸修補前會截斷的那型）", () => {
+  const md = `# 待審段落
+前半段內容。
+
+\`\`\`
+# 前提
+圍籬內的假標題，不該被當成新章節。
+\`\`\`
+
+後半段內容。
+`;
+  const shared = parseSharedDoc(md, "zh");
+  assert.match(shared.reviewText, /前半段內容/);
+  assert.match(shared.reviewText, /後半段內容/);
+  assert.match(shared.reviewText, /圍籬內的假標題/);
+});
+
+test("splitTopLevelSections：圍籬用 ~~~ 同樣有效", () => {
+  const md = `# 待審段落
+前半段。
+
+~~~
+# 前提
+在波浪圍籬內，不該被當成新章節。
+~~~
+
+後半段。
+`;
+  const shared = parseSharedDoc(md, "zh");
+  assert.match(shared.reviewText, /前半段/);
+  assert.match(shared.reviewText, /後半段/);
+});
+
+test("splitTopLevelSections：四重圍籬內出現三個反引號不算關閉", () => {
+  const md = `# 待審段落
+外層開始。
+
+\`\`\`\`
+三個反引號不該關閉四重圍籬：
+\`\`\`
+# 前提
+這行仍在圍籬內。
+\`\`\`\`
+
+外層結束。
+`;
+  const shared = parseSharedDoc(md, "zh");
+  assert.match(shared.reviewText, /外層開始/);
+  assert.match(shared.reviewText, /這行仍在圍籬內/);
+  assert.match(shared.reviewText, /外層結束/);
+});
+
+test("splitTopLevelSections：回歸——真正的頂層 # 標題（不在圍籬內）照常切分", () => {
+  const md = `# 前提（不受審）
+- 前提一
+
+# 待審段落
+內容
+`;
+  const sections = splitTopLevelSections(md);
+  assert.deepEqual([...sections.keys()], ["前提（不受審）", "待審段落"]);
+  assert.equal(sections.get("待審段落"), "內容");
+});
+
+test("auditSpoke：回報的觀察節內含 ```bash 區塊、內有 # comment → 觀察條數、cannotVerifySectionPresent、收尾句判定都不受影響", () => {
+  const finalText = `# 觀察
+1. 第一條觀察，附一段程式碼：
+
+\`\`\`bash
+# comment，不是章節標題
+echo hi
+\`\`\`
+
+2. 第二條觀察。
+
+# 無法驗證
+- 無
+
+以上為觀察與問題，採用與否由 hub 與使用者裁決。
+`;
+  const result = auditSpoke(finalText);
+  assert.equal(result.observationCount, 2);
+  assert.equal(result.cannotVerifySectionPresent, true);
+  assert.equal(result.finalLinePass, true);
 });
 
 // agentFileNotFound [agentPath, agent]：2 個同型（string）參數，手寫字面量斷言（hub 裁決）。

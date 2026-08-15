@@ -58,12 +58,8 @@ function mkAudit(overrides: Partial<AuditResult> = {}): AuditResult {
     finalLinePass: true,
     observationCount: 3,
     citedPaths: [],
-    citedPathsOutsideAllowlist: [],
-    citedPathsOutsideAllowlistDetail: [],
     cannotVerifySectionPresent: true,
-    suspectPhrases: [],
-    suspectPhrasesZh: [],
-    suspectPhrasesEn: [],
+    templatePlaceholdersFound: [],
     ...overrides,
   };
 }
@@ -125,6 +121,21 @@ test("buildJsonSpoke：zeroSourceRead 為 true 時寫入 audit 物件", () => {
 test("buildJsonSpoke：toolCallAudit 缺失（防禦分支）時 zeroSourceRead 為 false 而非拋錯", () => {
   const spoke = buildJsonSpoke(mkResult(), mkAudit(), undefined);
   assert.equal(spoke.audit.zeroSourceRead, false);
+});
+
+// 工單 X1 v1.1 §二：templatePlaceholdersFound 一併帶出 --json 的 audit 物件。
+test("buildJsonSpoke：templatePlaceholdersFound 原樣帶出", () => {
+  const spoke = buildJsonSpoke(
+    mkResult(),
+    mkAudit({ templatePlaceholdersFound: [{ placeholder: "<觀察>", count: 6 }] }),
+    mkToolCallAudit(),
+  );
+  assert.deepEqual(spoke.audit.templatePlaceholdersFound, [{ placeholder: "<觀察>", count: 6 }]);
+});
+
+test("buildJsonSpoke：audit 缺失時 templatePlaceholdersFound 為空陣列", () => {
+  const spoke = buildJsonSpoke(mkResult(), undefined, undefined);
+  assert.deepEqual(spoke.audit.templatePlaceholdersFound, []);
 });
 
 test("buildJsonPayload：整體結構，多個 spoke 各自映射，原文不進 JSON（無 finalText 欄位）", () => {

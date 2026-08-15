@@ -129,12 +129,8 @@ function mkAudit(overrides: Partial<AuditResult> = {}): AuditResult {
     finalLinePass: true,
     observationCount: 3,
     citedPaths: [],
-    citedPathsOutsideAllowlist: [],
-    citedPathsOutsideAllowlistDetail: [],
     cannotVerifySectionPresent: true,
-    suspectPhrases: [],
-    suspectPhrasesZh: [],
-    suspectPhrasesEn: [],
+    templatePlaceholdersFound: [],
     ...overrides,
   };
 }
@@ -207,21 +203,17 @@ test("buildSummaryMarkdown：非零讀取時不顯示警告，但仍顯示工具
   assert.match(mdEn, /Tool calls:13 \(allowed 8 \/ rejected 5\)/);
 });
 
-// plan_dispatch_v2.0.md §15（二）：清單外引用附出現章節與疑似縮寫來源。section／suffixOf
-// 是稽核從 spoke 原文抽出的資料（不因 lang 而變——那是 spoke 實際寫的章節標題），只有
-// 「「…」節」／「疑似…的縮寫」這層包裝措辭才隨 lang 換；本測試同時鎖住這兩件事。
-test("buildSummaryMarkdown：清單外引用附出現章節與疑似縮寫來源（zh／en，手寫字面量完整格式）", () => {
+// 工單 X1 v1.1 §二：模板佔位符若被留在回報裡，列出是哪幾個、各幾次；§五、§六：稽核欄
+// 由「收尾句／觀察／清單外引用／無法驗證欄／疑似禁止內容」5 格改為「收尾句／觀察／
+// 無法驗證欄／佔位符」4 格。
+test("buildSummaryMarkdown：佔位符欄列出命中的佔位符與次數（zh／en，手寫字面量）", () => {
   const auditMap = new Map([
     [
       "hole-finder-feasibility",
       mkAudit({
-        citedPathsOutsideAllowlist: ["[id]/sync/route.ts"],
-        citedPathsOutsideAllowlistDetail: [
-          {
-            path: "[id]/sync/route.ts",
-            section: "觀察",
-            suffixOf: "app/api/property-management/external-ics/[id]/sync/route.ts",
-          },
+        templatePlaceholdersFound: [
+          { placeholder: "<觀察>", count: 4 },
+          { placeholder: "</觀察>", count: 2 },
         ],
       }),
     ],
@@ -235,10 +227,7 @@ test("buildSummaryMarkdown：清單外引用附出現章節與疑似縮寫來源
     toolCallMap,
     "zh",
   );
-  assert.match(
-    mdZh,
-    /清單外引用:\[id\]\/sync\/route\.ts（「觀察」節；疑似 app\/api\/property-management\/external-ics\/\[id\]\/sync\/route\.ts 的縮寫）/,
-  );
+  assert.match(mdZh, /佔位符:<觀察>×4, <\/觀察>×2/);
 
   const mdEn = buildSummaryMarkdown(
     "t1",
@@ -247,14 +236,16 @@ test("buildSummaryMarkdown：清單外引用附出現章節與疑似縮寫來源
     toolCallMap,
     "en",
   );
-  assert.match(
-    mdEn,
-    /Citations outside allowlist:\[id\]\/sync\/route\.ts \(the "觀察" section; possibly an abbreviation of app\/api\/property-management\/external-ics\/\[id\]\/sync\/route\.ts\)/,
-  );
-  // 括號本身也依 lang 換成半形（見 outsideAllowlistEntry），不是中文版的全形括號——
-  // 額外鎖住括號字元本身，不只鎖內容（這條斷言曾經因為括號寫死全形而紅過一次，見交回訊息）。
-  assert.match(mdEn, /\[id\]\/sync\/route\.ts \(the "觀察"/);
-  assert.doesNotMatch(mdEn, /\[id\]\/sync\/route\.ts（/);
+  assert.match(mdEn, /Template placeholders:<觀察>×4, <\/觀察>×2/);
+});
+
+test("buildSummaryMarkdown：佔位符未命中時顯示無／none（既有風格）", () => {
+  const auditMap = new Map([["hole-finder-cost", mkAudit({ templatePlaceholdersFound: [] })]]);
+  const toolCallMap = new Map([["hole-finder-cost", mkToolCallAudit()]]);
+  const mdZh = buildSummaryMarkdown("t1", [mkResult({ agent: "hole-finder-cost" })], auditMap, toolCallMap, "zh");
+  assert.match(mdZh, /佔位符:無/);
+  const mdEn = buildSummaryMarkdown("t1", [mkResult({ agent: "hole-finder-cost" })], auditMap, toolCallMap, "en");
+  assert.match(mdEn, /Template placeholders:none/);
 });
 
 test("buildSummaryMarkdown：audit 與 toolCallAudit 皆缺失時仍印 (無法稽核)，不拋錯（防禦分支，zh／en）", () => {
@@ -285,30 +276,6 @@ test("buildSummaryMarkdown：unknownUsageKeys 為空陣列時不顯示警告", (
     "zh",
   );
   assert.equal(md.includes("未知 usage 欄位"), false);
-});
-
-// plan_i18n_v1.2.md §4.1：SUSPECT_PHRASES 中英兩套並存比對，不隨 lang 切換（稽核不看
-// 工單語言）；summary.md 須分開標示是哪一套命中。
-test("buildSummaryMarkdown：疑似禁止內容分開標示中英文命中，不隨 lang 切換比對邏輯（僅顯示措辭隨 lang）", () => {
-  const auditMap = new Map([
-    ["hole-finder-cost", mkAudit({ suspectPhrasesZh: ["建議採用", "高風險"], suspectPhrasesEn: ["severity"] })],
-  ]);
-  const toolCallMap = new Map([["hole-finder-cost", mkToolCallAudit()]]);
-
-  const mdZh = buildSummaryMarkdown("t1", [mkResult({ agent: "hole-finder-cost" })], auditMap, toolCallMap, "zh");
-  assert.match(mdZh, /疑似禁止內容:zh:建議採用,高風險 \/ en:severity/);
-
-  const mdEn = buildSummaryMarkdown("t1", [mkResult({ agent: "hole-finder-cost" })], auditMap, toolCallMap, "en");
-  assert.match(mdEn, /Suspect phrases:zh:建議採用,高風險 \/ en:severity/);
-});
-
-test("buildSummaryMarkdown：疑似禁止內容皆未命中時顯示無／none", () => {
-  const auditMap = new Map([["hole-finder-cost", mkAudit()]]);
-  const toolCallMap = new Map([["hole-finder-cost", mkToolCallAudit()]]);
-  const mdZh = buildSummaryMarkdown("t1", [mkResult({ agent: "hole-finder-cost" })], auditMap, toolCallMap, "zh");
-  assert.match(mdZh, /疑似禁止內容:無/);
-  const mdEn = buildSummaryMarkdown("t1", [mkResult({ agent: "hole-finder-cost" })], auditMap, toolCallMap, "en");
-  assert.match(mdEn, /Suspect phrases:none/);
 });
 
 // plan_dispatch_v2.4.md §13（一）／§20：persistSpokeResult 是每支 spoke 完成即落檔的落地
