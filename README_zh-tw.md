@@ -173,16 +173,19 @@ tmp/spoke/<ticket-id>/
 `publish/` 提供兩種語言：`publish/en/` 與 `publish/zh-tw/`。**擇一複製，不可混裝**——審查者的固定收尾句必須與稽核檢查用的範本是同一種語言。
 
 ```bash
-TARGET=<your project>
-SRC=publish/zh-tw               # 或 publish/en
+npx degit eyesofkids/dowafu/publish/zh-tw#v0.4.0 .claude-pack   # 或 publish/en
 
+cd .claude-pack
+TARGET=<your project>
 mkdir -p "$TARGET/.claude/skills" "$TARGET/.claude/agents" "$TARGET/.agents/skills"
 
-cp -R "$SRC/.claude/skills/." "$TARGET/.claude/skills/"
-cp -R "$SRC/.agents/skills/." "$TARGET/.agents/skills/"
-cp "$SRC"/.claude/agents/*.md "$TARGET/.claude/agents/"
-cp "$SRC/workflow_spec.md" "$TARGET/"
+cp -R .claude/skills/. "$TARGET/.claude/skills/"
+cp -R .agents/skills/. "$TARGET/.agents/skills/"
+cp .claude/agents/*.md "$TARGET/.claude/agents/"
+cp workflow_spec.md "$TARGET/"
 ```
+
+抓完跑 `dowafu --doctor` 確認 lens 都認得出來。
 
 詳細內容請參考該語言目錄下的 README：
 

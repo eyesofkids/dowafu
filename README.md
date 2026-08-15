@@ -172,14 +172,18 @@ not work: a reviewer's fixed closing line has to match the template the audit ch
 against.
 
 ```bash
+npx degit eyesofkids/dowafu/publish/en#v0.4.0 .claude-pack   # or publish/zh-tw
+
+cd .claude-pack
 TARGET=<your project>
-SRC=publish/en                  # or publish/zh-tw
 mkdir -p "$TARGET/.claude/skills" "$TARGET/.claude/agents" "$TARGET/.agents/skills"
-cp -R "$SRC/.claude/skills/." "$TARGET/.claude/skills/"
-cp -R "$SRC/.agents/skills/." "$TARGET/.agents/skills/"
-cp "$SRC"/.claude/agents/*.md "$TARGET/.claude/agents/"
-cp "$SRC/workflow_spec.md" "$TARGET/"
+cp -R .claude/skills/. "$TARGET/.claude/skills/"
+cp -R .agents/skills/. "$TARGET/.agents/skills/"
+cp .claude/agents/*.md "$TARGET/.claude/agents/"
+cp workflow_spec.md "$TARGET/"
 ```
+
+Once fetched, run `dowafu --doctor` to confirm it recognizes all the lenses.
 
 Once the files are in place, have the agent run `preflight` before anything else — it is the check that tells you whether the copy actually took effect in this project's setup.
 

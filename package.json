@@ -33,7 +33,6 @@
   "files": [
     "dist",
     "providers.json",
-    "publish",
     "README_zh-tw.md"
   ],
   "scripts": {
