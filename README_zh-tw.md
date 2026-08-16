@@ -9,7 +9,9 @@
 相容於各種支援標準SKILL的AI Agent程式與VS Code擴充套件包含以下，但還有更多:
 
 - Claude Code
-- VS Code Codepilot 
+- VS Code Copilot(內建)
+- Codex(擴充套件)
+- Google Antigravity IDE
 
 **spoke 產出的是意見，不是裁決。** 那些意見要怎麼處理，仍然由你決定。
 
