@@ -443,3 +443,27 @@ test("buildReport：缺該型號價目時明說無法估算，不印 $0", () => 
   assert.match(report, /⚠ providers\.json 沒有 "deepseek-v4-flash" 的價目，本型號無法估算成本/);
   assert.equal(/\$0(?!\.\d*[1-9])/.test(report), false, "不得出現 $0 這種會被讀成免費的數字");
 });
+
+test("buildReport：逐 spoke 印工單原文的允許清單（中英）", () => {
+  const spoke: ResolvedSpoke = {
+    ...SPOKE,
+    allowedReadsRelative: ["src/a.ts", "docs/plan.md"],
+  };
+
+  // 單價那行是 spoke 行的 `└` 延續，必須緊貼母行；允許清單排在它之後，否則 `└` 會讀成掛在清單底下
+  assert.match(reportFor(spoke, "zh"), /hole-finder-cost[^\n]*\n\x20{6}└[^\n]*\n\x20{4}src\/a\.ts\n\x20{4}docs\/plan\.md/);
+  assert.match(reportFor(spoke, "en"), /hole-finder-cost[^\n]*\n\x20{6}└[^\n]*\n\x20{4}src\/a\.ts\n\x20{4}docs\/plan\.md/);
+});
+
+test("buildReport：超過 8 個允許檔時折疊其餘項目", () => {
+  const paths = Array.from({ length: 10 }, (_, i) => `docs/${i + 1}.md`);
+  const report = reportFor({ ...SPOKE, allowedReadsRelative: paths }, "zh");
+
+  assert.match(report, /\x20{4}docs\/1\.md\n\x20{4}docs\/2\.md\n\x20{4}docs\/3\.md\n\x20{4}docs\/4\.md\n\x20{4}docs\/5\.md\n\x20{4}docs\/6\.md\n\x20{4}docs\/7\.md\n\x20{4}docs\/8\.md\n\x20{4}…另 2 個/);
+  assert.equal(report.includes("docs/9.md"), false);
+  assert.equal(report.includes("docs/10.md"), false);
+});
+
+test("buildReport：空允許清單明確印出（允許清單為空）", () => {
+  assert.match(reportFor(SPOKE, "zh"), /\x20{4}（允許清單為空）/);
+});

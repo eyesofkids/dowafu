@@ -167,6 +167,9 @@ type MessageArgs = {
   tpmPeakLine: [provider: string, limit: string, peak: string];
   tpmPeakCaveat: [];
   allowedReadsSummary: [n: number, outDir: string];
+  allowedReadsListEntry: [path: string];
+  allowedReadsListFolded: [n: number];
+  allowedReadsListEmpty: [];
 
   // T7a〈B. 乾跑提示〉：lens 收尾句落在哪一個 FIXED_CLOSING_LINE*，乾跑與實跑都印，只提示不擋。
   // 沒有收尾句的 lens（如 explore-haiku.md）不在此列——那種情況不印任何東西，見 report.ts
@@ -409,6 +412,9 @@ const MESSAGES: Record<Lang, MessageDefs> = {
     tpmPeakLine: (provider, limit, peak) => `  ${provider} tpmLimit ${limit}，靜態估算峰值 ${peak}`,
     tpmPeakCaveat: () => "    └ 僅為靜態指標，不預測執行中的 TPM 曲線（429 等待會改變實際並行數）",
     allowedReadsSummary: (n, outDir) => `  允許讀取 ${n} 個檔案，輸出至 ${outDir}/`,
+    allowedReadsListEntry: (path) => `    ${path}`,
+    allowedReadsListFolded: (n) => `    …另 ${n} 個`,
+    allowedReadsListEmpty: () => "    （允許清單為空）",
 
     lensClosingLineZh: (agent) => `ℹ ${agent} 的 lens 收尾句符合中文版固定收尾句`,
     lensClosingLineEn: (agent) => `ℹ ${agent} 的 lens 收尾句符合英文版固定收尾句`,
@@ -656,6 +662,9 @@ const MESSAGES: Record<Lang, MessageDefs> = {
     tpmPeakCaveat: () =>
       "    └ Static indicator only; does not predict the in-flight TPM curve (429 waits change actual concurrency)",
     allowedReadsSummary: (n, outDir) => `  Allowed reads: ${n} file(s), output to ${outDir}/`,
+    allowedReadsListEntry: (path) => `    ${path}`,
+    allowedReadsListFolded: (n) => `    …and ${n} more`,
+    allowedReadsListEmpty: () => "    (Allowlist is empty)",
 
     lensClosingLineZh: (agent) => `ℹ ${agent}'s lens closing line matches the Chinese fixed closing line`,
     lensClosingLineEn: (agent) => `ℹ ${agent}'s lens closing line matches the English fixed closing line`,

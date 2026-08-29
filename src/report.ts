@@ -150,6 +150,15 @@ export function buildReport(
         `est. ${est.toLocaleString()}  cap ${cap.toLocaleString()}`,
     );
     lines.push(`  ${formatModelPricing(spoke, lang)}`);
+    if (spoke.allowedReadsRelative.length === 0) {
+      lines.push(m(lang, "allowedReadsListEmpty"));
+    } else {
+      for (const path of spoke.allowedReadsRelative.slice(0, 8)) {
+        lines.push(m(lang, "allowedReadsListEntry", path));
+      }
+      const remaining = spoke.allowedReadsRelative.length - 8;
+      if (remaining > 0) lines.push(m(lang, "allowedReadsListFolded", remaining));
+    }
     const closingLineNotice = formatLensClosingLineNotice(spoke, lang);
     if (closingLineNotice) lines.push(`  ${closingLineNotice}`);
   }
