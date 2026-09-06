@@ -8,7 +8,7 @@ returned.
 
 You write a ticket. `dowafu` calls each provider's API. Each reviewer — a *spoke* —
 reads only the files you whitelisted, and returns observations with the evidence it
-read them from. Everything lands on disk for you to check.
+read them from. Everything it did is recorded for you to check.
 
 **Spokes produce observations, not verdicts.** What to do about them stays with you.
 
@@ -21,7 +21,7 @@ read them from. Everything lands on disk for you to check.
 >
 > The language reaches everything: the reviewer's prompt and report template, the audit
 > that checks the report against it, and the CLI's own output — `--help`, error messages,
-> the dry-run report, `summary.md`. The dry run prints the resolved language per reviewer,
+> the dry-run report, and the run summary stored with the results. The dry run prints the resolved language per reviewer,
 > so you can see it before anything is sent.
 >
 > A ticket's section headings may be written in either language regardless — they are
@@ -46,34 +46,36 @@ Five steps, in this order. The first three cost nothing.
 1. **Install the CLI** — see above. `dowafu --version` should print a version number.
 2. **Copy one language pack into your project** — the commands are under "Driving it from an agent" below. Pick `publish/en/` or `publish/zh-tw/`; never mix the two.
 3. **Ask your agent to run `preflight`** — "run the preflight skill". It reports whether the wiring took, whether the lens definitions are where the CLI expects them, and whether `tmp/` is ignored by git. It reads and reports; it changes nothing.
-4. **Put your keys in place** — see "API keys" below. Only the providers you actually dispatch to need one. Your agent can create the directory and an empty template for you, but **do not paste a key into the conversation**: it stays in that conversation's history. Type the value into the file yourself.
-5. **Check the setup** — `dowafu --doctor`. It prints where the config directory resolved to, whether `.env` is there, which providers have a key (presence only, never the value), the bundled model whitelist, and the lens definitions it found. No API call, no cost, and no ticket required.
+4. **Put your keys in place** — run `dowafu key` and paste each one you need. Only the providers you actually dispatch to need a key. **Do not paste a key into the agent conversation**: it stays in that conversation's history. Type it into `dowafu key` in your own terminal.
+5. **Check the setup** — `dowafu --doctor`. It prints where the config directory and the database resolved to, which providers have a key (presence only, never the value), the model whitelist and which models are enabled, and the lens definitions it found. No API call, no cost, and no ticket required.
 
 Then write a ticket (below) and dry-run it — `dowafu <ticket-dir> --dry-run` is still free. The first thing that costs money is `--yes`.
 
 ## API keys
 
-Keys are read from `$DISPATCH_HOME/.env`, which defaults to `~/.config/dowafu/.env`
-(`DISPATCH_HOME` or `XDG_CONFIG_HOME` override it). Variables already present in the
-environment win over the file, so CI and one-off overrides need no file at all.
+Keys live in the database. Set them from your own terminal:
 
 ```bash
-mkdir -p ~/.config/dowafu
-cat > ~/.config/dowafu/.env <<'EOF'
-DEEPSEEK_API_KEY=
-GEMINI_API_KEY=
-OPENAI_API_KEY=
-ANTHROPIC_API_KEY=
-EOF
-chmod 600 ~/.config/dowafu/.env
+dowafu key
 ```
 
-Only the providers you actually dispatch to need a key. The file is plain text — it is
-protected by nothing but its file permissions.
+It lists the providers, takes the key you paste without echoing it, stores it, prints back
+only the last four characters, and offers to verify it against the provider right away.
+`dowafu key list` shows which providers have one — presence only, never the value —
+`dowafu key rm <provider>` removes one, and `dowafu key test <provider>` verifies one
+against the real API (that call costs money, and it asks first). `dowafu key` needs an
+interactive terminal: with stdin piped it refuses rather than reading the pipe.
 
-**The current directory's `.env` is never read.** That is where you ran the command, and
-usually the project under review; its secrets have no business in a process that is
-talking to external APIs.
+Only the providers you actually dispatch to need a key.
+
+**This version reads no `.env` file and no `*_API_KEY` environment variable.** There is one
+source, so there is no precedence to work out and nothing left in your environment that can
+quietly win over the key you just set. Coming from 0.4.x: delete `~/.config/dowafu/.env`
+and set the keys again with `dowafu key`.
+
+The database is `$DISPATCH_HOME/dowafu.db`, which defaults to `~/.config/dowafu/dowafu.db`
+(`DISPATCH_HOME` or `XDG_CONFIG_HOME` override it). **The keys are stored in it as plain
+text** — like the file before it, it is protected by nothing but its permissions.
 
 ## Usage
 
@@ -132,10 +134,10 @@ same fields, so an English ticket can run in Chinese and vice versa. Mixing both
 inside one reviewer's file is not supported — the first heading that matches wins.
 
 Reviewer definitions live in `.claude/agents/<agent>.md` under the repo root — they are
-the source of each spoke's system prompt, and the CLI reads them directly. Results are
-written to `tmp/spoke/<ticket-id>/`: each spoke's report, a `summary.md` with the audit
-table and estimated cost, `run.jsonl` with one line per event, and `raw/` with the exact
-requests and responses.
+the source of each spoke's system prompt, and the CLI reads them directly. Results are not written to
+disk. They go into the SQLite database (`$DISPATCH_HOME/dowafu.db` by default), which holds
+each spoke's report, the audit table with the actual cost, and the exact request and
+response for every call. Read a run back with `dowafu result <id>`.
 
 ## What the tool guarantees
 
@@ -143,8 +145,8 @@ requests and responses.
   refused, and the refusal is recorded.
 - **`_docs/` is off limits**, whatever the whitelist says.
 - **Nothing is billed before you confirm.** The dry run prints the resolved repo root,
-  each reviewer's model and language, token estimates and the output path, and calls no API.
-- **Secrets are masked** in `run.jsonl`, `raw/*.json` and stdout.
+  each reviewer's model and language, token estimates and the hard-cap dollar amount, and calls no API.
+- **Secrets are masked** in everything stored in the database and in stdout.
 - **Failures stop the run.** A missing key, an unknown model, a file that does not
   exist — each aborts with the path or name that caused it, before any spend.
 
@@ -172,7 +174,7 @@ not work: a reviewer's fixed closing line has to match the template the audit ch
 against.
 
 ```bash
-npx degit eyesofkids/dowafu/publish/en#v0.4.0 .claude-pack   # or publish/zh-tw
+npx degit eyesofkids/dowafu/publish/en#v0.5.0 .claude-pack   # or publish/zh-tw
 
 cd .claude-pack
 TARGET=<your project>

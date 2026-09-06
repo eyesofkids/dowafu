@@ -4,7 +4,7 @@
 
 **一支唯讀審查用的 spoke harness**：把文件段落派給外部模型，限定它讀什麼、記下它做了什麼、機械稽核它的回報格式。
 
-講具體一點——你(與AI agent協同)寫一份工單，`dowafu` 呼叫各家 provider 的 API；每個審查者（*spoke*）**只讀你列進白名單的檔案**，回傳帶依據的觀察，全部落檔供你查核。
+講具體一點——你(與AI agent協同)寫一份工單，`dowafu` 呼叫各家 provider 的 API；每個審查者（*spoke*）**只讀你列進白名單的檔案**，回傳帶依據的觀察，做過的事全部記錄下來供你查核。
 
 相容於各種支援標準SKILL的AI Agent程式與VS Code擴充套件包含以下，但還有更多:
 
@@ -19,7 +19,7 @@
 >
 > 整次執行的語言由一個旗標決定：`--lang en` 或 `--lang zh-tw`。沒帶旗標時看 `DISPATCH_LANG`，兩者都沒有時**預設為英文**。旗標優先於環境變數；任一方填了無法辨識的值都會直接中止，不會猜。
 >
-> 語言涵蓋所有地方：審查者收到的 Prompt 與報告範本、稽核用來檢查報告的範本，以及 CLI 自己的輸出——`--help`、錯誤訊息、dry-run 報告、`summary.md`。Dry run 會針對每個審查者印出判定的語言，送出前就看得到。
+> 語言涵蓋所有地方：審查者收到的 Prompt 與報告範本、稽核用來檢查報告的範本，以及 CLI 自己的輸出——`--help`、錯誤訊息、dry-run 報告、隨結果一起存下來的執行摘要。Dry run 會針對每個審查者印出判定的語言，送出前就看得到。
 >
 > 工單的段落標題兩種語言都可以寫，與語言選擇無關——它們是欄位名稱，不是語言開關。見[工單格式](#工單格式)。
 >
@@ -35,32 +35,25 @@ npm install -g dowafu
 
 ## API Keys
 
-API Key 會從 `$DISPATCH_HOME/.env` 讀取，預設位置為：
-
-`~/.config/dowafu/.env`
-
-可以透過 `DISPATCH_HOME` 或 `XDG_CONFIG_HOME` 覆寫這個位置。
-
-如果環境變數中已經存在相同的變數，環境變數會優先於檔案中的值。因此在 CI 或臨時覆寫設定時，完全不需要建立 `.env` 檔案。
+API Key 存在資料庫裡。請在你自己的終端機設定：
 
 ```bash
-mkdir -p ~/.config/dowafu
-cat > ~/.config/dowafu/.env <<'EOF'
-DEEPSEEK_API_KEY=
-GEMINI_API_KEY=
-OPENAI_API_KEY=
-ANTHROPIC_API_KEY=
-EOF
-chmod 600 ~/.config/dowafu/.env
+dowafu key
 ```
+
+它會列出各家 provider，接收你貼上的 key（**不會回顯**），存起來之後只印出末四碼，並詢問要不要立刻對該家 API 驗證一次。
+
+- `dowafu key list`：列出哪幾家已設定——只顯示有沒有，永遠不顯示內容
+- `dowafu key rm <provider>`：移除某一家
+- `dowafu key test <provider>`：對真實 API 驗證一次（**這個呼叫會花錢**，執行前會再問一次）
+
+`dowafu key` 需要互動式終端機；stdin 被導向管道時它會直接拒絕，不會把管道內容當成 key 讀進去。
 
 只需要為實際要執行 Dispatch 的 Provider 設定 Key 即可。
 
-這個檔案是純文字檔——它唯一的保護機制就是檔案權限。
+**本版不讀取任何 `.env` 檔，也不讀取 `*_API_KEY` 環境變數。** 來源只有一個，因此沒有優先序要推敲，也不會有環境裡殘留的舊值悄悄蓋過你剛設好的 key。從 0.4.x 升上來：把 `~/.config/dowafu/.env` 刪掉，改用 `dowafu key` 重設一次。
 
-**永遠不會讀取目前工作目錄的 `.env`。**
-
-那個目錄是你下指令的地方，通常就是被審查的專案；它的 secrets 不該被一個正對外部 API 發請求的行程讀進去。
+資料庫位於 `$DISPATCH_HOME/dowafu.db`，預設是 `~/.config/dowafu/dowafu.db`，可透過 `DISPATCH_HOME` 或 `XDG_CONFIG_HOME` 覆寫。**Key 在裡面是明文存放**——跟先前那個檔案一樣，它唯一的保護機制就是檔案權限。
 
 ## 使用方式
 
@@ -126,25 +119,24 @@ dowafu --help                   # 查看所有旗標
 
 它們是每個 spoke 的 System Prompt 來源，CLI 會直接讀取這些檔案。
 
-結果會寫入：
-
-```text
-tmp/spoke/<ticket-id>/
-```
-
-其中包含：
+結果不會落到磁碟上，而是存進 SQLite 資料庫（預設 `$DISPATCH_HOME/dowafu.db`），其中包含：
 
 - 每個 spoke 的審查報告
-- `summary.md`：包含稽核表格與預估成本
-- `run.jsonl`：每個事件一行
-- `raw/`：精確保存實際送出的 Request 與收到的 Response
+- 稽核表格與該次的實際花費
+- 每一次呼叫實際送出的 Request 與收到的 Response
+
+讀回某一次派工的結果：
+
+```bash
+dowafu result <id>
+```
 
 ## 工具保證的事項
 
 - **每次呼叫的讀取範圍都有白名單限制。** 如果 spoke 要求讀取白名單以外的檔案，會被拒絕，而且拒絕事件會被記錄。
 - **`_docs/` 永遠禁止讀取。** 不論白名單如何設定。
-- **在你確認之前不會產生任何費用。** Dry run 會列出解析後的 repo 根目錄、每個 spoke 的模型與語言、token 預估值與輸出路徑，而且不會呼叫任何 API。
-- **Secrets 會被遮罩。** `run.jsonl`、`raw/*.json` 以及 stdout 中都會遮罩 Secrets。
+- **在你確認之前不會產生任何費用。** Dry run 會列出解析後的 repo 根目錄、每個 spoke 的模型與語言、token 預估值與硬上限金額，而且不會呼叫任何 API。
+- **Secrets 會被遮罩。** 存進資料庫的所有內容以及 stdout 中都會遮罩 Secrets。
 - **發生錯誤就停止整個執行流程。** 例如缺少 API Key、未知的 Model、指定的檔案不存在等，都會在產生任何費用之前中止，並指出造成問題的路徑或名稱。
 
 ## Models
@@ -175,7 +167,7 @@ tmp/spoke/<ticket-id>/
 `publish/` 提供兩種語言：`publish/en/` 與 `publish/zh-tw/`。**擇一複製，不可混裝**——審查者的固定收尾句必須與稽核檢查用的範本是同一種語言。
 
 ```bash
-npx degit eyesofkids/dowafu/publish/zh-tw#v0.4.0 .claude-pack   # 或 publish/en
+npx degit eyesofkids/dowafu/publish/zh-tw#v0.5.0 .claude-pack   # 或 publish/en
 
 cd .claude-pack
 TARGET=<your project>
