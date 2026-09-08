@@ -58,9 +58,9 @@ dowafu key
 ## 使用方式
 
 ```bash
-dowafu <ticket-dir> --dry-run   # 解析、驗證、估算。不呼叫 API，也不產生成本。
-dowafu <ticket-dir> --yes       # 執行審查。這個操作會產生成本。
-dowafu --help                   # 查看所有旗標
+dowafu <ticket-id> --dry-run   # 解析、驗證、估算。不呼叫 API，也不產生成本。
+dowafu <ticket-id> --yes       # 執行審查。這個操作會產生成本。
+dowafu --help                  # 查看所有旗標
 ```
 
 沒有指定 `--yes` 時，指令會要求使用者確認。
@@ -69,9 +69,43 @@ dowafu --help                   # 查看所有旗標
 
 ## 工單
 
-工單是一個目錄，其中包含三種檔案。
+工單存在資料庫裡，不落到磁碟。用 CLI 建立：
 
-其中的標題是**字面標記（literal markers）**，Parser 會直接比對這些標記——必須完全使用以下兩組標題之一。
+```bash
+dowafu ticket create <ticket-id> <shared-file>
+dowafu ticket add-spoke <ticket-id> <agent> <provider> <model> <body-file> [effort]
+dowafu ticket add-allow <ticket-id> <agent> <repo-relative-path> --repo-root .
+```
+
+`create` 與 `add-spoke` 的本文參數可以是路徑，也可以是 `-`（從 stdin 讀）——所以用 heredoc
+就能把整張工單寫完，不必先落一個暫存檔：
+
+```bash
+dowafu ticket create auth-review - <<'EOF'
+# 前提（不受審）
+- 無
+
+# 待審段落
+...
+EOF
+
+dowafu ticket add-spoke auth-review hole-finder-safety deepseek deepseek-v4-flash - <<'EOF'
+# 具體問題
+1. 這裡描述的權限檢查在併發請求下還成立嗎？
+
+# 允許讀取
+- lib/auth-guard.ts
+- prisma/schema.prisma
+EOF
+```
+
+`add-allow` 會立刻驗證路徑、拒絕 `_docs/`，並把該檔案**當下的內容**存起來——派工時不會再讀一次，
+所以審查者看到的是那一刻的快照。用 `dowafu ticket show <ticket-id>` 檢視 Model、允許清單與估算。
+
+### 段落標題
+
+上面本文裡的標題是**字面標記（literal markers）**，Parser 會直接比對——必須完全使用以下兩組
+標題之一。
 
 | English | 中文 |
 | --- | --- |
@@ -80,36 +114,18 @@ dowafu --help                   # 查看所有旗標
 | `# Under review` | `# 待審段落` |
 | `# Premises` | `# 前提（不受審）` |
 
-| 檔案 | 內容 |
-| --- | --- |
-| `_dispatch.md` | 要執行哪些審查者，以及各自使用哪個 Provider 與 Model |
-| `_shared.md` | 前提與正在審查的段落，以原始內容直接貼入 |
-| `<agent>.md` | 每個審查者一份：包含它的問題，以及允許讀取的檔案 |
-
-```markdown
-<!-- _dispatch.md -->
-<!-- format: v1 -->
-# dispatch auth-review
-
-| agent | provider | model | effort |
-| --- | --- | --- | --- |
-| hole-finder-safety | deepseek | deepseek-v4-flash | |
-| hole-finder-feasibility | openai | gpt-5.6-luna | |
-```
-
-```markdown
-<!-- hole-finder-safety.md -->
-# Questions
-1. Does the permission check described here hold under concurrent requests?
-
-# Allowed reads
-- lib/auth-guard.ts
-- prisma/schema.prisma
-```
-
 兩組標題都收，而且**與審查者使用的語言無關**——語言由 `--lang`／`DISPATCH_LANG` 決定（見上方）。兩組只是同一批欄位的別名，所以英文工單可以用中文跑，反之亦然。
 
-不支援在同一個審查者檔案中混用兩組標題——第一個符合的標題會決定用哪一組欄位名，不是決定語言。
+不支援在同一個審查者本文中混用兩組標題——第一個符合的標題會決定用哪一組欄位名，不是決定語言。
+
+### 匯入舊的工單目錄
+
+0.5.0 之前，工單是一個目錄，內含三種檔案——`_dispatch.md`、`_shared.md`，以及每個審查者一份的
+`<agent>.md`。那個形態仍然讀得進來，作為一次性的搬遷：
+
+```bash
+dowafu ticket import <dir> [ticket-id] --repo-root .
+```
 
 審查者定義放在 Repository 根目錄下的：
 
@@ -148,9 +164,16 @@ dowafu result <id>
 | `gemini` | `gemini-3.1-flash-lite`、`gemini-3.5-flash-lite`、`gemini-3.6-flash` |
 | `anthropic` | `claude-opus-5`、`claude-sonnet-5` |
 
-這份清單會隨套件以 `providers.json` 一起提供。
+這份清單會隨套件以 `providers.json` 一起提供，並在第一次開啟資料庫時播種進去。
+之後**資料庫就是唯一來源**：
 
-如果想使用其他 Model，可以透過 `--providers` 指定自己的 Provider 設定檔。
+```bash
+dowafu providers list                      # 白名單，以及哪些 Model 是啟用的
+dowafu providers enable|disable <model>    # 開關其中一個
+dowafu providers import <path>             # 匯入自己的設定檔
+```
+
+**沒有 `--providers` 旗標**——0.5.0 把白名單搬進資料庫時已移除，帶了會被當成未知選項拒絕。
 
 ## 從 Agent 驅動
 
@@ -188,6 +211,71 @@ publish/zh-tw/README.md   （或 publish/en/README.md）
 ```
 
 兩份各自以該語言撰寫。
+
+## 接成 MCP server
+
+Agent 可以不走 shell，改用 MCP 驅動 `dowafu`。露出五個 tool：`dispatch_tickets`、
+`dispatch_submit`、`dispatch_status`、`dispatch_result`、`dispatch_approve`。
+
+有兩條路，差別在**誰啟動誰**。
+
+| | stdio | HTTP |
+| --- | --- | --- |
+| 指令 | `dowafu mcp` | `dowafu serve` |
+| 誰啟動 | client 自己 spawn | 你，在自己的終端機 |
+| Token | 沒有，也不需要 | 必要（`x-api-key`） |
+| 會跑 reviewer 嗎 | **不會** | 會 |
+
+### 兩條路都需要 `dowafu serve`
+
+`dowafu mcp` 只回應 tool 呼叫，**它不執行任何 reviewer**。真正花錢的 worker 在
+`dowafu serve` 裡。沒有它，核准過的 job 會永遠留在佇列裡，而且沒有任何東西會告訴 agent
+為什麼。
+
+```
+stdio：  你的 client ──spawn──→ dowafu mcp ──┐
+                                             ├─ 同一個 SQLite 資料庫
+         你的終端機 ─────────→ dowafu serve ─┘  （worker 在這邊）
+
+HTTP：   你的 client ──x-api-key──→ dowafu serve  （端點與 worker 同一個行程）
+```
+
+所以走 stdio 時，要在 client 旁邊另開一個終端機讓 `dowafu serve` 跑著。這條路的順序很寬鬆
+——核准之前或之後才起都可以，daemon 下一個 tick 就會把它撿走。
+
+### stdio
+
+把 client 指到那條指令。以 Claude Code 為例：
+
+```bash
+claude mcp add dowafu -- dowafu mcp
+```
+
+不涉及 token：client 直接 spawn 那個行程，信任邊界是作業系統，中間沒有網路可攔。
+
+### HTTP
+
+`dowafu serve` 綁 `127.0.0.1:7391/mcp`——**只綁 loopback，沒有 `--host` 旗標**。要不要對外
+是 tunnel 的事，不是 server 的事。改埠用 `--http-port <port>` 或環境變數 `DOWAFU_HTTP_PORT`。
+
+每個請求都要帶 token：
+
+```bash
+dowafu token issue --label laptop   # 明文只印這一次，不會存下來
+```
+
+資料庫只存它的 SHA-256 hash，比對是常數時間。把明文填進 client 的 MCP 設定，header 名稱是
+`x-api-key`。`dowafu token list` 看有哪幾把（不顯示明文）、`dowafu token revoke <id>` 撤銷。
+限流是**以 token 計，不是以 IP 計**——tunnel 後面每個請求的來源位址都一樣。
+
+> **daemon 要先起，client 才起。** 反過來的話 client 會把 server 標成失敗、那個對話完全沒有
+> tool——**症狀跟設定寫錯一模一樣**。
+
+### 核准仍然是獨立的一步
+
+`dispatch_submit` 只把 job 排進佇列就停下，核准之前不會計費。兩種核准方式：在自己的終端機下
+`dowafu approve <id>`，或用 `dispatch_approve` tool——後者要求帶上這張 job 的硬上限金額，且
+必須與資料庫自己算出來的相符，所以 agent 沒辦法核准一張它沒有把成本攤給你看過的 job。
 
 ## License
 

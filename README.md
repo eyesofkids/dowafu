@@ -49,7 +49,7 @@ Five steps, in this order. The first three cost nothing.
 4. **Put your keys in place** — run `dowafu key` and paste each one you need. Only the providers you actually dispatch to need a key. **Do not paste a key into the agent conversation**: it stays in that conversation's history. Type it into `dowafu key` in your own terminal.
 5. **Check the setup** — `dowafu --doctor`. It prints where the config directory and the database resolved to, which providers have a key (presence only, never the value), the model whitelist and which models are enabled, and the lens definitions it found. No API call, no cost, and no ticket required.
 
-Then write a ticket (below) and dry-run it — `dowafu <ticket-dir> --dry-run` is still free. The first thing that costs money is `--yes`.
+Then write a ticket (below) and dry-run it — `dowafu <ticket-id> --dry-run` is still free. The first thing that costs money is `--yes`.
 
 ## API keys
 
@@ -80,9 +80,9 @@ text** — like the file before it, it is protected by nothing but its permissio
 ## Usage
 
 ```bash
-dowafu <ticket-dir> --dry-run   # parse, validate, estimate. No API call, no cost.
-dowafu <ticket-dir> --yes       # run it. This is what costs money.
-dowafu --help                   # every flag
+dowafu <ticket-id> --dry-run   # parse, validate, estimate. No API call, no cost.
+dowafu <ticket-id> --yes       # run it. This is what costs money.
+dowafu --help                  # every flag
 ```
 
 Without `--yes`, the command asks for confirmation. When stdin is not a TTY — which is
@@ -91,8 +91,45 @@ before calling anything.
 
 ## The ticket
 
-A ticket is a directory with three kinds of file. The headings are **literal markers the
-parser matches** — use one of the two sets below, exactly as written.
+A ticket lives in the database, not on disk. Build one with the CLI:
+
+```bash
+dowafu ticket create <ticket-id> <shared-file>
+dowafu ticket add-spoke <ticket-id> <agent> <provider> <model> <body-file> [effort]
+dowafu ticket add-allow <ticket-id> <agent> <repo-relative-path> --repo-root .
+```
+
+The body argument of `create` and `add-spoke` takes a path — or `-`, which reads it from
+stdin, so a heredoc writes the whole thing without staging a file first:
+
+```bash
+dowafu ticket create auth-review - <<'EOF'
+# Premises
+- none
+
+# Under review
+...
+EOF
+
+dowafu ticket add-spoke auth-review hole-finder-safety deepseek deepseek-v4-flash - <<'EOF'
+# Questions
+1. Does the permission check described here hold under concurrent requests?
+
+# Allowed reads
+- lib/auth-guard.ts
+- prisma/schema.prisma
+EOF
+```
+
+`add-allow` validates the path immediately, refuses `_docs/`, and stores the file's
+content as it stands at that moment — dispatch never re-reads it, so what a reviewer sees
+is that snapshot. `dowafu ticket show <ticket-id>` prints the models, the allowlists and
+the estimates.
+
+### Section headings
+
+The headings inside the bodies above are **literal markers the parser matches** — use one
+of the two sets below, exactly as written.
 
 | English | 中文 |
 | --- | --- |
@@ -101,37 +138,19 @@ parser matches** — use one of the two sets below, exactly as written.
 | `# Under review` | `# 待審段落` |
 | `# Premises` | `# 前提（不受審）` |
 
-| File | Contents |
-| --- | --- |
-| `_dispatch.md` | which reviewers to run, and with which provider and model |
-| `_shared.md` | the premises, and the section under review, pasted in verbatim |
-| `<agent>.md` | one per reviewer: its questions, and the files it may read |
-
-```markdown
-<!-- _dispatch.md -->
-<!-- format: v1 -->
-# dispatch auth-review
-
-| agent | provider | model | effort |
-| --- | --- | --- | --- |
-| hole-finder-safety | deepseek | deepseek-v4-flash | |
-| hole-finder-feasibility | openai | gpt-5.6-luna | |
-```
-
-```markdown
-<!-- hole-finder-safety.md -->
-# Questions
-1. Does the permission check described here hold under concurrent requests?
-
-# Allowed reads
-- lib/auth-guard.ts
-- prisma/schema.prisma
-```
-
 Either set is accepted, and the choice does **not** decide the reviewer's language —
 that comes from `--lang` / `DISPATCH_LANG` (see above). The two sets are aliases for the
 same fields, so an English ticket can run in Chinese and vice versa. Mixing both sets
-inside one reviewer's file is not supported — the first heading that matches wins.
+inside one reviewer's body is not supported — the first heading that matches wins.
+
+### Importing an older ticket directory
+
+Before 0.5.0 a ticket was a directory of three files — `_dispatch.md`, `_shared.md`, and
+one `<agent>.md` per reviewer. That form still loads, as a one-off migration:
+
+```bash
+dowafu ticket import <dir> [ticket-id] --repo-root .
+```
 
 Reviewer definitions live in `.claude/agents/<agent>.md` under the repo root — they are
 the source of each spoke's system prompt, and the CLI reads them directly. Results are not written to
@@ -159,8 +178,17 @@ response for every call. Read a run back with `dowafu result <id>`.
 | `gemini` | `gemini-3.1-flash-lite`, `gemini-3.5-flash-lite`, `gemini-3.6-flash` |
 | `anthropic` | `claude-opus-5`, `claude-sonnet-5` |
 
-The list ships with the package as `providers.json`. Point `--providers` at your own copy
-to use anything else.
+The list ships with the package as `providers.json` and is seeded into the database the
+first time one is opened. From then on **the database is the source of truth**:
+
+```bash
+dowafu providers list                      # the whitelist, and which models are enabled
+dowafu providers enable|disable <model>    # flip one on or off
+dowafu providers import <path>             # load your own file
+```
+
+There is no `--providers` flag — it was removed in 0.5.0, when the whitelist moved into
+the database. Passing it is rejected as an unknown option.
 
 ## Driving it from an agent
 
@@ -191,6 +219,79 @@ Once the files are in place, have the agent run `preflight` before anything else
 
 See `publish/en/README.md` — or `publish/zh-tw/README.md` — for the details, each written
 in its own language.
+
+## Running it as an MCP server
+
+An agent can drive `dowafu` over MCP instead of through the shell. Five tools are
+exposed: `dispatch_tickets`, `dispatch_submit`, `dispatch_status`, `dispatch_result`
+and `dispatch_approve`.
+
+There are two transports, and the difference that matters is who starts what.
+
+| | stdio | HTTP |
+| --- | --- | --- |
+| Command | `dowafu mcp` | `dowafu serve` |
+| Who starts it | the client spawns it | you, in your own terminal |
+| Token | none, and none needed | required (`x-api-key`) |
+| Runs the reviewers | **no** | yes |
+
+### Both transports need `dowafu serve`
+
+`dowafu mcp` only answers tool calls — **it never runs a reviewer**. The worker that
+actually spends money lives in `dowafu serve`. Without one running, an approved job sits
+in the queue forever and nothing tells the agent why.
+
+```
+stdio:  your client ──spawn──→ dowafu mcp ──┐
+                                            ├─ the same SQLite database
+        your terminal ────────→ dowafu serve ┘  (the worker is here)
+
+HTTP:   your client ──x-api-key──→ dowafu serve  (endpoint and worker, one process)
+```
+
+So on stdio you keep `dowafu serve` running in a terminal next to the client. The order
+is forgiving there — start it before or after approving, and the daemon picks the job up
+on its next tick.
+
+### stdio
+
+Point the client at the command. For Claude Code:
+
+```bash
+claude mcp add dowafu -- dowafu mcp
+```
+
+No token is involved: the client spawns the process itself, the trust boundary is the
+operating system, and there is no network in between to intercept.
+
+### HTTP
+
+`dowafu serve` binds `127.0.0.1:7391/mcp` — **loopback only; there is no `--host` flag.**
+Exposing it is a tunnel's job, not the server's. `--http-port <port>` or the
+`DOWAFU_HTTP_PORT` environment variable changes the port.
+
+Every request needs a token:
+
+```bash
+dowafu token issue --label laptop   # the plaintext prints once and is never stored
+```
+
+The database keeps only a SHA-256 hash of it, compared in constant time. Put the
+plaintext into your client's MCP configuration as the `x-api-key` header.
+`dowafu token list` shows which tokens exist (never their value) and
+`dowafu token revoke <id>` kills one. Rate limiting is **per token, not per IP** —
+behind a tunnel every request arrives from the same source address.
+
+> **Start the daemon before the client.** If the client starts first it marks the server
+> as failed and that entire conversation has no tools — a symptom indistinguishable from
+> a misconfigured entry.
+
+### Approval is still a separate step
+
+`dispatch_submit` queues a job and stops; nothing is billed until it is approved. Two
+ways to approve: `dowafu approve <id>` in your own terminal, or the `dispatch_approve`
+tool — which requires the job's hard-cap dollar amount to match what the database
+computes, so an agent cannot approve a job whose cost it never showed you.
 
 ## License
 
