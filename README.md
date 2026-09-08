@@ -286,6 +286,67 @@ behind a tunnel every request arrives from the same source address.
 > as failed and that entire conversation has no tools — a symptom indistinguishable from
 > a misconfigured entry.
 
+### Keeping the daemon running
+
+Nothing wakes `dowafu serve` on demand: a client connects to a socket that is already
+listening, so with no process listening there is nothing to wake. Let the OS keep it up
+instead.
+
+**macOS** — `~/Library/LaunchAgents/dowafu.plist`:
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>dowafu</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/absolute/path/to/dowafu</string>
+    <string>serve</string>
+  </array>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><true/>
+  <key>StandardOutPath</key><string>/Users/you/Library/Logs/dowafu.log</string>
+  <key>StandardErrorPath</key><string>/Users/you/Library/Logs/dowafu.err</string>
+</dict>
+</plist>
+```
+
+Load it with `launchctl load -w ~/Library/LaunchAgents/dowafu.plist`.
+
+**Linux** — `~/.config/systemd/user/dowafu.service`:
+
+```ini
+[Unit]
+Description=dowafu dispatch daemon
+
+[Service]
+ExecStart=/absolute/path/to/dowafu serve
+Restart=always
+
+[Install]
+WantedBy=default.target
+```
+
+Enable it with `systemctl --user enable --now dowafu`.
+
+Three things that bite:
+
+- **Use an absolute path.** Neither launchd nor systemd sees your shell's `PATH`. Run
+  `which dowafu` and paste exactly what it prints.
+- **Environment variables are not inherited either.** If your shell sets `DISPATCH_HOME`
+  or `XDG_CONFIG_HOME`, the daemon will not see them and will resolve a *different*
+  database — one with none of your keys or tickets in it. Declare them in the unit.
+- **Send the output somewhere.** As a background service there is no terminal left to
+  watch, and that is where a port already in use, or a reviewer that died, gets
+  explained. Point stdout and stderr at files you can actually find.
+
+With the daemon always up the stdio path needs nothing extra — `dowafu mcp` finds a
+worker already running. Typing `dowafu serve` yourself will then refuse with
+`daemon already running (pid N)`: that is the guard working, not a fault.
+
 ### Approval is still a separate step
 
 `dispatch_submit` queues a job and stops; nothing is billed until it is approved. Two

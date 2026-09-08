@@ -271,6 +271,65 @@ dowafu token issue --label laptop   # 明文只印這一次，不會存下來
 > **daemon 要先起，client 才起。** 反過來的話 client 會把 server 標成失敗、那個對話完全沒有
 > tool——**症狀跟設定寫錯一模一樣**。
 
+### 讓 daemon 一直跑著
+
+沒有東西會在需要時把 `dowafu serve` 喚醒——client 是連上一個**已經在監聽**的 socket，
+沒有行程在聽就沒有東西可被喚醒。交給作業系統讓它保持啟動。
+
+**macOS**——`~/Library/LaunchAgents/dowafu.plist`：
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>dowafu</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/absolute/path/to/dowafu</string>
+    <string>serve</string>
+  </array>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><true/>
+  <key>StandardOutPath</key><string>/Users/you/Library/Logs/dowafu.log</string>
+  <key>StandardErrorPath</key><string>/Users/you/Library/Logs/dowafu.err</string>
+</dict>
+</plist>
+```
+
+用 `launchctl load -w ~/Library/LaunchAgents/dowafu.plist` 載入。
+
+**Linux**——`~/.config/systemd/user/dowafu.service`：
+
+```ini
+[Unit]
+Description=dowafu dispatch daemon
+
+[Service]
+ExecStart=/absolute/path/to/dowafu serve
+Restart=always
+
+[Install]
+WantedBy=default.target
+```
+
+用 `systemctl --user enable --now dowafu` 啟用。
+
+三個會咬人的地方：
+
+- **路徑要寫絕對路徑。** launchd 與 systemd 都看不到你 shell 的 `PATH`。跑 `which dowafu`，
+  把它印出來的東西原樣貼進去。
+- **環境變數同樣不會繼承。** 如果你的 shell 設了 `DISPATCH_HOME` 或 `XDG_CONFIG_HOME`，
+  daemon 看不到它們，會解析到**另一個資料庫**——裡面沒有你的 key，也沒有你的工單。
+  要用就寫進 unit 裡。
+- **輸出要導到檔案。** 變成背景服務之後就沒有終端機可以看了，而埠被占用、或某支審查者死掉，
+  訊息都出現在那裡。把 stdout 與 stderr 指到你找得到的檔案。
+
+daemon 常駐之後，stdio 那條路不需要任何額外動作——`dowafu mcp` 會找到已經在跑的 worker。
+這時自己再打 `dowafu serve` 會被擋下並回報 `daemon already running (pid N)`：
+**那是守衛在運作，不是故障。**
+
 ### 核准仍然是獨立的一步
 
 `dispatch_submit` 只把 job 排進佇列就停下，核准之前不會計費。兩種核准方式：在自己的終端機下
