@@ -14,14 +14,20 @@ read them from. Everything it did is recorded for you to check.
 
 > ### English and Traditional Chinese are both fully supported.
 >
-> One flag decides the language for the whole run: `--lang en` or `--lang zh-tw`. Without
-> it, `DISPATCH_LANG` applies; without that either, the default is **English**. The flag
-> wins over the environment variable, and an unrecognized value in either is rejected
-> rather than guessed at.
+> Two settings decide the language, and they cover different things.
 >
-> The language reaches everything: the reviewer's prompt and report template, the audit
-> that checks the report against it, and the CLI's own output — `--help`, error messages,
-> the dry-run report, and the run summary stored with the results. The dry run prints the resolved language per reviewer,
+> `--lang en` / `--lang zh-tw` sets the language of **a dispatch**: the reviewer's prompt
+> and report template, the audit that checks the report against it, the dry-run report,
+> and the run summary stored with the results.
+>
+> `DISPATCH_LANG` sets the language of **the CLI's own interface** — `--help`, `--doctor`,
+> parse errors, and the subcommands (`key`, `providers`, `token`, `approve`, `serve`).
+> **`--lang` does not reach these.** They are printed before that flag has been validated,
+> and `--doctor` in particular may be the very tool you reach for when the language
+> settings are themselves what is broken.
+>
+> Without either, the default is **English**, and an unrecognized value in either is
+> rejected rather than guessed at. The dry run prints the resolved language per reviewer,
 > so you can see it before anything is sent.
 >
 > A ticket's section headings may be written in either language regardless — they are
