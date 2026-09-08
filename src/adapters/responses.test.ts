@@ -1,7 +1,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { buildResponsesRequest, type ResponsesAdapterConfig } from "./responses.js";
+import type { Fetch } from "openai/core";
+import { buildResponsesRequest, createResponsesAdapter, type ResponsesAdapterConfig } from "./responses.js";
 import { RawIntegrityError } from "../raw-integrity.js";
+import { OUTPUT_TOKEN_CAP } from "../cost.js";
 import type { Conversation } from "../types.js";
 
 const OPENAI_CONFIG: ResponsesAdapterConfig = {
@@ -94,4 +96,38 @@ test("buildResponsesRequest：read_file 工具的 description 依 config.lang �
     tools: Array<{ description: string }>;
   };
   assert.equal(paramsEn.tools[0].description, "Read the contents of the file at the given path.");
+});
+
+// 票 cost-cap §A-3 #1／#2：三家 adapter 都要真的送出天花板參數，且引用同一個常數
+// （cost.ts 的 OUTPUT_TOKEN_CAP）——改一處三家跟著動。
+test("buildResponsesRequest：送出 max_output_tokens，值為 OUTPUT_TOKEN_CAP（openai／deepseek 共用此 adapter）", () => {
+  const conv: Conversation = { systemPrompt: "s", turns: [{ role: "user", text: "hi" }] };
+  const params = buildResponsesRequest(conv, { model: "gpt-5.6-luna" }, OPENAI_CONFIG);
+  assert.equal(params.max_output_tokens, OUTPUT_TOKEN_CAP);
+
+  const deepseekParams = buildResponsesRequest(conv, { model: "deepseek-v4-flash" }, DEEPSEEK_CONFIG);
+  assert.equal(deepseekParams.max_output_tokens, OUTPUT_TOKEN_CAP);
+});
+
+// 票 cost-cap §A-3 #3：撞到天花板時，回應的 finishReason 必須反映「incomplete」，不得被
+// normalizeFinishReason 誤判成 "stop" 而被當成正常完成靜默吞掉。用 globalThis.fetch 攔截
+// 取代真正的 API 呼叫（OpenAI SDK 預設走 Node 原生 fetch），不需要打真的 API。
+test("createResponsesAdapter().send()：response.status 為 incomplete（撞到 output 天花板）時，finishReason 不是 stop", async () => {
+  const mockFetch = (async () =>
+    new Response(
+      JSON.stringify({
+        id: "resp_truncated",
+        status: "incomplete",
+        model: "gpt-5.6-luna",
+        output: [],
+        usage: { input_tokens: 10, output_tokens: OUTPUT_TOKEN_CAP, total_tokens: 10 + OUTPUT_TOKEN_CAP },
+      }),
+      { status: 200, headers: { "content-type": "application/json" } },
+    )) as unknown as Fetch;
+  const adapter = createResponsesAdapter({ ...OPENAI_CONFIG, fetch: mockFetch });
+  const conv: Conversation = { systemPrompt: "s", turns: [{ role: "user", text: "hi" }] };
+  const result = await adapter.send(conv, { model: "gpt-5.6-luna" });
+  assert.notEqual(result.meta.finishReason, "stop", "撞到天花板的回應不得被當成正常完成");
+  assert.equal(result.meta.finishReason, "incomplete");
+  assert.equal(result.meta.finishReasonRaw, "incomplete");
 });

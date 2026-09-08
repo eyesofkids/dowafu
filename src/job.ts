@@ -1,0 +1,159 @@
+import { randomUUID } from "node:crypto";
+import type { DatabaseSync } from "node:sqlite";
+import { now } from "./db.js";
+
+export const JOB_STATUSES = [
+  "pending_approval",
+  "approved",
+  "running",
+  "completed",
+  "failed",
+  "interrupted",
+  "rejected",
+] as const;
+
+export type JobStatus = (typeof JOB_STATUSES)[number];
+
+export type Job = {
+  id: string;
+  ticket: string;
+  status: JobStatus;
+  created_at: string;
+  approved_at: string | null;
+  claimed_at: string | null;
+  heartbeat_at: string | null;
+  finished_at: string | null;
+  error: string | null;
+  cost_usd: number | null;
+};
+
+function one(db: DatabaseSync, sql: string, ...values: Array<string | number | null>): Job | null {
+  return (db.prepare(sql).get(...values) as Job | undefined) ?? null;
+}
+
+export function getJob(db: DatabaseSync, id: string): Job | null {
+  return one(db, "SELECT * FROM jobs WHERE id = ?", id);
+}
+
+export function findJobsByIdPrefix(db: DatabaseSync, prefix: string): Job[] {
+  return db.prepare("SELECT * FROM jobs WHERE id LIKE ? ORDER BY id").all(`${prefix}%`) as Job[];
+}
+
+export function listPendingApprovalJobs(db: DatabaseSync): Job[] {
+  return db.prepare("SELECT * FROM jobs WHERE status = 'pending_approval' ORDER BY created_at, id").all() as Job[];
+}
+
+export function submitJob(db: DatabaseSync, ticket: string, id: string = randomUUID()): Job {
+  if (!db.prepare("SELECT 1 FROM tickets WHERE name = ?").get(ticket)) throw new Error(`ticket does not exist: ${ticket}`);
+  const createdAt = now();
+  db.prepare("INSERT INTO jobs (id, ticket, status, created_at) VALUES (?, ?, 'pending_approval', ?)").run(id, ticket, createdAt);
+  return getJob(db, id)!;
+}
+
+export function approveJob(db: DatabaseSync, id: string): Job | null {
+  return one(
+    db,
+    `UPDATE jobs
+       SET status = 'approved', approved_at = ?
+     WHERE id = ? AND status = 'pending_approval'
+     RETURNING *`,
+    now(),
+    id,
+  );
+}
+
+export function rejectJob(db: DatabaseSync, id: string): Job | null {
+  return one(
+    db,
+    `UPDATE jobs
+       SET status = 'rejected', finished_at = ?
+     WHERE id = ? AND status IN ('pending_approval', 'approved')
+     RETURNING *`,
+    now(),
+    id,
+  );
+}
+
+// This is deliberately one guarded UPDATE.  A second daemon can observe the same
+// approved row, but only one can transition it to running and receive it back.
+export function claimNextJob(db: DatabaseSync): Job | null {
+  const claimedAt = now();
+  return one(
+    db,
+    `UPDATE jobs
+       SET status = 'running', claimed_at = ?, heartbeat_at = ?
+     WHERE id = (
+       SELECT id FROM jobs WHERE status = 'approved' ORDER BY created_at, id LIMIT 1
+     ) AND status = 'approved'
+     RETURNING *`,
+    claimedAt,
+    claimedAt,
+  );
+}
+
+export function heartbeatJob(db: DatabaseSync, id: string): void {
+  db.prepare("UPDATE jobs SET heartbeat_at = ? WHERE id = ? AND status = 'running'").run(now(), id);
+}
+
+export function finishJob(db: DatabaseSync, id: string, result: { error?: string; costUsd: number | null }): Job | null {
+  const status: JobStatus = result.error ? "failed" : "completed";
+  return one(
+    db,
+    `UPDATE jobs
+       SET status = ?, finished_at = ?, heartbeat_at = NULL, error = ?, cost_usd = ?
+     WHERE id = ? AND status = 'running'
+     RETURNING *`,
+    status,
+    now(),
+    result.error ?? null,
+    result.costUsd,
+    id,
+  );
+}
+
+// A worker can outlive its daemon: it may persist a spoke result after the first reap has
+// marked its job interrupted.  Revisit only a bounded recent window (30 minutes, well over
+// the 15-second stale threshold and normal worker shutdown lag), rather than scanning all
+// historical interrupted jobs every five-second daemon tick.
+export const REAP_INTERRUPTED_LOOKBACK_MS = 30 * 60 * 1_000;
+
+// `resultCost` stays in daemon.ts because that module owns the result-cost calculation used
+// by normal finishJob too.  This function owns the state transition and asks its caller for
+// that existing calculation only after it finds a real (non-summary) spoke row.
+export function reapInterruptedJobs(
+  db: DatabaseSync,
+  staleBefore: string,
+  resultCost: (jobId: string) => number | null,
+  reapedAt: string = now(),
+): number {
+  const revisitAfter = new Date(Date.parse(reapedAt) - REAP_INTERRUPTED_LOOKBACK_MS).toISOString();
+  const candidates = db
+    .prepare(
+      `SELECT id, status FROM jobs
+       WHERE (status = 'running' AND (heartbeat_at IS NULL OR heartbeat_at < ?))
+          OR (status = 'interrupted' AND finished_at >= ?)
+       ORDER BY id`,
+    )
+    .all(staleBefore, revisitAfter) as Array<{ id: string; status: "running" | "interrupted" }>;
+  const hasResult = db.prepare("SELECT 1 FROM results WHERE job_id = ? AND agent != '__summary__' LIMIT 1");
+  const complete = db.prepare(
+    `UPDATE jobs
+       SET status = 'completed', finished_at = ?, heartbeat_at = NULL, cost_usd = ?
+     WHERE id = ? AND status IN ('running', 'interrupted')`,
+  );
+  const interrupt = db.prepare(
+    `UPDATE jobs
+       SET status = 'interrupted', finished_at = ?, heartbeat_at = NULL
+     WHERE id = ? AND status = 'running'`,
+  );
+
+  let changes = 0;
+  for (const job of candidates) {
+    if (hasResult.get(job.id)) {
+      changes += Number(complete.run(reapedAt, resultCost(job.id), job.id).changes);
+    } else if (job.status === "running") {
+      changes += Number(interrupt.run(reapedAt, job.id).changes);
+    }
+  }
+  return changes;
+}

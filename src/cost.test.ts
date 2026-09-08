@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { estimateCostUsd } from "./cost.js";
+import { estimateCostUsd, estimateHardCapUsd, OUTPUT_TOKEN_CAP } from "./cost.js";
 import type { ModelPricing, NormalizedUsage } from "./types.js";
 
 const PRICING: ModelPricing = { inputPerM: 1.0, cachedInputPerM: 0.1, cacheWritePerM: 1.25, outputPerM: 5.0 };
@@ -76,4 +76,42 @@ test("estimateCostUsd：cachedInputPerM／cacheWritePerM 缺席時退回 inputPe
   // anthropic：inputTokens 與 cachedTokens 互斥並列，各 1M，皆用 inputPerM（無折價欄位）
   assert.ok(cost !== null);
   assert.ok(Math.abs(cost! - (2.0 + 2.0)) < 1e-9);
+});
+
+// 票 cost-cap §B-3 #1：缺價目資料時回傳 null，不是 0——與 estimateCostUsd 同一條規矩。
+test("estimateHardCapUsd：無 pricing → null，不是 0", () => {
+  assert.equal(estimateHardCapUsd(1_000, 20, undefined), null);
+});
+
+// §B-2：R = maxToolCalls + 1，用同一份公式在測試裡獨立算一次來對照，不對「$X.XX」這種
+// 中間值斷言——中間值一變（天花板或 pricing 調整）測試就會誤紅，變異 #4 鎖的是「× R 這件事
+// 有沒有做」，不是鎖死某個特定數字。
+test("estimateHardCapUsd：R = maxToolCalls + 1，輪數線性影響上界（獨立公式對照，不斷言中間值字面量）", () => {
+  const pricing: ModelPricing = { inputPerM: 0.44, outputPerM: 1.32 };
+  const estimatedPromptTokens = 1_200;
+  for (const maxToolCalls of [5, 20, 30]) {
+    const rounds = maxToolCalls + 1;
+    const expected =
+      ((estimatedPromptTokens * rounds) / 1_000_000) * pricing.inputPerM +
+      ((OUTPUT_TOKEN_CAP * rounds) / 1_000_000) * pricing.outputPerM;
+    const actual = estimateHardCapUsd(estimatedPromptTokens, maxToolCalls, pricing);
+    assert.ok(actual !== null);
+    assert.ok(Math.abs(actual! - expected) < 1e-9, `maxToolCalls=${maxToolCalls}：期望 ${expected}，實際 ${actual}`);
+  }
+});
+
+test("estimateHardCapUsd：maxToolCalls 越大，硬上限跟著變大（沒有寫死的中間值，§B-3 #3）", () => {
+  const pricing: ModelPricing = { inputPerM: 0.44, outputPerM: 1.32 };
+  const low = estimateHardCapUsd(1_200, 20, pricing);
+  const high = estimateHardCapUsd(1_200, 30, pricing);
+  assert.ok(low !== null && high !== null);
+  assert.ok(high! > low!, "maxToolCalls 提高後，硬上限必須跟著變大");
+});
+
+test("estimateHardCapUsd：initial prompt 估算越大，硬上限跟著變大", () => {
+  const pricing: ModelPricing = { inputPerM: 0.44, outputPerM: 1.32 };
+  const small = estimateHardCapUsd(500, 20, pricing);
+  const large = estimateHardCapUsd(5_000, 20, pricing);
+  assert.ok(small !== null && large !== null);
+  assert.ok(large! > small!);
 });

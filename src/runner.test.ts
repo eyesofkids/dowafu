@@ -1,10 +1,13 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { runSpoke, type RunEvent, type RunnerOptions } from "./runner.js";
 import { Semaphore } from "./semaphore.js";
 import { ProviderHttpError } from "./mask.js";
 import { RawIntegrityError } from "./raw-integrity.js";
-import type { Adapter, NormalizedUsage, SendResult, ToolCall } from "./types.js";
+import type { Adapter, Conversation, NormalizedUsage, SendResult, ToolCall } from "./types.js";
 import type { ResolvedSpoke } from "./validate.js";
 
 // plan_dispatch_v1.5.md §20「測試覆蓋要求」：runner.ts 的狀態機（truncated 三態、收束
@@ -107,6 +110,42 @@ test("succeeded：單輪直接給答案，無 tool call", async () => {
   const result = await runSpoke(SPOKE, adapter, "tmp/dispatch/fake-ticket", mkOptions());
   assert.equal(result.status, "succeeded");
   assert.match(result.finalText ?? "", /採用與否由 hub/);
+});
+
+test("D1：DB 快照缺少請求路徑時拒絕，且不掉回讀取同名磁碟檔", async () => {
+  const root = mkdtempSync(path.join(os.tmpdir(), "runner-db-snapshot-"));
+  const diskPath = path.join(root, "not-in-snapshot.txt");
+  try {
+    writeFileSync(diskPath, "this disk content must never reach the spoke");
+    const spoke: ResolvedSpoke = {
+      ...SPOKE,
+      readableContent: new Map([["known.txt", "the only DB snapshot"]]),
+    };
+    const conversations: Conversation[] = [];
+    const adapter: Adapter = {
+      async send(conversation) {
+        conversations.push(conversation);
+        return conversations.length === 1
+          ? mkResult({ toolCalls: [{ id: "read-1", name: "read_file", args: { path: diskPath } }] })
+          : mkResult({ toolCalls: [], text: "final report" });
+      },
+    };
+    const result = await runSpoke(spoke, adapter, "ticket/sample", mkOptions({ repoRoot: root }));
+    assert.equal(result.toolCalls.length, 1);
+    assert.deepEqual(result.toolCalls[0], {
+      path: diskPath,
+      allowed: false,
+      reason: "not_in_allowlist",
+      startedAt: result.toolCalls[0].startedAt,
+      durationMs: result.toolCalls[0].durationMs,
+    });
+    const toolTurn = conversations[1].turns.find((turn) => turn.role === "tool");
+    assert.equal(toolTurn?.role, "tool");
+    assert.equal(toolTurn?.result, "不存在或不在允許範圍");
+    assert.equal(JSON.stringify(conversations).includes("this disk content must never reach the spoke"), false);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test("truncated:tool_limit：超過 --max-tool-calls，經收束呼叫產出，被拒呼叫記入 toolCalls[]", async () => {

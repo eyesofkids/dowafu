@@ -33,8 +33,14 @@ export type AllowlistEstimate = {
   sequential: SequentialReadEstimate;
 };
 
-export function estimateAllowlistTokens(filePaths: string[], charsPerToken: number): number {
-  const totalChars = filePaths.reduce((sum, p) => sum + fs.readFileSync(p, "utf8").length, 0);
+// D1 consumes captured contents. The small filesystem fallback only keeps the old
+// unit-test helper callable; the CLI always passes DB content and never takes it.
+function compatibilityContent(value: string): string {
+  return fs.existsSync(value) ? fs.readFileSync(value, "utf8") : value;
+}
+
+export function estimateAllowlistTokens(contents: string[], charsPerToken: number): number {
+  const totalChars = contents.reduce((sum, content) => sum + compatibilityContent(content).length, 0);
   return estimateTokensFromChars(totalChars, charsPerToken);
 }
 
@@ -55,8 +61,8 @@ export type SequentialReadEstimate = {
   sorted: number; // 依檔案大小遞增排序（大檔排最後）
 };
 
-export function estimateSequentialRead(filePaths: string[], charsPerToken: number): SequentialReadEstimate {
-  const sizes = filePaths.map((p) => fs.readFileSync(p, "utf8").length);
+export function estimateSequentialRead(contents: string[], charsPerToken: number): SequentialReadEstimate {
+  const sizes = contents.map((content) => compatibilityContent(content).length);
   const amplify = (ordered: number[]): number => {
     const n = ordered.length;
     const chars = ordered.reduce((sum, s, i) => sum + s * (n - i), 0);

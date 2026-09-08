@@ -56,12 +56,13 @@ const CLI: CliOptions = {
   charsPerToken: 1.0,
   maxSpokeReasoningTokens: 50_000,
   maxRoundReasoningTokens: null,
+  httpPort: 7391,
   json: false,
   dryRun: false,
   yes: false,
 };
 
-const BUNDLED: ProvidersSource = { kind: "bundled", formatVersion: 1 };
+const BUNDLED: ProvidersSource = { kind: "database" };
 const ESTIMATES = [{ agent: SPOKE.agent, estimatedTokens: 100 }];
 const NO_ALLOWLIST: AllowlistEstimate[] = [{ agent: SPOKE.agent, estimatedTokens: 0, fileCount: 0, sequential: { asListed: 0, sorted: 0 } }];
 
@@ -79,7 +80,7 @@ test("buildReport：repoRoot 明列於報表", () => {
   assert.match(report, /repoRoot\s+\/Users\/x\/some-project/);
 });
 
-test("buildReport：providers 來源——出貨版本印 formatVersion", () => {
+test("buildReport：providers 來源——SQLite DB", () => {
   const report = buildReport(
     "t1",
     [SPOKE],
@@ -90,10 +91,10 @@ test("buildReport：providers 來源——出貨版本印 formatVersion", () => 
     { repoRoot: "/x", providersSource: BUNDLED, gitignoreStatus: "ignored", reviewTextChars: 100, strayHeadings: [] },
     "zh",
   );
-  assert.match(report, /providers\s+出貨（formatVersion 1）/);
+  assert.match(report, /providers\s+SQLite DB/);
 });
 
-test("buildReport：providers 來源——外部檔標明路徑", () => {
+test("buildReport：providers 來源不再回報外部檔", () => {
   const report = buildReport(
     "t1",
     [SPOKE],
@@ -101,10 +102,10 @@ test("buildReport：providers 來源——外部檔標明路徑", () => {
     NO_ALLOWLIST,
     CLI,
     "tmp/spoke/t1",
-    { repoRoot: "/x", providersSource: { kind: "explicit", path: "/custom/providers.json", formatVersion: 1 }, gitignoreStatus: "ignored", reviewTextChars: 100, strayHeadings: [] },
+    { repoRoot: "/x", providersSource: { kind: "database" }, gitignoreStatus: "ignored", reviewTextChars: 100, strayHeadings: [] },
     "zh",
   );
-  assert.match(report, /providers\s+外部檔 \/custom\/providers\.json（formatVersion 1）/);
+  assert.match(report, /providers\s+SQLite DB/);
 });
 
 test("buildReport：gitignore 已涵蓋時不印警告", () => {
@@ -180,7 +181,7 @@ test("buildReport：gitignore 未涵蓋時印 ⚠ 警告", () => {
     { repoRoot: "/x", providersSource: BUNDLED, gitignoreStatus: "not_ignored", reviewTextChars: 100, strayHeadings: [] },
     "zh",
   );
-  assert.match(report, /⚠ 輸出目錄 tmp\/spoke\/t1 未被輸出目錄所在的 git repo 忽略/);
+  assert.match(report, /⚠ 資料庫檔案 tmp\/spoke\/t1 未被其所在的 git repo 忽略/);
 });
 
 test("buildReport：無法判定時印 ℹ 提示，措辭與警告不同（三態不得合併）", () => {
@@ -194,7 +195,7 @@ test("buildReport：無法判定時印 ℹ 提示，措辭與警告不同（三�
     { repoRoot: "/x", providersSource: BUNDLED, gitignoreStatus: "unknown", reviewTextChars: 100, strayHeadings: [] },
     "zh",
   );
-  assert.match(report, /ℹ 無法判定輸出目錄/);
+  assert.match(report, /ℹ 無法判定資料庫檔案/);
   assert.equal(report.includes("⚠"), false);
 });
 
@@ -378,7 +379,7 @@ test("buildReport：英文版逐行格式（手寫字面量，數字不對稱，
     { repoRoot: "/x", providersSource: BUNDLED, gitignoreStatus: "not_ignored", reviewTextChars: 100, strayHeadings: [] },
     "en",
   );
-  assert.match(report, /providers\s+bundled \(formatVersion 1\)/);
+  assert.match(report, /providers\s+SQLite DB/);
   assert.match(
     report,
     /Initial prompt estimate 321 tokens \(system prompt \+ first message only; excludes the ticket and allowlist; this gate's cap is 200,000\)/,
@@ -388,7 +389,7 @@ test("buildReport：英文版逐行格式（手寫字面量，數字不對稱，
   assert.match(report, /⚠ Sorting large files last could bring this down to 20,000 \(saves 75% here\)/);
   assert.match(report, /deepseek tpmLimit 500,000, statically estimated peak 321/);
   assert.match(report, /Concurrency 2/);
-  assert.match(report, /⚠ Output directory tmp\/spoke\/t1 is not ignored by the git repo it lives in/);
+  assert.match(report, /⚠ Database file tmp\/spoke\/t1 is not ignored by the git repo it lives in/);
 });
 
 // v0.2.0：乾跑報表印本次型號的單價。起因是 /publish-check 判斷清單第 4 項——skill 改成
@@ -440,8 +441,58 @@ test("buildReport：無 pricingSource.asOf 時不印查證日（寬鬆解析：�
 // §4 的語意在報表上也要成立：「無法估算」不是「估算出來是零」。印 $0 會讓 hub 以為免費。
 test("buildReport：缺該型號價目時明說無法估算，不印 $0", () => {
   const report = reportFor(UNPRICED, "zh");
-  assert.match(report, /⚠ providers\.json 沒有 "deepseek-v4-flash" 的價目，本型號無法估算成本/);
+  assert.match(report, /⚠ DB 沒有 "deepseek-v4-flash" 的價目資料，本型號無法估算成本/);
+  assert.match(report, /硬上限：無價目資料/, "缺價目資料時硬上限也不得印 $0，見票 cost-cap §B-3 #1");
   assert.equal(/\$0(?!\.\d*[1-9])/.test(report), false, "不得出現 $0 這種會被讀成免費的數字");
+});
+
+// 票 cost-cap §B-3 #2：多 spoke 的工單，硬上限是各 spoke 相加，不是取最大。
+test("buildReport：硬上限是多 spoke 相加，不是取最大", () => {
+  const spokeA: ResolvedSpoke = { ...SPOKE, agent: "spoke-a" };
+  const spokeB: ResolvedSpoke = { ...SPOKE, agent: "spoke-b" };
+  const estimates = [
+    { agent: "spoke-a", estimatedTokens: 100 },
+    { agent: "spoke-b", estimatedTokens: 100 },
+  ];
+  const singleReport = buildReport(
+    "t1",
+    [spokeA],
+    [{ agent: "spoke-a", estimatedTokens: 100 }],
+    NO_ALLOWLIST,
+    CLI,
+    "tmp/spoke/t1",
+    { repoRoot: "/x", providersSource: BUNDLED, gitignoreStatus: "ignored", reviewTextChars: 100, strayHeadings: [] },
+    "zh",
+  );
+  const pairReport = buildReport(
+    "t1",
+    [spokeA, spokeB],
+    estimates,
+    NO_ALLOWLIST,
+    CLI,
+    "tmp/spoke/t1",
+    { repoRoot: "/x", providersSource: BUNDLED, gitignoreStatus: "ignored", reviewTextChars: 100, strayHeadings: [] },
+    "zh",
+  );
+  const singleHardCap = Number(/硬上限 \$([\d.]+)/.exec(singleReport)![1]);
+  const pairHardCap = Number(/硬上限 \$([\d.]+)/.exec(pairReport)![1]);
+  assert.ok(Math.abs(pairHardCap - singleHardCap * 2) < 1e-3, `兩個相同 spoke 的硬上限應是單一 spoke 的兩倍（加總），單一=${singleHardCap}，兩者=${pairHardCap}`);
+});
+
+// 票 cost-cap §E #1：gitignore 三態檢查的對象改成 DB 檔案路徑，不是假的 outDir（`db:<id>`）。
+test("buildReport：meta.dbPath 存在時，gitignore 警告顯示的是 DB 路徑，不是 outDir", () => {
+  const report = buildReport(
+    "t1",
+    [SPOKE],
+    ESTIMATES,
+    NO_ALLOWLIST,
+    CLI,
+    "db:t1",
+    { repoRoot: "/x", providersSource: BUNDLED, gitignoreStatus: "not_ignored", dbPath: "/home/user/.local/share/dowafu/dowafu.db", reviewTextChars: 100, strayHeadings: [] },
+    "zh",
+  );
+  assert.match(report, /⚠ 資料庫檔案 \/home\/user\/\.local\/share\/dowafu\/dowafu\.db 未被其所在的 git repo 忽略/);
+  assert.equal(report.includes("db:t1 未被"), false, "沒有 dbPath 時才該退回 outDir，這裡有給 dbPath 就不該再顯示 outDir");
 });
 
 test("buildReport：逐 spoke 印工單原文的允許清單（中英）", () => {

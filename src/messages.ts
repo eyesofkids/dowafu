@@ -62,9 +62,11 @@ type MessageArgs = {
   cancelledInteractive: [];
   cancelledNonInteractive: [];
   outDirNotWritable: [outDir: string];
-  outDirNotEmptyAbort: [outDir: string];
-  outDirNotEmptyDryRunWarning: [outDir: string];
-  outDirWritten: [outDir: string];
+  resultsExistAbort: [resultId: string];
+  resultsExistDryRunWarning: [resultId: string];
+  // D1 之後產物只在 DB，沒有「落檔目錄」這種東西。訊息要講得出「東西在哪、怎麼讀回來」
+  // ——`dowafu result <id>` 是唯一的讀回管道（CLI 這條路）。
+  resultsSaved: [resultId: string];
   outDirFallbackStderr: [];
   stdoutSummaryLine: [
     agent: string,
@@ -74,6 +76,115 @@ type MessageArgs = {
     costLabel: string,
     latencyMs: number,
   ];
+  dbResultPersistenceFailed: [agent: string, maskedErr: string];
+  dbSchemaTooNew: [found: number, supported: number];
+  approveHelp: [cmd: string];
+  resultHelp: [cmd: string];
+  resultNotFound: [id: string];
+  resultPrefixAmbiguous: [prefix: string, count: number];
+  resultCandidate: [shortId: string, ticket: string, status: string];
+  approveNoPending: [];
+  approveMultiplePending: [count: number];
+  approvePrefixAmbiguous: [prefix: string, count: number];
+  approvePendingCandidate: [shortId: string, ticket: string, createdAt: string];
+  jobNotFound: [jobId: string];
+  mcpJobPrefixAmbiguous: [prefix: string, count: number];
+  jobNotApprovable: [jobId: string, status: string];
+  jobApproved: [jobId: string];
+  daemonStarted: [];
+  daemonStartFailed: [detail: string];
+  daemonWorkerSpawnFailed: [detail: string];
+  daemonWorkerExited: [exitCode: number | string];
+  daemonWorkerExitedDetail: [exitCode: number | string, detail: string];
+  daemonWorkerTerminated: [signal: string];
+  daemonWorkerTerminatedDetail: [signal: string, detail: string];
+  stopRequiresServe: [];
+  daemonStopRunningWarning: [count: number];
+  daemonStopConfirmPrompt: [];
+  daemonStopCancelled: [];
+  daemonStopNotRunning: [reason: string];
+  daemonStopPidNotDowafu: [pid: number];
+  daemonStopSignalFailed: [pid: number];
+  daemonStopSucceeded: [pid: number];
+  daemonStopRestarted: [pid: number];
+  doctorDaemonLine: [value: string];
+  doctorDaemonAlive: [pid: number];
+  doctorDaemonMissing: [reason: string];
+  daemonOfflineWarning: [reason: string];
+  mcpTicketsEmpty: [];
+  mcpTicketsTitle: [];
+  mcpTicketsRow: [ticket: string, spokeCount: number];
+  mcpTicketsSpoke: [agent: string, provider: string, model: string, allowCount: number];
+  mcpKeysTitle: [];
+  mcpKeysRow: [provider: string, status: string];
+  mcpEnabledModelsTitle: [];
+  mcpEnabledModelRow: [provider: string, model: string];
+  mcpSubmitQueued: [jobId: string];
+  mcpApproveCommand: [command: string];
+  mcpJobStarted: [at: string];
+  mcpJobFinished: [at: string];
+  mcpJobError: [detail: string];
+  // B（gaps #6）：running 期間的兩則。progress 回答「有在往前走嗎」，
+  // stalled 回答「worker 還活著嗎」——兩個不同的問題，不要合成一句。
+  mcpJobProgress: [agent: string, lastRound: number, tokensIn: number, tokensOut: number, lastAt: string];
+  mcpJobNoProgressYet: [];
+  mcpJobHeartbeatStale: [seconds: number];
+  // 工單 status-stdin §A-3：completed／failed 的 job 對「三支死一支」不加區分——只印
+  // job 本身的終態，看不出哪幾支付了錢卻沒拿到東西。failedAgentsSuffix 由呼叫端組好
+  // （組裝原則：MESSAGES 內不互相呼叫 m()），全部成功時傳空字串，不附加任何後綴。
+  mcpJobOutcome: [succeeded: number, failed: number, failedAgentsSuffix: string];
+  mcpJobFailedAgentsSuffix: [agents: string];
+  mcpResultPending: [jobId: string, status: string];
+  mcpResultComplete: [jobId: string];
+  mcpResultEmpty: [];
+
+  // 工單 approve-tool §A：dispatch_approve 這個 MCP tool 專用的訊息。金額必須顯式帶在
+  // 訊息裡（不是只講「金額不符」）——使用者的同意基於「這次最壞多少錢」，見工單 §零之一。
+  mcpApproveAmountMismatch: [jobId: string, providedUsd: string, expectedUsd: string];
+  mcpApproveNoPricing: [jobId: string];
+
+  // 工單 C：daemon.ts serve() 的 HTTP binding 啟動訊息，與 src/api-token.ts 的
+  // `token issue/list/revoke` CLI 輸出。HTTP 傳輸層本身（404/405/401/406/413/429 等
+  // wire-level 回應）比照 protocol.ts 既有慣例不進這裡——那些是協定層錯誤，不是 A 類。
+  httpServerStarted: [port: number];
+  httpNoTokensWarning: [];
+  tokenHelp: [cmd: string];
+  tokenIssued: [id: string, plaintext: string];
+  tokenListEmpty: [];
+  tokenListRow: [id: string, label: string, createdAt: string, revoked: boolean];
+  tokenRevoked: [id: string];
+  tokenNotFoundOrRevoked: [id: string];
+
+  // 工單 key-db（E12）：`dowafu key`（互動）／`key list`／`key rm`／`key test`。
+  // 貼上的明文本身從不進這裡（本檔的函式本體不得經手未遮蔽字串，見檔頭「遮蔽邊界」）。
+  keyHelp: [cmd: string];
+  keyInteractiveRequiresTty: [];
+  keyMenuHeader: [];
+  keyMenuRow: [num: number, providerPadded: string, status: string];
+  keyMenuPrompt: [max: number];
+  keyMenuInvalidChoice: [];
+  keyMenuQuit: [];
+  keyPastePrompt: [provider: string];
+  keyPasteEmpty: [];
+  keySavedTail: [tail: string];
+  keyVerifyPrompt: [provider: string];
+  keyListRow: [provider: string, status: string];
+  keyRemoved: [provider: string];
+  keyRemovedNotFound: [provider: string];
+  keyUnknownProvider: [provider: string, list: string];
+  keyStatusDb: [tail: string, date: string];
+  keyStatusMissing: [];
+  keyStatusUntested: [];
+  keyStatusTestSucceeded: [model: string, at: string];
+  keyStatusTestFailed: [model: string, at: string];
+  keyTestHelp: [cmd: string];
+  keyTestKeyMissing: [provider: string];
+  keyTestNoEnabledModel: [provider: string];
+  keyTestCostWarning: [provider: string];
+  keyTestConfirmPrompt: [];
+  keyTestCancelled: [];
+  keyTestSucceeded: [provider: string, model: string];
+  keyTestFailed: [provider: string, detail: string];
 
   // T4：ticket.ts——_dispatch.md／_shared.md／<agent>.md 解析期訊息。B 類區塊鍵
   // （"待審段落"／"前提"／"具體問題"／"允許讀取" 及其英文對應）不在此列——那些是
@@ -89,11 +200,25 @@ type MessageArgs = {
   missingQuestionsSection: [];
   fileNotFound: [path: string]; // ticket.ts:197／:203 共用（_dispatch.md／_shared.md 找不到，同型訊息）
   agentFileNotFound: [agentPath: string, agent: string];
+  ticketNotFound: [name: string];
+  ticketCorrupt: [name: string];
+  ticketNameInvalid: [name: string];
+  ticketAlreadyExists: [name: string];
+  ticketSpokeNotFound: [name: string, agent: string];
+  ticketShowHeader: [name: string];
+  ticketEstimateTokens: [tokens: number];
+  ticketCompletedRuns: [runs: number, total: string, last: string];
+  ticketCompletedRunsNoPricing: [runs: number, last: string];
+  ticketHelp: [cmd: string];
+  // 工單 status-stdin §B：create／add-spoke 的 <shared-file>／<body-file> 用 "-" 代表從
+  // stdin 讀本文。stdin 是互動式終端機（沒有東西被導進來）時必須講人話並中止，不得掛住
+  // 等輸入。
+  ticketStdinRequiresPipe: [];
 
   // T4：validate.ts——resolveSpokes／readAgentBody
   agentDefNotFound: [path: string, agent: string];
   providerUndefinedInRow: [agent: string, provider: string];
-  missingEnvVar: [envName: string, agent: string, provider: string];
+  apiKeyNotConfigured: [agent: string, provider: string, cmd: string];
   modelNotWhitelisted: [agent: string, model: string, provider: string, list: string];
   effortNotAllowed: [agent: string, effort: string, provider: string, list: string];
   emptyAllowedNote: [];
@@ -116,17 +241,30 @@ type MessageArgs = {
   providerStoreTrue: [name: string];
   providerBaseUrlMissing: [name: string];
   providerCharsPerTokenInvalid: [name: string];
+  providerModelsRequired: [name: string];
+  pricingModelNotWhitelisted: [providerName: string, model: string];
+  providersDbCorrupt: [name: string];
+  modelDisabled: [model: string, cmd: string];
+  providerModelNotFound: [model: string];
+  providerModelAmbiguous: [model: string, providers: string];
+  providersHelp: [cmd: string];
+  providersListEmpty: [];
+  providersListRow: [provider: string, model: string, input: string, output: string, enabled: boolean];
+  providersImported: [path: string];
+  providersSeeded: [path: string];
+  providersDbEmpty: [cmd: string];
+  providersEnabled: [model: string];
+  providersDisabled: [model: string];
   providersFileNotObject: [];
   providersFormatVersionMismatch: [want: number, got: string];
   providersFileInvalidJson: [msg: string];
   providerUndefined: [name: string];
 
-  // T5：output.ts——RunLogWriter／persistSpokeResult／writeSpokeText／buildSummaryMarkdown
+  // T5：output.ts——persistSpokeResult／writeSpokeText／buildSummaryMarkdown
   // 家族。四則「消費者是 spoke」的訊息（runner.ts 200KB 截斷、--max-tool-calls 上限、
   // whitelist.ts 的 ALLOWLIST_REJECT_MESSAGE、三支 adapter 的 read_file description）不在
   // 此列——i18n_classification_t2.md §三：歸 C 類，改建雙語常數由 spoke.lang 直接選用，
   // 見各自所在檔案。
-  runLogWriteFailed: [maskedErr: string];
   noFullReportAvailable: [status: string];
   persistTextFailed: [agent: string, maskedErr: string];
   persistRawFailed: [agent: string, maskedErr: string];
@@ -135,6 +273,10 @@ type MessageArgs = {
   noneLabel: [];
   unknownUsageKeysWarning: [provider: string, keys: string];
   zeroSourceReadWarning: [n: number];
+  // 工單 status-stdin §A-2：provider 自己回報的截斷（finishReason，如 incomplete／
+  // MAX_TOKENS／max_tokens），與我們自己的 truncated:budget 預算截斷（formatStatusCell）
+  // 分開顯示——只在有東西可講（provider 明確給了非 stop 的原因）時才印，正常結束不印。
+  finishReasonWarningCell: [reason: string];
   toolCallStats: [total: number, allowed: number, rejected: number];
   closingLineCell: [passFail: string];
   observationCountCell: [display: string];
@@ -147,13 +289,12 @@ type MessageArgs = {
   summaryHeader: [ticketId: string];
 
   // T5：report.ts——buildReport
-  providersBundled: [formatVersion: number];
-  providersExplicit: [path: string, formatVersion: number];
+  providersDatabase: [];
   // 2026-08-15：待審段落非空、但另有可疑頂層章節——切在段落中間的形態。中止路徑的
   // strayHeadingsCutReviewSection 只涵蓋「整段被切光」，這一則是警告不是錯誤。
   strayHeadingsWarning: [reviewChars: number, strayNames: string[]];
-  gitignoreNotIgnored: [outDir: string];
-  gitignoreUnknown: [outDir: string];
+  gitignoreNotIgnored: [dbPath: string];
+  gitignoreUnknown: [dbPath: string];
   aboutToDispatch: [ticketId: string];
   initialPromptEstimate: [totalEst: string, maxTokens: string];
   allowlistTotalEstimate: [tokens: string, files: number];
@@ -166,7 +307,7 @@ type MessageArgs = {
   concurrencyLine: [n: number];
   tpmPeakLine: [provider: string, limit: string, peak: string];
   tpmPeakCaveat: [];
-  allowedReadsSummary: [n: number, outDir: string];
+  allowedReadsSummary: [n: number];
   allowedReadsListEntry: [path: string];
   allowedReadsListFolded: [n: number];
   allowedReadsListEmpty: [];
@@ -180,6 +321,14 @@ type MessageArgs = {
   modelPricingCachedSuffix: [cachedInputPerM: number];
   modelPricingAsOfSuffix: [asOf: string];
   modelPricingMissing: [model: string];
+
+  // 票 cost-cap §C：付費前摘要要印金額，report.ts 與 ticket-store.ts 的 formatTicket 共用。
+  // hardCapLine：只印硬上限（新工單、或無法算出「典型」時）。hardCapWithTypicalLine：
+  // 過去有 completed 的重跑資料時，典型與硬上限一起印（僅 ticket-store.ts 使用）。
+  // hardCapMissingPricing：硬上限本身因缺價目資料而算不出來時的替代訊息，不印 $0。
+  hardCapLine: [hardCapUsd: string];
+  hardCapWithTypicalLine: [typicalUsd: string, runs: number, hardCapUsd: string];
+  hardCapMissingPricing: [];
 
   // T5：runner.ts——runSpoke／sendWithResilience（A 類五則，用 spoke.lang；200KB 截斷與
   // --max-tool-calls 上限兩則消費者是 spoke，不在此列，見 runner.ts 本地雙語常數）
@@ -210,14 +359,20 @@ type MessageArgs = {
   doctorConfigDirSourceXdgConfigHome: [dir: string];
   doctorConfigDirSourceDefault: [dir: string];
   doctorConfigDirUnresolved: [];
+  // A（gaps #1／#2）：doctor 現在也印 DB 檔在哪——金鑰／工單／結果全在那個檔裡，
+  // 而先前整份報表從頭到尾沒印過它。
+  doctorDbLine: [path: string];
   doctorEnvLine: [value: string];
   doctorEnvPresentValue: [];
-  doctorEnvMissingValue: [path: string];
-  doctorEnvUnresolvedValue: [];
+  // 工單 key-db §B-3 #6：doctor 逐 provider 印出實際生效的是哪一層（DB／env／未設定），
+  // 不再只印 process.env 的 ✓／✗——後者看不出「DB 改了卻沒生效，因為 env 還躺著舊值」。
   doctorApiKeyLine: [value: string];
+  doctorApiKeyRow: [provider: string, status: string];
+  doctorApiKeySourceDb: [tail: string, date: string];
+  doctorApiKeySourceMissing: [];
   doctorProviderCountItem: [name: string, count: number];
   doctorModelListLine: [value: string];
-  doctorModelListValue: [formatVersion: number, items: string];
+  doctorModelListValue: [enabled: number, total: number, mostExpensive: string];
   doctorModelListLoadFailedValue: [reason: string];
   doctorLensLine: [value: string];
   // 工單 X1 v1.1 §三：三段式（總數／有收尾句清單／無收尾句一段，命中才附加）取代舊版
@@ -238,13 +393,13 @@ const MESSAGES: Record<Lang, MessageDefs> = {
     missingProviders: (path) => `找不到 providers.json：${path}`,
     dryRunNotice: () => "--dry-run：僅解析／驗證／估算／印報表，未呼叫任何 API。",
 
-    helpText: (cmd) => `用法：${cmd} <ticket-dir> [options]
+    helpText: (cmd) => `用法：${cmd} <ticket-id> [options]
 
   --lang <en|zh-tw>        CLI 輸出與 spoke prompt 的語言，預設 en
   --repo-root <dir>        白名單邊界與 .claude/agents 的根，預設 cwd
-  --providers <path>       整檔取代出貨的 providers.json
+  --db <path>              SQLite 工單與產物資料庫，預設 DISPATCH_HOME/dowafu.db
+  --http-port <port>       serve 模式的 HTTP binding 埠，僅綁 127.0.0.1，預設 7391
   --json                   stdout 只印結果 JSON，其餘輸出改走 stderr
-  --out <dir>              落檔目錄，預設 tmp/spoke/
   --concurrency <n>        同時執行的 spoke 數，預設 2
   --max-tokens <n>         呼叫前估算閘門（各 spoke 初始 prompt 總和），預設 200000
   --max-spoke-tokens <n>   單一 spoke 執行期累積上限（實際 usage），預設 400000
@@ -255,12 +410,23 @@ const MESSAGES: Record<Lang, MessageDefs> = {
   --max-round-reasoning-tokens <n>  單輪推理 token 上限，預設 null（不檢查）
   --rate-limit-retries <n> 429 專用重試次數，預設 5（不計入 --retries）
   --max-rate-wait <sec>    單次 429 等待上限，預設 30
-  --max-tool-calls <n>     單一 spoke 的 read_file 呼叫上限，預設 30
+  --max-tool-calls <n>     單一 spoke 的 read_file 呼叫上限，預設 20
   --dry-run                解析、驗證、估算、印報表，不呼叫 API
   --yes                    略過派工確認。非互動環境（stdin 不是 TTY）沒帶就中止
   --doctor                 印出設定自檢（不呼叫 API、不花錢）後結束（exit 0）
   --help, -h               印本說明後結束（exit 0）
-  --version, -V            印版本號後結束（exit 0）`,
+  --version, -V            印版本號後結束（exit 0）
+
+子指令（各自有自己的 --help／用法訊息）：
+  ${cmd} ticket ...        建立、匯入、檢視工單
+  ${cmd} result <id>       印出一次派工的結果（各 spoke 原文與稽核表）
+  ${cmd} key               設定 provider API key（互動選單）
+  ${cmd} providers ...     型號白名單與啟用狀態
+  ${cmd} token ...         入站 HTTP 憑證的發／列／撤銷
+  ${cmd} approve [jobId]   核准佇列中等待的派工
+  ${cmd} serve             啟動常駐 daemon（含 MCP 的 HTTP binding）
+  ${cmd} serve --stop [--yes] 停止常駐 daemon；有執行中的 job 時會先確認
+  ${cmd} mcp               以 stdio 提供 MCP server`,
     availableLangValues: () => "en、zh-tw、zh",
     availableValuesSuffix: (values) => `（可用值：${values}）`,
     numberFlagInvalid: (name, value) => `--${name} 需要數字，收到：${value}`,
@@ -290,19 +456,127 @@ const MESSAGES: Record<Lang, MessageDefs> = {
     outDirNotWritable: (outDir) => `落檔目錄不可寫：${outDir}`,
     // 護欄：舊產物是花過錢的東西，覆蓋掉之前沒有人會被問到。換一個 ticket-id 零成本，
     // 所以這裡不提供 --overwrite 之類的旗標——有旗標就會有人直接加上去。
-    outDirNotEmptyAbort: (outDir) =>
-      `輸出目錄已有產物，未派工、未呼叫任何 API：${outDir}\n` +
-      `那是上一次跑出來的東西，覆蓋掉就沒了。兩條路：\n` +
+    resultsExistAbort: (resultId) =>
+      `這個 id 已經有派工結果，未派工、未呼叫任何 API：${resultId}\n` +
+      `那是上一次跑出來的東西，覆蓋掉就沒了。先看它：dowafu result ${resultId}\n` +
+      `兩條路：\n` +
       `  1. 換一個沒用過的 ticket-id 再派（建議，零成本）\n` +
-      `  2. 由使用者自行清掉那個目錄之後重跑——這是他的決定，不是你的\n` +
-      `  * 上一次若是失敗收場（summary 全 failed、token 0），那底下沒有花過錢的東西，\n` +
-      `    換 id 或請使用者清掉都行——但仍然由使用者決定要不要清`,
-    outDirNotEmptyDryRunWarning: (outDir) =>
-      `⚠ 輸出目錄已有產物：${outDir}\n  乾跑不受影響，但實跑會被擋下。換一個 ticket-id 即可。`,
-    outDirWritten: (outDir) => `落檔完成：${outDir}/`,
+      `  2. 由使用者自行把那筆結果從資料庫刪掉之後重跑——這是他的決定，不是你的\n` +
+      `  * 上一次若是失敗收場（全部 failed、token 0），那筆沒有花過錢的東西，\n` +
+      `    換 id 或請使用者刪掉都行——但仍然由使用者決定要不要刪`,
+    resultsExistDryRunWarning: (resultId) =>
+      `⚠ 這個 id 已經有派工結果：${resultId}\n  乾跑不受影響，但實跑會被擋下。換一個 ticket-id 即可；要先看上一次的結果用 dowafu result ${resultId}。`,
+    resultsSaved: (resultId) => `結果已存入資料庫。讀回來：dowafu result ${resultId}`,
     outDirFallbackStderr: () => "落檔目錄不可寫，完整報告已改印於 stderr：",
     stdoutSummaryLine: (agent, status, model, tokens, costLabel, latencyMs) =>
       `${agent}: ${status}  model=${model}  token=${tokens}  cost=${costLabel}  耗時=${latencyMs}ms`,
+    dbResultPersistenceFailed: (agent, maskedErr) => `DB 結果寫入失敗（${agent}）：${maskedErr}`,
+    dbSchemaTooNew: (found, supported) =>
+      `這個資料庫是較新版本的 dowafu 建立的（schema 版本 ${found}，本版最高支援 ${supported}）。請升級 dowafu，不要用舊版開啟它。`,
+    approveHelp: (cmd) => `用法：${cmd} approve [jobId 前綴] [--db <path>]`,
+    resultHelp: (cmd) => `用法：${cmd} result <ticket-id 或 jobId／前綴> [--db <path>]`,
+    resultNotFound: (id) => `找不到 "${id}" 的結果。派工尚未完成，或該 ticket-id／jobId 不存在。`,
+    resultPrefixAmbiguous: (prefix, count) => `前綴 ${prefix} 命中 ${count} 張 job；請提供更長的 id。`,
+    resultCandidate: (shortId, ticket, status) => `  ${shortId}  ${ticket}  ${status}`,
+    approveNoPending: () => "目前沒有待核准的 job。",
+    approveMultiplePending: (count) => `有 ${count} 張待核准 job；請指定其中一個短 id。`,
+    approvePrefixAmbiguous: (prefix, count) => `前綴 ${prefix} 命中 ${count} 張 job；請提供更長的 id。`,
+    approvePendingCandidate: (shortId, ticket, createdAt) => `  ${shortId}  ${ticket}  ${createdAt}`,
+    jobNotFound: (jobId) => `找不到 job：${jobId}`,
+    mcpJobPrefixAmbiguous: (prefix, count) => `前綴 ${prefix} 命中 ${count} 個 job，請改用完整 id：`,
+    jobNotApprovable: (jobId, status) => `job ${jobId} 目前是 ${status}，不能核准`,
+    jobApproved: (jobId) => `已核准 job：${jobId}`,
+    daemonStarted: () => "daemon 已啟動。收到 SIGINT 時會乾淨退出；進行中的 job 下次啟動會被回收。",
+    daemonStartFailed: (detail) => `daemon 無法啟動：${detail}`,
+    daemonWorkerSpawnFailed: (detail) => `worker 無法啟動：${detail}`,
+    daemonWorkerExited: (exitCode) => `worker 以 exit code ${exitCode} 結束`,
+    daemonWorkerExitedDetail: (exitCode, detail) => `worker 以 exit code ${exitCode} 結束：${detail}`,
+    daemonWorkerTerminated: (signal) => `worker 被訊號 ${signal} 終止`,
+    daemonWorkerTerminatedDetail: (signal, detail) => `worker 被訊號 ${signal} 終止：${detail}`,
+    stopRequiresServe: () => "--stop 只能與 serve 一起使用。",
+    daemonStopRunningWarning: (count) => `目前有 ${count} 張 job 正在執行；停止 daemon 不會停止正在跑的 spoke，它們會繼續跑完，之後結果與 API 成本仍會被認列。`,
+    daemonStopConfirmPrompt: () => "確定要停止 daemon 嗎？[y/N] ",
+    daemonStopCancelled: () => "已取消，daemon 仍在執行。",
+    daemonStopNotRunning: (reason) => `daemon 未在執行（${reason}）。`,
+    daemonStopPidNotDowafu: (pid) => `pid ${pid} 的行程不是 dowafu，為避免誤殺未送出訊號。`,
+    daemonStopSignalFailed: (pid) => `已向 pid ${pid} 送出停止訊號，但它沒有停止。`,
+    daemonStopSucceeded: (pid) => `daemon（pid ${pid}）已停止。`,
+    daemonStopRestarted: (pid) => `daemon（原 pid ${pid}）停止後又恢復運行；看起來有 OS 層服務管理在重拉它。要真的停下來請用 launchctl 或 systemctl。`,
+    doctorDaemonLine: (value) => `  daemon      ${value}`,
+    doctorDaemonAlive: (pid) => `運行中（pid ${pid}）`,
+    doctorDaemonMissing: (reason) => `未運行（${reason}）`,
+    daemonOfflineWarning: (reason) => `⚠ worker daemon 未運行（${reason}）；job 已排入但不會執行。請先執行 dowafu serve。`,
+    mcpTicketsEmpty: () => "沒有可派的 DB 工單。",
+    mcpTicketsTitle: () => "可派工單：",
+    mcpTicketsRow: (ticket, spokeCount) => `- ${ticket}：${spokeCount} 個 spoke`,
+    mcpTicketsSpoke: (agent, provider, model, allowCount) =>
+      `  ${agent}：${provider}/${model}；允許清單檔 ${allowCount} 個`,
+    mcpKeysTitle: () => "API key 狀態：",
+    mcpKeysRow: (provider, status) => `  ${provider}：${status}`,
+    mcpEnabledModelsTitle: () => "已啟用型號白名單：",
+    mcpEnabledModelRow: (provider, model) => `  ${provider}/${model}`,
+    mcpSubmitQueued: (jobId) => `已排入佇列，job id = ${jobId}，狀態 pending_approval。尚未執行，須由人在終端機核准。`,
+    mcpApproveCommand: (command) => `請在終端機執行：${command}`,
+    mcpJobStarted: (at) => `開始於 ${at}`,
+    mcpJobFinished: (at) => `結束於 ${at}`,
+    mcpJobError: (detail) => `錯誤：${detail}`,
+    mcpJobProgress: (agent, lastRound, tokensIn, tokensOut, lastAt) =>
+      `  ${agent}：第 ${lastRound} 輪，累計 in ${tokensIn}／out ${tokensOut} tokens，最後更新 ${lastAt}`,
+    mcpJobNoProgressYet: () => "  （還沒有任何一輪完成）",
+    mcpJobHeartbeatStale: (seconds) =>
+      `⚠ worker 的心跳已經 ${seconds} 秒沒有更新，這支 job 很可能已經死了。` +
+      `下一次 daemon 跑 reap 時會把它標成 interrupted；daemon 沒開的話它會一直停在 running。`,
+    mcpJobOutcome: (succeeded, failed, failedAgentsSuffix) =>
+      `spoke 結果：成功 ${succeeded}／失敗 ${failed}${failedAgentsSuffix}`,
+    mcpJobFailedAgentsSuffix: (agents) => `（失敗：${agents}）`,
+    mcpResultPending: (jobId, status) => `job ${jobId} 目前是 ${status}，還沒有結果。`,
+    mcpResultComplete: (jobId) => `job ${jobId} 結果：`,
+    mcpResultEmpty: () => "（沒有儲存的 spoke 結果）",
+    mcpApproveAmountMismatch: (jobId, providedUsd, expectedUsd) =>
+      `核准遭拒：金額不符。job ${jobId} 的硬上限是 $${expectedUsd}，你給的是 ${providedUsd}。未核准，未呼叫任何 API。`,
+    mcpApproveNoPricing: (jobId) => `核准遭拒：job ${jobId} 對應的工單缺少價目資料，無法核對金額，未核准。`,
+
+    httpServerStarted: (port) => `HTTP binding 已啟動：127.0.0.1:${port}/mcp（僅本機，公開交給 tunnel）`,
+    httpNoTokensWarning: () =>
+      "⚠ 尚未發過任何 token（dowafu token issue）。端點已經活著，但沒有任何請求進得來——不是壞掉，是還沒發 token。",
+    tokenHelp: (cmd) => `${cmd} token issue [--label <說明>]\n${cmd} token list\n${cmd} token revoke <id>`,
+    tokenIssued: (id, plaintext) =>
+      `已發出 token，id = ${id}\n明文（只顯示這一次，之後拿不回來）：${plaintext}`,
+    tokenListEmpty: () => "尚未發過任何 token。",
+    tokenListRow: (id, label, createdAt, revoked) => `${id}\t${label}\t${createdAt}\t${revoked ? "已撤銷" : "有效"}`,
+    tokenRevoked: (id) => `已撤銷 token：${id}`,
+    tokenNotFoundOrRevoked: (id) => `找不到 token 或已經撤銷過了：${id}`,
+
+    keyHelp: (cmd) =>
+      `${cmd} key                 互動式設定（選單選 provider，貼上 key，不吃命令列參數）\n${cmd} key list            列出各 provider 目前生效的來源（不含明文）\n${cmd} key rm <provider>    移除 DB 那把\n${cmd} key test <provider>  呼叫一次真實 API 驗證這把 key（會花錢）`,
+    keyInteractiveRequiresTty: () =>
+      "dowafu key 需要互動式終端機（stdin 不是 TTY），不會掛住等輸入、也不會讀管道內容。請在互動式終端機執行 dowafu key 設定 API key。",
+    keyMenuHeader: () => "  provider      狀態",
+    keyMenuRow: (num, providerPadded, status) => `  ${num}) ${providerPadded} ${status}`,
+    keyMenuPrompt: (max) => `選擇要設定的 provider（1-${max}，q 離開）：`,
+    keyMenuInvalidChoice: () => "無效的選擇。",
+    keyMenuQuit: () => "已離開，未變更任何設定。",
+    keyPastePrompt: (provider) => `貼上 ${provider} 的 API key（不會顯示）：`,
+    keyPasteEmpty: () => "沒有貼到任何內容，已取消。",
+    keySavedTail: (tail) => `✓ 已存入 DB（${tail}）。`,
+    keyVerifyPrompt: (provider) => `要現在驗證這把 key 嗎？會呼叫一次 ${provider} 的 API，會花錢（y/N）：`,
+    keyListRow: (provider, status) => `${provider}\t${status}`,
+    keyRemoved: (provider) => `已從 DB 移除 ${provider} 的 key。`,
+    keyRemovedNotFound: (provider) => `DB 沒有 ${provider} 的 key，無需移除。`,
+    keyUnknownProvider: (provider, list) => `不認得的 provider：${provider}（已知：${list}）`,
+    keyStatusDb: (tail, date) => `✓ 已設定（${tail}，DB，${date}）`,
+    keyStatusMissing: () => "✗ 未設定",
+    keyStatusUntested: () => "；未測",
+    keyStatusTestSucceeded: (model, at) => `；最近驗證成功（${model}，${at}）`,
+    keyStatusTestFailed: (model, at) => `；最近驗證失敗（${model}，${at}）`,
+    keyTestHelp: (cmd) => `用法：${cmd} key test <provider>`,
+    keyTestKeyMissing: (provider) => `${provider} 尚未設定任何 API key（DB／環境變數皆無），先用 \`dowafu key\` 設定。`,
+    keyTestNoEnabledModel: (provider) => `${provider} 沒有任何已啟用的型號，無法驗證（見 \`dowafu providers enable\`）。`,
+    keyTestCostWarning: (provider) => `即將呼叫一次 ${provider} 的 API 做最小驗證，會花錢。`,
+    keyTestConfirmPrompt: () => "確定要繼續嗎？[y/N] ",
+    keyTestCancelled: () => "已取消，未呼叫任何 API。",
+    keyTestSucceeded: (provider, model) => `✓ ${provider}/${model} 驗證成功，這把 key 可用。`,
+    keyTestFailed: (provider, detail) => `✗ ${provider} 驗證失敗：${detail}`,
 
     formatMarkerMismatch: (marker, got) => `_dispatch.md 首行須為 ${marker}，實際為：${got}`,
     blankPlaceholder: () => "(空白)",
@@ -325,11 +599,26 @@ const MESSAGES: Record<Lang, MessageDefs> = {
     missingQuestionsSection: () => '<agent>.md 缺「# 具體問題」（或英文工單的「# Questions」）或內容為空',
     fileNotFound: (path) => `找不到 ${path}`,
     agentFileNotFound: (agentPath, agent) => `找不到 ${agentPath}（_dispatch.md 列了 agent "${agent}"）`,
+    ticketNotFound: (name) => `找不到 DB 工單：${name}`,
+    ticketCorrupt: (name) => `DB 工單內容損毀：${name}`,
+    ticketNameInvalid: (name) => `工單名稱無效：${name}`,
+    ticketAlreadyExists: (name) => `DB 工單已存在：${name}`,
+    ticketSpokeNotFound: (name, agent) => `DB 工單 "${name}" 沒有 agent "${agent}"`,
+    ticketShowHeader: (name) => `DB 工單 ${name}:`,
+    ticketEstimateTokens: (tokens) => `估算 ${tokens} tokens`,
+    ticketCompletedRuns: (runs, total, last) => `已完成 ${runs} 次；累計 $${total}；最近一次 ${last}`,
+    ticketCompletedRunsNoPricing: (runs, last) => `已完成 ${runs} 次；累計無價目資料；最近一次 ${last}`,
+    ticketHelp: (cmd) => `${cmd} ticket create <name> <shared-file>\n${cmd} ticket add-spoke <name> <agent> <provider> <model> <body-file> [effort]\n${cmd} ticket add-allow <name> <agent> <repo-relative-path> [--repo-root <dir>]\n${cmd} ticket import <existing-ticket-dir> [name] [--repo-root <dir>]\n${cmd} ticket show <name>\n  <shared-file>／<body-file> 可用 - 代表從 stdin 讀取本文（stdin 須為管道／重導向，不得是互動式終端機）`,
+    ticketStdinRequiresPipe: () =>
+      `此指令用 - 讀取 stdin 本文，但目前 stdin 是互動式終端機，沒有東西被導進來。` +
+      `請改用管道／重導向提供內容（例如 echo "..." | dowafu ticket create <name> -），或改用一般檔案路徑。`,
 
     agentDefNotFound: (path, agent) => `找不到 agent 定義檔 ${path}（_dispatch.md 列了 "${agent}"）`,
     providerUndefinedInRow: (agent, provider) =>
       `_dispatch.md 的 "${agent}" 列引用了未定義於 providers.json 的 provider "${provider}"`,
-    missingEnvVar: (envName, agent, provider) => `缺少環境變數 ${envName}（"${agent}" 列需要 provider "${provider}"）`,
+    apiKeyNotConfigured: (agent, provider, cmd) =>
+      `尚未設定 provider "${provider}" 的 API key（"${agent}" 列需要它）。\n`
+      + `  本版的 API key 已併入資料庫設定，不再讀取 .env 或環境變數；請執行 \`${cmd} key\` 設定。`,
     modelNotWhitelisted: (agent, model, provider, list) =>
       `"${agent}" 列的 model "${model}" 不在 provider "${provider}" 的 models 白名單內（允許：${list}）`,
     effortNotAllowed: (agent, effort, provider, list) =>
@@ -358,13 +647,26 @@ const MESSAGES: Record<Lang, MessageDefs> = {
       `providers.json: ${name}.store 為 true，違反設計原則 6（零留存）。載入即中止，不得依賴伺服器端狀態。`,
     providerBaseUrlMissing: (name) => `providers.json: ${name}.baseURL 缺失`,
     providerCharsPerTokenInvalid: (name) => `providers.json: ${name}.charsPerToken 須為正數`,
+    providerModelsRequired: (name) => `providers.json: ${name}.models 必須列出至少一個型號`,
+    pricingModelNotWhitelisted: (providerName, model) => `providers.json: ${providerName}.pricing.${model} 不在 models 白名單內`,
+    providersDbCorrupt: (name) => `providers DB 損毀：${name} 缺少型號資料或 JSON 無法解析`,
+    modelDisabled: (model, cmd) => `型號 "${model}" 已停用；請先執行 ${cmd} providers enable ${model}`,
+    providerModelNotFound: (model) => `找不到型號：${model}`,
+    providerModelAmbiguous: (model, providers) => `型號 "${model}" 同時存在於：${providers}。請用 ${"dowafu"} providers enable <provider> ${model} 指定目標；可先看 providers list。`,
+    providersHelp: (cmd) => `${cmd} providers list [--db <path>]\n${cmd} providers enable <model> [--db <path>]\n${cmd} providers enable <provider> <model> [--db <path>]\n${cmd} providers disable <model> [--db <path>]\n${cmd} providers disable <provider> <model> [--db <path>]\n${cmd} providers import <path> [--db <path>]`,
+    providersListEmpty: () => "providers DB 尚無型號；請明確執行 providers import。",
+    providersListRow: (provider, model, input, output, enabled) => `${provider}\t${model}\tinput $${input}/M\toutput $${output}/M\t${enabled ? "enabled" : "disabled"}`,
+    providersImported: (path) => `已合流匯入 providers：${path}`,
+    providersSeeded: (path) => `providers 表原本是空的，已自動從出貨檔播種：${path}（貴的型號預設關閉，用 providers list 查看）`,
+    providersDbEmpty: (cmd) => `providers 表沒有任何型號，所以沒有型號可用。這通常表示出貨的 providers.json 讀不到；執行 \`${cmd} providers import <出貨的 providers.json>\` 匯入，或用 \`${cmd} --doctor\` 查看來源。`,
+    providersEnabled: (model) => `已啟用型號：${model}`,
+    providersDisabled: (model) => `已停用型號：${model}`,
     providersFileNotObject: () => "providers.json 格式不是物件",
     providersFormatVersionMismatch: (want, got) =>
-      `providers.json: formatVersion 不符（預期 ${want}，實際 ${got}）。這通常代表 --providers 指向了舊版或不相容的檔案。`,
+      `providers.json: formatVersion 不符（預期 ${want}，實際 ${got}）。這通常代表匯入了舊版或不相容的檔案。`,
     providersFileInvalidJson: (msg) => `providers.json 不是合法 JSON：${msg}`,
     providerUndefined: (name) => `providers.json 未定義 provider "${name}"`,
 
-    runLogWriteFailed: (maskedErr) => `run.jsonl 寫入失敗：${maskedErr}`,
     noFullReportAvailable: (status) => `(無法取得完整回報，執行狀態：${status})`,
     persistTextFailed: (agent, maskedErr) => `落檔失敗（${agent}.md）：${maskedErr}`,
     persistRawFailed: (agent, maskedErr) => `落檔失敗（${agent} raw/）：${maskedErr}`,
@@ -374,6 +676,7 @@ const MESSAGES: Record<Lang, MessageDefs> = {
     noneLabel: () => "無",
     unknownUsageKeysWarning: (provider, keys) => `⚠ 未知 usage 欄位：${provider} ${keys}`,
     zeroSourceReadWarning: (n) => `⚠ 零原始碼讀取（允許 ${n} 檔）`,
+    finishReasonWarningCell: (reason) => `provider 回報截斷:${reason}`,
     toolCallStats: (total, allowed, rejected) => `工具呼叫:${total}（允許 ${allowed}／拒絕 ${rejected}）`,
     closingLineCell: (passFail) => `收尾句:${passFail}`,
     observationCountCell: (display) => `觀察:${display}`,
@@ -387,16 +690,19 @@ const MESSAGES: Record<Lang, MessageDefs> = {
 | agent | provider | api | model(請求) | model(回傳) | effort | store | status | 耗時 | token | 估算成本 | 稽核 |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |`,
 
-    providersBundled: (formatVersion) => `出貨（formatVersion ${formatVersion}）`,
-    providersExplicit: (path, formatVersion) => `外部檔 ${path}（formatVersion ${formatVersion}）`,
+    // 熱修補（票 C 手測）：原本寫「明確 providers import 合流」。那在寫下的當時是準的
+    // ——當時填 DB 的唯一途徑就是明確 import。票 A 的熱修補加了空表自動播種之後這句就變成
+    // 假的，而且它假的地方正好是「這些數字哪來的」，是這個欄位存在的唯一理由。
+    // 播種與 import 目前沒有分開記錄，所以這裡只講查得證的那半：來源是 DB。
+    providersDatabase: () => "SQLite DB",
     strayHeadingsWarning: (reviewChars, strayNames) =>
       `  ⚠ _shared.md 的「# 待審段落」只有 ${reviewChars} 字，另有 ${strayNames.length} 個頂層章節：` +
       `${strayNames.map((s) => `「# ${s}」`).join("、")}` +
       `——待審段落可能被它們切斷了。工單以 \`#\` 切分區塊，內嵌文件若自帶 \`#\` 標題請降成 \`##\`，` +
       `或用 \`\`\` 圍籬包起來。確認過是刻意的就忽略本行`,
-    gitignoreNotIgnored: (outDir) => `  ⚠ 輸出目錄 ${outDir} 未被輸出目錄所在的 git repo 忽略`,
-    gitignoreUnknown: (outDir) =>
-      `  ℹ 無法判定輸出目錄 ${outDir} 是否被 .gitignore 涵蓋（非 git repo 或 git 不可用）`,
+    gitignoreNotIgnored: (dbPath) => `  ⚠ 資料庫檔案 ${dbPath} 未被其所在的 git repo 忽略`,
+    gitignoreUnknown: (dbPath) =>
+      `  ℹ 無法判定資料庫檔案 ${dbPath} 是否被 .gitignore 涵蓋（它不在目前目錄所屬的 git 工作樹內、目前目錄非 git repo，或 git 不可用）`,
     aboutToDispatch: (ticketId) => `即將派工 ${ticketId}：`,
     initialPromptEstimate: (totalEst, maxTokens) =>
       `  初始 prompt 估算 ${totalEst} tokens（僅 system prompt＋首則訊息，不含工單與允許清單；本閘門的估算上限 ${maxTokens}）`,
@@ -411,7 +717,7 @@ const MESSAGES: Record<Lang, MessageDefs> = {
     concurrencyLine: (n) => `  並行度 ${n}`,
     tpmPeakLine: (provider, limit, peak) => `  ${provider} tpmLimit ${limit}，靜態估算峰值 ${peak}`,
     tpmPeakCaveat: () => "    └ 僅為靜態指標，不預測執行中的 TPM 曲線（429 等待會改變實際並行數）",
-    allowedReadsSummary: (n, outDir) => `  允許讀取 ${n} 個檔案，輸出至 ${outDir}/`,
+    allowedReadsSummary: (n) => `  允許讀取 ${n} 個檔案，結果存入資料庫`,
     allowedReadsListEntry: (path) => `    ${path}`,
     allowedReadsListFolded: (n) => `    …另 ${n} 個`,
     allowedReadsListEmpty: () => "    （允許清單為空）",
@@ -422,7 +728,11 @@ const MESSAGES: Record<Lang, MessageDefs> = {
       `    └ 單價 每 M token：input $${input}／output $${output}${cachedSuffix}${asOfSuffix}`,
     modelPricingCachedSuffix: (cached) => `／cached input $${cached}`,
     modelPricingAsOfSuffix: (asOf) => `；價目查證日 ${asOf}`,
-    modelPricingMissing: (model) => `    └ ⚠ providers.json 沒有 "${model}" 的價目，本型號無法估算成本`,
+    modelPricingMissing: (model) => `    └ ⚠ DB 沒有 "${model}" 的價目資料，本型號無法估算成本`,
+    hardCapLine: (hardCapUsd) => `硬上限 $${hardCapUsd}（絕對上界，非預測）`,
+    hardCapWithTypicalLine: (typicalUsd, runs, hardCapUsd) =>
+      `典型 $${typicalUsd}（過去 ${runs} 次）／硬上限 $${hardCapUsd}（絕對上界，非預測）`,
+    hardCapMissingPricing: () => "硬上限：無價目資料",
 
     rawIntegrityCheckFailed: (msg) => `raw 完整性檢查失敗（實作缺陷，不重試）：${msg}`,
     rateLimitRetriesExceeded: (n) => `429 撞牆次數超過 --rate-limit-retries (${n})`,
@@ -447,14 +757,16 @@ const MESSAGES: Record<Lang, MessageDefs> = {
     doctorConfigDirSourceXdgConfigHome: (dir) => `${dir}（來源：XDG_CONFIG_HOME）`,
     doctorConfigDirSourceDefault: (dir) => `${dir}（來源：預設；DISPATCH_HOME 與 XDG_CONFIG_HOME 都沒設）`,
     doctorConfigDirUnresolved: () => "無法解析（沒有 HOME）",
+    doctorDbLine: (dbPath) => `  資料庫      ${dbPath}`,
     doctorEnvLine: (value) => `  .env        ${value}`,
-    doctorEnvPresentValue: () => "有（不讀內容）",
-    doctorEnvMissingValue: (path) => `沒有：${path}`,
-    doctorEnvUnresolvedValue: () => "無法判定（設定目錄無法解析）",
-    doctorApiKeyLine: (value) => `  API key     ${value}（只看有沒有值，不看內容）`,
+    doctorEnvPresentValue: () => "有，但本版不讀取（API key 請用 `dowafu key` 設定進 DB）",
+    doctorApiKeyLine: (value) => `  API key     ${value}`,
+    doctorApiKeyRow: (provider, status) => `${provider} ${status}`,
+    doctorApiKeySourceDb: (tail, date) => `DB（${tail}，${date}）`,
+    doctorApiKeySourceMissing: () => "未設定",
     doctorProviderCountItem: (name, count) => `${name} ${count} 個`,
     doctorModelListLine: (value) => `  型號白名單  ${value}`,
-    doctorModelListValue: (formatVersion, items) => `providers.json formatVersion ${formatVersion}：${items}`,
+    doctorModelListValue: (enabled, total, mostExpensive) => `啟用 ${enabled}/${total}；最貴啟用型號 ${mostExpensive}；來源 SQLite DB`,
     doctorModelListLoadFailedValue: (reason) => `無法載入：${reason}`,
     doctorLensLine: (value) => `  lens 定義   ${value}`,
     doctorLensFoundValue: (dirPath, total, closingCount, closingNames, noClosingSuffix) =>
@@ -468,13 +780,13 @@ const MESSAGES: Record<Lang, MessageDefs> = {
     missingProviders: (path) => `providers.json not found: ${path}`,
     dryRunNotice: () => "--dry-run: parsed, validated, estimated, and reported only; no API calls were made.",
 
-    helpText: (cmd) => `Usage: ${cmd} <ticket-dir> [options]
+    helpText: (cmd) => `Usage: ${cmd} <ticket-id> [options]
 
   --lang <en|zh-tw>        Language for CLI output and spoke prompts, default en
   --repo-root <dir>        Root for the allowlist boundary and .claude/agents, default cwd
-  --providers <path>       Replace the bundled providers.json entirely
+  --db <path>              SQLite ticket/result database, default DISPATCH_HOME/dowafu.db
+  --http-port <port>       HTTP binding port for serve mode, loopback (127.0.0.1) only, default 7391
   --json                   stdout prints only the result JSON; all other output goes to stderr
-  --out <dir>              Output directory, default tmp/spoke/
   --concurrency <n>        Number of spokes to run concurrently, default 2
   --max-tokens <n>         Pre-call estimation gate (sum of each spoke's initial prompt), default 200000
   --max-spoke-tokens <n>   Per-spoke runtime cumulative cap (actual usage), default 400000
@@ -485,12 +797,23 @@ const MESSAGES: Record<Lang, MessageDefs> = {
   --max-round-reasoning-tokens <n>  Per-round reasoning-token cap, default null (no check)
   --rate-limit-retries <n> Retries dedicated to 429s, default 5 (not counted in --retries)
   --max-rate-wait <sec>    Max wait for a single 429, default 30
-  --max-tool-calls <n>     Per-spoke read_file call cap, default 30
+  --max-tool-calls <n>     Per-spoke read_file call cap, default 20
   --dry-run                Parse, validate, estimate, and print the report only; no API calls
   --yes                    Skip the dispatch confirmation. Aborts in non-interactive environments (stdin not a TTY) unless given
   --doctor                 Print the configuration self-check (no API call, no cost) and exit (exit 0)
   --help, -h               Print this help and exit (exit 0)
-  --version, -V            Print the version and exit (exit 0)`,
+  --version, -V            Print the version and exit (exit 0)
+
+Subcommands (each has its own usage message):
+  ${cmd} ticket ...        Create, import and inspect tickets
+  ${cmd} result <id>       Print the results of one dispatch (spoke output and audit table)
+  ${cmd} key               Set provider API keys (interactive menu)
+  ${cmd} providers ...     Model whitelist and enabled state
+  ${cmd} token ...         Issue, list and revoke inbound HTTP tokens
+  ${cmd} approve [jobId]   Approve a dispatch waiting in the queue
+  ${cmd} serve             Run the daemon (includes the MCP HTTP binding)
+  ${cmd} serve --stop [--yes] Stop the daemon; asks first if jobs are running
+  ${cmd} mcp               Serve MCP over stdio`,
     availableLangValues: () => "en, zh-tw, zh",
     availableValuesSuffix: (values) => ` (available: ${values})`,
     numberFlagInvalid: (name, value) => `--${name} requires a number, got: ${value}`,
@@ -520,19 +843,127 @@ const MESSAGES: Record<Lang, MessageDefs> = {
     cancelledNonInteractive: () =>
       "Non-interactive environment (stdin is not a TTY); nobody could confirm. Cancelled; no API calls were made. To dispatch in this environment, pass --yes explicitly.",
     outDirNotWritable: (outDir) => `Output directory is not writable: ${outDir}`,
-    outDirNotEmptyAbort: (outDir) =>
-      `The output directory already holds artifacts. Nothing was dispatched; no API was called: ${outDir}\n` +
-      `Those came from a previous run, and overwriting them loses them. Two ways forward:\n` +
+    resultsExistAbort: (resultId) =>
+      `This id already has results. Nothing was dispatched; no API was called: ${resultId}\n` +
+      `Those came from a previous run, and overwriting them loses them. Read them first: dowafu result ${resultId}\n` +
+      `Two ways forward:\n` +
       `  1. Pick a ticket-id you have not used and dispatch under that (recommended; it costs nothing)\n` +
-      `  2. Have the user clear that directory themselves, then rerun — that call is theirs, not yours\n` +
-      `  * If the previous run ended in failure (all failed, zero tokens), nothing under there was\n` +
-      `    paid for — a new id or the user clearing it are both fine, but it is still their call to clear`,
-    outDirNotEmptyDryRunWarning: (outDir) =>
-      `⚠ The output directory already holds artifacts: ${outDir}\n  The dry run is unaffected, but the real run will be stopped. Pick a different ticket-id.`,
-    outDirWritten: (outDir) => `Files written to: ${outDir}/`,
+      `  2. Have the user delete those results from the database themselves, then rerun — that call is theirs, not yours\n` +
+      `  * If the previous run ended in failure (all failed, zero tokens), nothing there was paid for\n` +
+      `    — a new id or the user deleting it are both fine, but it is still their call to delete`,
+    resultsExistDryRunWarning: (resultId) =>
+      `⚠ This id already has results: ${resultId}\n  The dry run is unaffected, but the real run will be stopped. Pick a different ticket-id; to read the previous run first, use dowafu result ${resultId}.`,
+    resultsSaved: (resultId) => `Results saved to the database. Read them back with: dowafu result ${resultId}`,
     outDirFallbackStderr: () => "Output directory is not writable; the full report was printed to stderr instead:",
     stdoutSummaryLine: (agent, status, model, tokens, costLabel, latencyMs) =>
       `${agent}: ${status}  model=${model}  token=${tokens}  cost=${costLabel}  elapsed=${latencyMs}ms`,
+    dbResultPersistenceFailed: (agent, maskedErr) => `DB result persistence failed (${agent}): ${maskedErr}`,
+    dbSchemaTooNew: (found, supported) =>
+      `This database was created by a newer dowafu (schema version ${found}; this build supports up to ${supported}). Upgrade dowafu instead of opening it with an older build.`,
+    approveHelp: (cmd) => `Usage: ${cmd} approve [jobId prefix] [--db <path>]`,
+    resultHelp: (cmd) => `Usage: ${cmd} result <ticket-id or jobId/prefix> [--db <path>]`,
+    resultNotFound: (id) => `No results found for "${id}". The dispatch has not finished, or that ticket-id/jobId does not exist.`,
+    resultPrefixAmbiguous: (prefix, count) => `Prefix ${prefix} matches ${count} jobs; provide a longer id.`,
+    resultCandidate: (shortId, ticket, status) => `  ${shortId}  ${ticket}  ${status}`,
+    approveNoPending: () => "There are no jobs awaiting approval.",
+    approveMultiplePending: (count) => `${count} pending approvals found; specify one short id.`,
+    approvePrefixAmbiguous: (prefix, count) => `Prefix ${prefix} matches ${count} jobs; provide a longer id.`,
+    approvePendingCandidate: (shortId, ticket, createdAt) => `  ${shortId}  ${ticket}  ${createdAt}`,
+    jobNotFound: (jobId) => `Job not found: ${jobId}`,
+    mcpJobPrefixAmbiguous: (prefix, count) => `Prefix ${prefix} matches ${count} jobs; use the full id:`,
+    jobNotApprovable: (jobId, status) => `Job ${jobId} is ${status} and cannot be approved`,
+    jobApproved: (jobId) => `Approved job: ${jobId}`,
+    daemonStarted: () => "Daemon started. SIGINT exits cleanly; running jobs are reaped on the next start.",
+    daemonStartFailed: (detail) => `Could not start daemon: ${detail}`,
+    daemonWorkerSpawnFailed: (detail) => `Could not start worker: ${detail}`,
+    daemonWorkerExited: (exitCode) => `worker exited ${exitCode}`,
+    daemonWorkerExitedDetail: (exitCode, detail) => `worker exited ${exitCode}: ${detail}`,
+    daemonWorkerTerminated: (signal) => `worker terminated by ${signal}`,
+    daemonWorkerTerminatedDetail: (signal, detail) => `worker terminated by ${signal}: ${detail}`,
+    stopRequiresServe: () => "--stop can only be used with serve.",
+    daemonStopRunningWarning: (count) => `${count} job(s) are running; stopping the daemon does not stop their active spokes, which continue to completion and will still have their results and API costs recorded.`,
+    daemonStopConfirmPrompt: () => "Stop the daemon? [y/N] ",
+    daemonStopCancelled: () => "Cancelled; the daemon is still running.",
+    daemonStopNotRunning: (reason) => `Daemon is not running (${reason}).`,
+    daemonStopPidNotDowafu: (pid) => `pid ${pid} is not a dowafu process; no signal was sent to avoid killing the wrong process.`,
+    daemonStopSignalFailed: (pid) => `A stop signal was sent to pid ${pid}, but it did not stop.`,
+    daemonStopSucceeded: (pid) => `Daemon (pid ${pid}) stopped.`,
+    daemonStopRestarted: (pid) => `Daemon (previous pid ${pid}) came back after stopping; an OS-level service manager appears to be restarting it. Use launchctl or systemctl to stop it permanently.`,
+    doctorDaemonLine: (value) => `  Daemon       ${value}`,
+    doctorDaemonAlive: (pid) => `running (pid ${pid})`,
+    doctorDaemonMissing: (reason) => `not running (${reason})`,
+    daemonOfflineWarning: (reason) => `⚠ The worker daemon is not running (${reason}); the job is queued but will not execute. Start it with dowafu serve.`,
+    mcpTicketsEmpty: () => "No dispatchable DB tickets.",
+    mcpTicketsTitle: () => "Dispatchable tickets:",
+    mcpTicketsRow: (ticket, spokeCount) => `- ${ticket}: ${spokeCount} spoke(s)`,
+    mcpTicketsSpoke: (agent, provider, model, allowCount) =>
+      `  ${agent}: ${provider}/${model}; allowlist files=${allowCount}`,
+    mcpKeysTitle: () => "API key status:",
+    mcpKeysRow: (provider, status) => `  ${provider}: ${status}`,
+    mcpEnabledModelsTitle: () => "Enabled model allowlist:",
+    mcpEnabledModelRow: (provider, model) => `  ${provider}/${model}`,
+    mcpSubmitQueued: (jobId) => `Job queued: ${jobId}; status pending_approval. It has not started and needs terminal approval by a human.`,
+    mcpApproveCommand: (command) => `Run this in a terminal: ${command}`,
+    mcpJobStarted: (at) => `Started at ${at}`,
+    mcpJobFinished: (at) => `Finished at ${at}`,
+    mcpJobError: (detail) => `Error: ${detail}`,
+    mcpJobProgress: (agent, lastRound, tokensIn, tokensOut, lastAt) =>
+      `  ${agent}: round ${lastRound}, ${tokensIn} in / ${tokensOut} out tokens so far, last updated ${lastAt}`,
+    mcpJobNoProgressYet: () => "  (no round has completed yet)",
+    mcpJobHeartbeatStale: (seconds) =>
+      `⚠ The worker's heartbeat has not moved for ${seconds}s; this job is most likely dead. ` +
+      `The next reap will mark it interrupted; with no daemon running it stays at running indefinitely.`,
+    mcpJobOutcome: (succeeded, failed, failedAgentsSuffix) =>
+      `Spoke outcomes: ${succeeded} succeeded / ${failed} failed${failedAgentsSuffix}`,
+    mcpJobFailedAgentsSuffix: (agents) => ` (failed: ${agents})`,
+    mcpResultPending: (jobId, status) => `Job ${jobId} is ${status}; no result is available yet.`,
+    mcpResultComplete: (jobId) => `Job ${jobId} result:`,
+    mcpResultEmpty: () => "(No stored spoke results.)",
+    mcpApproveAmountMismatch: (jobId, providedUsd, expectedUsd) =>
+      `Approval rejected: amount mismatch. Job ${jobId}'s hard cap is $${expectedUsd}; you gave ${providedUsd}. Not approved; no API was called.`,
+    mcpApproveNoPricing: (jobId) => `Approval rejected: the ticket behind job ${jobId} lacks pricing data, so the amount could not be verified. Not approved.`,
+
+    httpServerStarted: (port) => `HTTP binding started: 127.0.0.1:${port}/mcp (loopback only; exposure is the tunnel's job)`,
+    httpNoTokensWarning: () =>
+      "⚠ No token has been issued yet (dowafu token issue). The endpoint is alive, but no request can get in — it isn't broken, it just has no token yet.",
+    tokenHelp: (cmd) => `${cmd} token issue [--label <text>]\n${cmd} token list\n${cmd} token revoke <id>`,
+    tokenIssued: (id, plaintext) =>
+      `Token issued, id = ${id}\nPlaintext (shown only this once, unrecoverable afterward): ${plaintext}`,
+    tokenListEmpty: () => "No tokens have been issued yet.",
+    tokenListRow: (id, label, createdAt, revoked) => `${id}\t${label}\t${createdAt}\t${revoked ? "revoked" : "active"}`,
+    tokenRevoked: (id) => `Revoked token: ${id}`,
+    tokenNotFoundOrRevoked: (id) => `Token not found or already revoked: ${id}`,
+
+    keyHelp: (cmd) =>
+      `${cmd} key                 Interactive setup (pick a provider from a menu, paste the key; takes no CLI args)\n${cmd} key list            List each provider's currently effective source (no plaintext)\n${cmd} key rm <provider>    Remove that provider's key from the DB\n${cmd} key test <provider>  Call the real API once to verify the key (costs money)`,
+    keyInteractiveRequiresTty: () =>
+      "dowafu key needs an interactive terminal (stdin is not a TTY); it will not hang waiting for input or read from a pipe. Run dowafu key in an interactive terminal to set the API key.",
+    keyMenuHeader: () => "  provider      status",
+    keyMenuRow: (num, providerPadded, status) => `  ${num}) ${providerPadded} ${status}`,
+    keyMenuPrompt: (max) => `Choose a provider to set (1-${max}, q to quit): `,
+    keyMenuInvalidChoice: () => "Invalid choice.",
+    keyMenuQuit: () => "Left without changing anything.",
+    keyPastePrompt: (provider) => `Paste the API key for ${provider} (will not be echoed): `,
+    keyPasteEmpty: () => "Nothing was pasted; cancelled.",
+    keySavedTail: (tail) => `✓ Saved to the DB (${tail}).`,
+    keyVerifyPrompt: (provider) => `Verify this key now? This calls ${provider}'s API once and costs money (y/N): `,
+    keyListRow: (provider, status) => `${provider}\t${status}`,
+    keyRemoved: (provider) => `Removed ${provider}'s key from the DB.`,
+    keyRemovedNotFound: (provider) => `The DB has no key for ${provider}; nothing to remove.`,
+    keyUnknownProvider: (provider, list) => `Unknown provider: ${provider} (known: ${list})`,
+    keyStatusDb: (tail, date) => `✓ set (${tail}, DB, ${date})`,
+    keyStatusMissing: () => "✗ not set",
+    keyStatusUntested: () => "; never tested",
+    keyStatusTestSucceeded: (model, at) => `; last test passed (${model}, ${at})`,
+    keyStatusTestFailed: (model, at) => `; last test failed (${model}, ${at})`,
+    keyTestHelp: (cmd) => `Usage: ${cmd} key test <provider>`,
+    keyTestKeyMissing: (provider) => `${provider} has no API key set yet (neither DB nor environment) — set one with \`dowafu key\` first.`,
+    keyTestNoEnabledModel: (provider) => `${provider} has no enabled model to test with (see \`dowafu providers enable\`).`,
+    keyTestCostWarning: (provider) => `About to call ${provider}'s API once as a minimal verification. This costs money.`,
+    keyTestConfirmPrompt: () => "Proceed? [y/N] ",
+    keyTestCancelled: () => "Cancelled; no API call was made.",
+    keyTestSucceeded: (provider, model) => `✓ ${provider}/${model} verified; this key works.`,
+    keyTestFailed: (provider, detail) => `✗ ${provider} verification failed: ${detail}`,
 
     formatMarkerMismatch: (marker, got) => `_dispatch.md's first line must be ${marker}, got: ${got}`,
     blankPlaceholder: () => "(blank)",
@@ -560,12 +991,26 @@ const MESSAGES: Record<Lang, MessageDefs> = {
       '<agent>.md is missing "# Questions" (or "# 具體問題" in a Chinese-language ticket) or its content is empty',
     fileNotFound: (path) => `Not found: ${path}`,
     agentFileNotFound: (agentPath, agent) => `Not found: ${agentPath} (_dispatch.md lists agent "${agent}")`,
+    ticketNotFound: (name) => `DB ticket not found: ${name}`,
+    ticketCorrupt: (name) => `DB ticket is corrupt: ${name}`,
+    ticketNameInvalid: (name) => `Invalid ticket name: ${name}`,
+    ticketAlreadyExists: (name) => `DB ticket already exists: ${name}`,
+    ticketSpokeNotFound: (name, agent) => `DB ticket "${name}" has no agent "${agent}"`,
+    ticketShowHeader: (name) => `DB ticket ${name}:`,
+    ticketEstimateTokens: (tokens) => `est. ${tokens} tokens`,
+    ticketCompletedRuns: (runs, total, last) => `Completed ${runs} times; total $${total}; last ${last}`,
+    ticketCompletedRunsNoPricing: (runs, last) => `Completed ${runs} times; total No pricing data; last ${last}`,
+    ticketHelp: (cmd) => `${cmd} ticket create <name> <shared-file>\n${cmd} ticket add-spoke <name> <agent> <provider> <model> <body-file> [effort]\n${cmd} ticket add-allow <name> <agent> <repo-relative-path> [--repo-root <dir>]\n${cmd} ticket import <existing-ticket-dir> [name] [--repo-root <dir>]\n${cmd} ticket show <name>\n  <shared-file>/<body-file> may be - to read the body from stdin (stdin must be piped/redirected, not an interactive terminal)`,
+    ticketStdinRequiresPipe: () =>
+      "This command reads the body from stdin via -, but stdin is an interactive terminal right now; nothing is being piped in. " +
+      'Pipe or redirect content instead (for example, echo "..." | dowafu ticket create <name> -), or use a regular file path.',
 
     agentDefNotFound: (path, agent) => `Agent definition file not found: ${path} (_dispatch.md lists "${agent}")`,
     providerUndefinedInRow: (agent, provider) =>
       `_dispatch.md's "${agent}" row references provider "${provider}", which is not defined in providers.json`,
-    missingEnvVar: (envName, agent, provider) =>
-      `Missing environment variable ${envName} (the "${agent}" row requires provider "${provider}")`,
+    apiKeyNotConfigured: (agent, provider, cmd) =>
+      `No API key configured for provider "${provider}" (the "${agent}" row needs one).\n`
+      + `  This version keeps API keys in the database and no longer reads .env or environment variables; run \`${cmd} key\` to set one.`,
     modelNotWhitelisted: (agent, model, provider, list) =>
       `The "${agent}" row's model "${model}" is not in provider "${provider}"'s models whitelist (allowed: ${list})`,
     effortNotAllowed: (agent, effort, provider, list) =>
@@ -600,14 +1045,27 @@ const MESSAGES: Record<Lang, MessageDefs> = {
       `Aborting on load; server-side state must not be relied upon.`,
     providerBaseUrlMissing: (name) => `providers.json: ${name}.baseURL is missing`,
     providerCharsPerTokenInvalid: (name) => `providers.json: ${name}.charsPerToken must be a positive number`,
+    providerModelsRequired: (name) => `providers.json: ${name}.models must list at least one model`,
+    pricingModelNotWhitelisted: (providerName, model) => `providers.json: ${providerName}.pricing.${model} is not in the models whitelist`,
+    providersDbCorrupt: (name) => `providers DB is corrupt: ${name} has no model data or invalid JSON`,
+    modelDisabled: (model, cmd) => `Model "${model}" is disabled; first run ${cmd} providers enable ${model}`,
+    providerModelNotFound: (model) => `Model not found: ${model}`,
+    providerModelAmbiguous: (model, providers) => `Model "${model}" exists in: ${providers}. Use dowafu providers enable <provider> ${model}; see providers list.`,
+    providersHelp: (cmd) => `${cmd} providers list [--db <path>]\n${cmd} providers enable <model> [--db <path>]\n${cmd} providers enable <provider> <model> [--db <path>]\n${cmd} providers disable <model> [--db <path>]\n${cmd} providers disable <provider> <model> [--db <path>]\n${cmd} providers import <path> [--db <path>]`,
+    providersListEmpty: () => "The providers DB has no models; explicitly run providers import.",
+    providersListRow: (provider, model, input, output, enabled) => `${provider}\t${model}\tinput $${input}/M\toutput $${output}/M\t${enabled ? "enabled" : "disabled"}`,
+    providersImported: (path) => `Providers merged from: ${path}`,
+    providersSeeded: (path) => `The providers table was empty and has been seeded from the bundled file: ${path} (expensive models start disabled; see providers list)`,
+    providersDbEmpty: (cmd) => `The providers table holds no models, so no model is usable. That usually means the bundled providers.json could not be read; run \`${cmd} providers import <bundled providers.json>\` to load it, or \`${cmd} --doctor\` to see the source.`,
+    providersEnabled: (model) => `Enabled model: ${model}`,
+    providersDisabled: (model) => `Disabled model: ${model}`,
     providersFileNotObject: () => "providers.json format is not an object",
     providersFormatVersionMismatch: (want, got) =>
       `providers.json: formatVersion mismatch (expected ${want}, got ${got}). ` +
-      `This usually means --providers points to an old or incompatible file.`,
+      `This usually means an old or incompatible file was imported.`,
     providersFileInvalidJson: (msg) => `providers.json is not valid JSON: ${msg}`,
     providerUndefined: (name) => `providers.json does not define provider "${name}"`,
 
-    runLogWriteFailed: (maskedErr) => `Failed to write run.jsonl: ${maskedErr}`,
     noFullReportAvailable: (status) => `(Full report unavailable; execution status: ${status})`,
     persistTextFailed: (agent, maskedErr) => `Failed to write file (${agent}.md): ${maskedErr}`,
     persistRawFailed: (agent, maskedErr) => `Failed to write file (${agent} raw/): ${maskedErr}`,
@@ -619,6 +1077,7 @@ const MESSAGES: Record<Lang, MessageDefs> = {
     noneLabel: () => "none",
     unknownUsageKeysWarning: (provider, keys) => `⚠ Unknown usage field(s): ${provider} ${keys}`,
     zeroSourceReadWarning: (n) => `⚠ Zero source reads (allowed ${n} file(s))`,
+    finishReasonWarningCell: (reason) => `Provider-reported truncation:${reason}`,
     toolCallStats: (total, allowed, rejected) => `Tool calls:${total} (allowed ${allowed} / rejected ${rejected})`,
     closingLineCell: (passFail) => `Closing line:${passFail}`,
     observationCountCell: (display) => `Observations:${display}`,
@@ -632,16 +1091,15 @@ const MESSAGES: Record<Lang, MessageDefs> = {
 | agent | provider | api | model(requested) | model(returned) | effort | store | status | latency | token | est. cost | audit |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |`,
 
-    providersBundled: (formatVersion) => `bundled (formatVersion ${formatVersion})`,
-    providersExplicit: (path, formatVersion) => `external file ${path} (formatVersion ${formatVersion})`,
+    providersDatabase: () => "SQLite DB",
     strayHeadingsWarning: (reviewChars, strayNames) =>
       `  ⚠ _shared.md's "# Under review" holds only ${reviewChars} characters, and ${strayNames.length} other ` +
       `top-level heading(s) follow: ${strayNames.map((s) => `"# ${s}"`).join(", ")} — the section under review ` +
       `may have been cut off by them. The ticket splits into sections by \`#\`; if an embedded document has its ` +
       `own \`#\` headings, demote them to \`##\` or wrap the block in \`\`\` fences. Ignore this line if it is intended`,
-    gitignoreNotIgnored: (outDir) => `  ⚠ Output directory ${outDir} is not ignored by the git repo it lives in`,
-    gitignoreUnknown: (outDir) =>
-      `  ℹ Cannot determine whether output directory ${outDir} is covered by .gitignore (not a git repo, or git unavailable)`,
+    gitignoreNotIgnored: (dbPath) => `  ⚠ Database file ${dbPath} is not ignored by the git repo it lives in`,
+    gitignoreUnknown: (dbPath) =>
+      `  ℹ Cannot determine whether database file ${dbPath} is covered by .gitignore (it is outside the git work tree of the current directory, the current directory is not a git repo, or git is unavailable)`,
     aboutToDispatch: (ticketId) => `About to dispatch ${ticketId}:`,
     initialPromptEstimate: (totalEst, maxTokens) =>
       `  Initial prompt estimate ${totalEst} tokens (system prompt + first message only; excludes the ticket and allowlist; this gate's cap is ${maxTokens})`,
@@ -661,7 +1119,7 @@ const MESSAGES: Record<Lang, MessageDefs> = {
     tpmPeakLine: (provider, limit, peak) => `  ${provider} tpmLimit ${limit}, statically estimated peak ${peak}`,
     tpmPeakCaveat: () =>
       "    └ Static indicator only; does not predict the in-flight TPM curve (429 waits change actual concurrency)",
-    allowedReadsSummary: (n, outDir) => `  Allowed reads: ${n} file(s), output to ${outDir}/`,
+    allowedReadsSummary: (n) => `  Allowed reads: ${n} file(s); results go to the database`,
     allowedReadsListEntry: (path) => `    ${path}`,
     allowedReadsListFolded: (n) => `    …and ${n} more`,
     allowedReadsListEmpty: () => "    (Allowlist is empty)",
@@ -673,7 +1131,11 @@ const MESSAGES: Record<Lang, MessageDefs> = {
     modelPricingCachedSuffix: (cached) => ` / cached input $${cached}`,
     modelPricingAsOfSuffix: (asOf) => `; priced as of ${asOf}`,
     modelPricingMissing: (model) =>
-      `    └ ⚠ providers.json has no pricing for "${model}"; cost cannot be estimated for it`,
+      `    └ ⚠ The database has no pricing data for "${model}"; cost cannot be estimated for it`,
+    hardCapLine: (hardCapUsd) => `Hard cap $${hardCapUsd} (absolute upper bound, not a prediction)`,
+    hardCapWithTypicalLine: (typicalUsd, runs, hardCapUsd) =>
+      `Typical $${typicalUsd} (last ${runs} runs) / hard cap $${hardCapUsd} (absolute upper bound, not a prediction)`,
+    hardCapMissingPricing: () => "Hard cap: no pricing data",
 
     rawIntegrityCheckFailed: (msg) => `Raw integrity check failed (implementation defect, not retried): ${msg}`,
     rateLimitRetriesExceeded: (n) => `429 retry count exceeded --rate-limit-retries (${n})`,
@@ -699,14 +1161,16 @@ const MESSAGES: Record<Lang, MessageDefs> = {
     doctorConfigDirSourceDefault: (dir) =>
       `${dir} (source: default; neither DISPATCH_HOME nor XDG_CONFIG_HOME is set)`,
     doctorConfigDirUnresolved: () => "could not resolve (no HOME)",
+    doctorDbLine: (dbPath) => `  Database     ${dbPath}`,
     doctorEnvLine: (value) => `  .env         ${value}`,
-    doctorEnvPresentValue: () => "present (contents not read)",
-    doctorEnvMissingValue: (path) => `not found: ${path}`,
-    doctorEnvUnresolvedValue: () => "cannot determine (config directory could not resolve)",
-    doctorApiKeyLine: (value) => `  API keys     ${value} (presence only; values are never read)`,
+    doctorEnvPresentValue: () => "present, but this version does not read it (set API keys with `dowafu key`)",
+    doctorApiKeyLine: (value) => `  API keys     ${value}`,
+    doctorApiKeyRow: (provider, status) => `${provider} ${status}`,
+    doctorApiKeySourceDb: (tail, date) => `DB (${tail}, ${date})`,
+    doctorApiKeySourceMissing: () => "not set",
     doctorProviderCountItem: (name, count) => `${name} ${count}`,
     doctorModelListLine: (value) => `  Model list   ${value}`,
-    doctorModelListValue: (formatVersion, items) => `providers.json formatVersion ${formatVersion}: ${items}`,
+    doctorModelListValue: (enabled, total, mostExpensive) => `enabled ${enabled}/${total}; most expensive enabled ${mostExpensive}; source SQLite DB`,
     doctorModelListLoadFailedValue: (reason) => `failed to load: ${reason}`,
     doctorLensLine: (value) => `  Lens defs    ${value}`,
     doctorLensFoundValue: (dirPath, total, closingCount, closingNames, noClosingSuffix) =>

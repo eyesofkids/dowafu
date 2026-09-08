@@ -3,7 +3,7 @@ name: preflight
 description: 開工前檢查這個專案的環境有沒有把工作流程靜默停用：流程規範那一章的內容讀不讀得到、skill 與 lens 齊不齊、tmp/ 有沒有被 gitignore、dowafu 跑不跑得起來。只讀、只報告，不改任何設定。
 metadata:
   derived-from: ".claude/skills/preflight/SKILL.md"
-  derived-from-sha256: "abbc2abbfa804679256c63480a3c6af36cc8d68cb8d76b115458c73cd412bc03"
+  derived-from-sha256: "279d87b69579c677e18063f19c4f3f386dd5f20d5c27fbe7404cffefdcdce98e"
 ---
 
 # preflight — 環境前置檢查
@@ -111,7 +111,7 @@ dowafu --version
 
 | 症狀 | 意思 | 怎麼回報 |
 | --- | --- | --- |
-| `Operation not permitted` | **沙箱擋的**，不是沒安裝。CLI 多半裝在家目錄底下，而沙箱預設不讀家目錄 | 照 host 的提示放行後重試。順帶告訴使用者：API key（`~/.config/dowafu/.env`）與對外網路同樣被擋，派工時一併要放行 |
+| `Operation not permitted` | **沙箱擋的**，不是沒安裝。CLI 多半裝在家目錄底下，而沙箱預設不讀家目錄 | 照 host 的提示放行後重試。順帶告訴使用者：API key（存在 `~/.config/dowafu/dowafu.db`）與對外網路同樣被擋，派工時一併要放行 |
 | `command not found` | 可能沒裝，也可能裝在 PATH 之外 | 問使用者 CLI 裝在哪（請他跑 `which dowafu`），**不要自己搜檔案系統** |
 
 **`command -v dowafu` 查不到不代表沒安裝**，別拿那個當判準。
@@ -141,7 +141,8 @@ stdin 上，而這在不同 host 會表現成逾時、表現成沒有輸出、�
 dowafu --doctor
 ```
 
-它會印出設定目錄解析到哪、`.env` 在不在、**哪幾家有 key**（只看有沒有，不印值）、
+它會印出設定目錄解析到哪、**哪幾家有 key**（只看有沒有，不印值；本版 key 只存資料庫，
+不再讀 `.env` 或環境變數）、
 內建的型號白名單、以及找到哪幾支 lens 定義，**並標明哪些具備固定收尾句**。不呼叫 API、
 不花錢，**而且不需要工單**——這正是它在「什麼都還沒有」的時候能用的原因。
 

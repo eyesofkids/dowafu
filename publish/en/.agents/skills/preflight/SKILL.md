@@ -3,7 +3,7 @@ name: preflight
 description: Before starting work in a project, check whether its environment has silently disabled the workflow: whether the workflow-specification chapter is actually readable, whether the skills and lenses are present, whether tmp/ is gitignored, and whether dowafu runs. Read-only, report-only — changes no settings.
 metadata:
   derived-from: ".claude/skills/preflight/SKILL.md"
-  derived-from-sha256: "52e65eab1cf15984a27ab643ba999838de244967cf9a41ccb974a2c34db90ccc"
+  derived-from-sha256: "8e72b16b01deee2ada762bbf2236ae0c8685b5088f3ca42e0e17cd7f2e7abeeb"
 ---
 
 # preflight — environment pre-check
@@ -92,7 +92,7 @@ Printing a version number passes. Failing to print one means exactly one of two 
 
 | Symptom | What it means | How to report it |
 | --- | --- | --- |
-| `Operation not permitted` | **The sandbox is blocking it**, not a missing install. The CLI usually lives under the home directory, and sandboxes do not read the home directory by default | Retry after allowing it per your host's prompt. Also tell the user that the API key (`~/.config/dowafu/.env`) and outbound network are blocked the same way and will need allowing at dispatch time |
+| `Operation not permitted` | **The sandbox is blocking it**, not a missing install. The CLI usually lives under the home directory, and sandboxes do not read the home directory by default | Retry after allowing it per your host's prompt. Also tell the user that the API key (stored in `~/.config/dowafu/dowafu.db`) and outbound network are blocked the same way and will need allowing at dispatch time |
 | `command not found` | It may not be installed, or it may be installed outside PATH | Ask the user where the CLI is installed (have them run `which dowafu`); **do not go searching the filesystem yourself** |
 
 **`command -v dowafu` finding nothing does not mean it is not installed** — do not use that as the criterion.
@@ -117,7 +117,7 @@ See "is the workflow specification readable" in section 1; the criterion is the 
 dowafu --doctor
 ```
 
-It prints where the config directory resolved to, whether `.env` is there, **which providers have a key** (presence only — it never prints a value), the bundled model whitelist, and which lens definitions it found, **flagging which ones have a fixed closing line**. It calls no API and costs nothing, and it needs no ticket, which is what makes it usable before anything else exists.
+It prints where the config directory resolved to, **which providers have a key** (presence only — it never prints a value; this version keeps keys in the database and no longer reads `.env` or environment variables), the bundled model whitelist, and which lens definitions it found, **flagging which ones have a fixed closing line**. It calls no API and costs nothing, and it needs no ticket, which is what makes it usable before anything else exists.
 
 Report the missing rows as they are printed. **Do not write the key for the user or offer to, and do not ask them to paste one into this conversation** — whatever is pasted here stays in this conversation's history. Creating the directory and an empty template is fine; the value itself is theirs to type into the file.
 

@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { buildAnthropicRequest } from "./anthropic-messages.js";
+import { buildAnthropicRequest, createAnthropicAdapter } from "./anthropic-messages.js";
+import { OUTPUT_TOKEN_CAP } from "../cost.js";
 import type { Conversation, ReasoningConfig } from "../types.js";
 
 const ANTHROPIC_CONFIG: { reasoning: ReasoningConfig; lang: "zh" | "en" } = {
@@ -42,6 +43,42 @@ test("buildAnthropicRequest：不含 max_tokens 為 0 或缺席，且不含 stor
   assert.ok(typeof params.max_tokens === "number" && (params.max_tokens as number) > 0);
   assert.equal("store" in params, false);
   assert.deepEqual(params.cache_control, { type: "ephemeral" });
+});
+
+// 票 cost-cap §A-1／A-2：32,768 改成 65,536，且與另外兩家 adapter 引用同一個常數（cost.ts）。
+test("buildAnthropicRequest：max_tokens 為 OUTPUT_TOKEN_CAP（65,536，改一處三家跟著動）", () => {
+  const conv: Conversation = { systemPrompt: "s", turns: [{ role: "user", text: "hi" }] };
+  const params = buildAnthropicRequest(conv, { model: "claude-sonnet-5", effort: "high" }, ANTHROPIC_CONFIG) as Record<
+    string,
+    unknown
+  >;
+  assert.equal(params.max_tokens, OUTPUT_TOKEN_CAP);
+});
+
+// 票 cost-cap §A-3 #3：撞到天花板時 stop_reason:"max_tokens"，finishReason 不得被誤判成 stop。
+test("createAnthropicAdapter().send()：stop_reason 為 max_tokens（撞到 output 天花板）時，finishReason 不是 stop", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async () =>
+    new Response(
+      JSON.stringify({
+        id: "msg_truncated",
+        model: "claude-sonnet-5",
+        content: [{ type: "text", text: "" }],
+        stop_reason: "max_tokens",
+        usage: { input_tokens: 10, output_tokens: OUTPUT_TOKEN_CAP },
+      }),
+      { status: 200, headers: { "content-type": "application/json" } },
+    )) as typeof fetch;
+  try {
+    const adapter = createAnthropicAdapter({ apiKey: "unused", baseURL: "https://api.anthropic.com", ...ANTHROPIC_CONFIG });
+    const conv: Conversation = { systemPrompt: "s", turns: [{ role: "user", text: "hi" }] };
+    const result = await adapter.send(conv, { model: "claude-sonnet-5", effort: "high" });
+    assert.notEqual(result.meta.finishReason, "stop", "撞到天花板的回應不得被當成正常完成");
+    assert.equal(result.meta.finishReason, "max_tokens");
+    assert.equal(result.meta.finishReasonRaw, "max_tokens");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });
 
 test("buildAnthropicRequest：enableTools:false（收束呼叫）不帶 tools 欄位", () => {

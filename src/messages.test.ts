@@ -39,3 +39,32 @@ test("m()：1 參數 key", () => {
   assert.equal(m("zh", "missingProviders", "/x/providers.json"), "找不到 providers.json：/x/providers.json");
   assert.equal(m("en", "missingProviders", "/x/providers.json"), "providers.json not found: /x/providers.json");
 });
+
+// D1 之後產物只在 DB。這三則以前都印一個假路徑（`db:<id>/`），其中兩則還叫使用者去
+// 「清掉那個目錄」——一個不存在的目錄。改寫時發現三則都沒有任何測試守著措辭，
+// 所以在這裡補上：它們是使用者唯一會看到的說明，錯了不會有任何東西變紅。
+test("m()：resultsExistAbort 講的是 DB 裡的結果，不是目錄", () => {
+  const zh = m("zh", "resultsExistAbort", "t1");
+  assert.match(zh, /這個 id 已經有派工結果/);
+  assert.match(zh, /dowafu result t1/);
+  assert.match(zh, /從資料庫刪掉/);
+  assert.doesNotMatch(zh, /目錄|db:/);
+
+  const en = m("en", "resultsExistAbort", "t1");
+  assert.match(en, /This id already has results/);
+  assert.match(en, /dowafu result t1/);
+  assert.match(en, /delete those results from the database/);
+  assert.doesNotMatch(en, /directory|db:/);
+});
+
+test("m()：resultsExistDryRunWarning 同樣不提目錄", () => {
+  assert.match(m("zh", "resultsExistDryRunWarning", "t1"), /已經有派工結果：t1/);
+  assert.match(m("en", "resultsExistDryRunWarning", "t1"), /already has results: t1/);
+  assert.doesNotMatch(m("zh", "resultsExistDryRunWarning", "t1"), /目錄|db:/);
+  assert.doesNotMatch(m("en", "resultsExistDryRunWarning", "t1"), /directory|db:/);
+});
+
+test("m()：allowedReadsSummary 不再宣稱輸出路徑", () => {
+  assert.equal(m("zh", "allowedReadsSummary", 3), "  允許讀取 3 個檔案，結果存入資料庫");
+  assert.equal(m("en", "allowedReadsSummary", 3), "  Allowed reads: 3 file(s); results go to the database");
+});

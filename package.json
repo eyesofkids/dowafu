@@ -1,6 +1,6 @@
 {
   "name": "dowafu",
-  "version": "0.4.1",
+  "version": "0.5.0",
   "description": "Send a section of your design doc to external LLMs for review. They read only the files you whitelist, and nothing is billed until you confirm.",
   "keywords": [
     "llm",
@@ -46,7 +46,6 @@
     "prepublishOnly": "npm run test && npm run lint && npm run typecheck && npm run build"
   },
   "dependencies": {
-    "dotenv": "^16.4.5",
     "openai": "^4.68.4"
   },
   "devDependencies": {

@@ -3,8 +3,10 @@
 
 import { readFile } from "node:fs/promises";
 import path from "node:path";
+import type { DatabaseSync } from "node:sqlite";
 import { DispatchError, type Lang } from "./types.js";
 import { m } from "./messages.js";
+import { getTicketDoc } from "./ticket-store.js";
 
 export type DispatchRow = {
   agent: string;
@@ -38,9 +40,13 @@ export type AgentTicket = {
 
 export type Ticket = {
   ticketDir: string;
+  ticketName?: string;
   rows: DispatchRow[];
   shared: SharedDoc;
   perAgent: Map<string, AgentTicket>;
+  // D1: present only for DB tickets. Values are frozen when the allowlist is added,
+  // so runtime never returns to the filesystem for ticket material.
+  allowedContent?: Map<string, string>;
 };
 
 const FORMAT_MARKER = "<!-- format: v1 -->";
@@ -233,7 +239,7 @@ export function parseAgentTicket(markdown: string, lang: Lang): AgentTicket {
 }
 
 // 檔案系統存取層：讀工單目錄、組出完整 Ticket。
-export async function loadTicket(ticketDir: string, lang: Lang): Promise<Ticket> {
+async function loadTicketDirectory(ticketDir: string, lang: Lang): Promise<Ticket> {
   const dispatchPath = path.join(ticketDir, "_dispatch.md");
   const sharedPath = path.join(ticketDir, "_shared.md");
 
@@ -266,4 +272,30 @@ export async function loadTicket(ticketDir: string, lang: Lang): Promise<Ticket>
   }
 
   return { ticketDir, rows, shared, perAgent };
+}
+
+export async function loadTicket(db: DatabaseSync, name: string, lang: Lang): Promise<Ticket>;
+/** @deprecated Compatibility for parser tests; the CLI always uses the DB overload. */
+export async function loadTicket(ticketDir: string, lang: Lang): Promise<Ticket>;
+export async function loadTicket(
+  source: DatabaseSync | string,
+  nameOrLang: string | Lang,
+  maybeLang?: Lang,
+): Promise<Ticket> {
+  if (typeof source === "string") return loadTicketDirectory(source, nameOrLang as Lang);
+  const name = nameOrLang as string;
+  const lang = maybeLang!;
+  const doc = getTicketDoc(source, name, lang);
+  const shared = parseSharedDoc(doc.shared, lang);
+  const rows: DispatchRow[] = doc.spokes.map(({ agent, provider, model, effort }) => ({ agent, provider, model, effort }));
+  const perAgent = new Map<string, AgentTicket>();
+  const allowedContent = new Map<string, string>();
+  const ticketDir = `ticket/${name}`;
+  allowedContent.set(`${ticketDir}/_shared.md`, doc.shared);
+  for (const spoke of doc.spokes) {
+    perAgent.set(spoke.agent, parseAgentTicket(spoke.body, lang));
+    allowedContent.set(`${ticketDir}/${spoke.agent}.md`, spoke.body);
+    for (const allowed of spoke.allow) allowedContent.set(allowed.path, allowed.content);
+  }
+  return { ticketDir, ticketName: name, rows, shared, perAgent, allowedContent };
 }

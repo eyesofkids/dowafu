@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { m } from "./messages.js";
 
-// impl_tickets_i18n_stage1.md T3b：cli.ts 的 outDirWritten／outDirNotWritable／
+// impl_tickets_i18n_stage1.md T3b：cli.ts 的 resultsSaved（當時叫 outDirWritten）／outDirNotWritable／
 // outDirFallbackStderr／confirmPrompt／cancelledInteractive／cancelledNonInteractive 六則，
 // 搬遷前測試命中 0（見 T3b〈缺口〉表）。
 //
@@ -20,9 +20,9 @@ test("outDirNotWritable（zh／en）", () => {
   assert.equal(m("en", "outDirNotWritable", "/tmp/out"), "Output directory is not writable: /tmp/out");
 });
 
-test("outDirWritten（zh／en）", () => {
-  assert.equal(m("zh", "outDirWritten", "tmp/spoke/t1"), "落檔完成：tmp/spoke/t1/");
-  assert.equal(m("en", "outDirWritten", "tmp/spoke/t1"), "Files written to: tmp/spoke/t1/");
+test("resultsSaved（zh／en）", () => {
+  assert.equal(m("zh", "resultsSaved", "t1"), "結果已存入資料庫。讀回來：dowafu result t1");
+  assert.equal(m("en", "resultsSaved", "t1"), "Results saved to the database. Read them back with: dowafu result t1");
 });
 
 test("outDirFallbackStderr（zh／en）", () => {

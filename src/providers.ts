@@ -1,7 +1,10 @@
+import { readFile } from "node:fs/promises";
+import type { DatabaseSync } from "node:sqlite";
+import { loadProviders as loadProvidersFromDb } from "./providers-store.js";
+
 // plan_dispatch_v1.4.md §5：providers.json 載入與驗證。fail closed——api 欄缺失或
 // store:true 即中止（exit 2），不套用預設值繼續跑（§10 步驟 3）。
 
-import { readFile } from "node:fs/promises";
 import {
   DispatchError,
   type Lang,
@@ -58,13 +61,16 @@ function parsePositiveNumber(v: unknown, label: string, lang: Lang): number {
   return v;
 }
 
-function parsePricing(raw: unknown, providerName: string, lang: Lang): Record<string, ModelPricing> | undefined {
+function parsePricing(raw: unknown, providerName: string, models: string[], lang: Lang): Record<string, ModelPricing> | undefined {
   if (raw === undefined) return undefined;
   if (!raw || typeof raw !== "object") {
     throw new DispatchError(m(lang, "pricingNotObject", providerName), 2);
   }
   const out: Record<string, ModelPricing> = {};
   for (const [model, entry] of Object.entries(raw as Record<string, unknown>)) {
+    if (!models.includes(model)) {
+      throw new DispatchError(m(lang, "pricingModelNotWhitelisted", providerName, model), 2);
+    }
     if (!entry || typeof entry !== "object") {
       throw new DispatchError(m(lang, "pricingModelNotObject", providerName, model), 2);
     }
@@ -114,8 +120,12 @@ function parseProviderConfig(name: string, raw: unknown, lang: Lang): ProviderCo
     throw new DispatchError(m(lang, "providerBaseUrlMissing", name), 2);
   }
 
-  // §5：models 白名單。未填（或非陣列）視為空陣列 = 不做型號檢查。
-  const models = Array.isArray(r.models) ? r.models.filter((v): v is string => typeof v === "string") : [];
+  // A-1 addendum: models is the fail-closed model boundary. Missing, empty, and
+  // non-string entries must not silently turn into an unrestricted provider.
+  if (!Array.isArray(r.models) || r.models.length === 0 || !r.models.every((v) => typeof v === "string" && v.length > 0)) {
+    throw new DispatchError(m(lang, "providerModelsRequired", name), 2);
+  }
+  const models = r.models;
 
   // §5：charsPerToken。未填時用 CLI 全域值——保留 null，不在此處套 1.0（CLI 端才知道
   // 使用者傳入的 --chars-per-token 是多少）。
@@ -134,7 +144,7 @@ function parseProviderConfig(name: string, raw: unknown, lang: Lang): ProviderCo
     charsPerToken,
     tpmLimit: typeof r.tpmLimit === "number" ? r.tpmLimit : null,
     maxSpokeTokens: typeof r.maxSpokeTokens === "number" ? r.maxSpokeTokens : null,
-    pricing: parsePricing(r.pricing, name, lang),
+    pricing: parsePricing(r.pricing, name, models, lang),
     pricingAsOf: parsePricingAsOf(r.pricingSource),
   };
 }
@@ -163,7 +173,7 @@ export function parseProvidersFile(json: unknown, lang: Lang): ProvidersFile {
   return out;
 }
 
-export async function loadProviders(filePath: string, lang: Lang): Promise<ProvidersFile> {
+export async function loadProvidersFile(filePath: string, lang: Lang): Promise<ProvidersFile> {
   let text: string;
   try {
     text = await readFile(filePath, "utf8");
@@ -177,6 +187,11 @@ export async function loadProviders(filePath: string, lang: Lang): Promise<Provi
     throw new DispatchError(m(lang, "providersFileInvalidJson", (err as Error).message), 2);
   }
   return parseProvidersFile(json, lang);
+}
+
+// Runtime authority is SQLite. The bundled file remains an explicit import source only.
+export function loadProviders(db: DatabaseSync, lang: Lang): ProvidersFile {
+  return loadProvidersFromDb(db, lang);
 }
 
 export function getProviderConfig(providers: ProvidersFile, name: string, lang: Lang): ProviderConfig {

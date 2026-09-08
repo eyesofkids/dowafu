@@ -14,12 +14,19 @@
 
 // plan_dispatch_v1.11.md §26：金鑰只該有一個位置——與 CLI 同一條載入路徑
 // （$DISPATCH_HOME/.env，ambient 優先），不讀 cwd 的 .env。
-import { loadDispatchEnv, resolveDispatchHome } from "../src/dispatch-home.js";
+import { defaultDbPath, openDb } from "../src/db.js";
+import { listProviderKeys } from "../src/provider-key.js";
 import OpenAI from "openai";
 import { writeFile, mkdir } from "node:fs/promises";
 
-const dispatchHome = resolveDispatchHome();
-if (dispatchHome !== null) loadDispatchEnv(dispatchHome);
+// 0.5.0 起 API key 的唯一來源是 DB（見 src/provider-key.ts 檔頭）。本腳本其餘部分沿用
+// `process.env[<PROVIDER>_API_KEY]` 的既有寫法，這裡把 DB 那份填進去即可——腳本是手動執行
+// 的開發者工具，不進 dist，這個 process.env 的用法不構成產品的第二來源。
+{
+  const db = openDb(defaultDbPath());
+  for (const row of listProviderKeys(db)) process.env[`${row.provider.toUpperCase()}_API_KEY`] = row.apiKey;
+  db.close();
+}
 
 const MODEL = process.env.OPENAI_MODEL || "gpt-5.6-luna";
 const FAKE_PACKAGE_JSON_RESULT = '{"name":"dowafu"}';

@@ -1,13 +1,13 @@
-// plan_dispatch_v1.10.md §24.4：API key 的載入順序與位置。ambient process.env 優先
-// （CI、一次性覆寫），其次 $DISPATCH_HOME/.env；dotenv 預設不覆寫既有變數，故 ambient
-// 優先自然成立，不需額外邏輯。
+// `$DISPATCH_HOME` 的解析。**0.5.0 起本檔不再載入任何 `.env`**（使用者裁示，2026-09-06）：
+// API key 的唯一來源是 DB 的 `provider_keys` 表，見 provider-key.ts 的檔頭。
 //
-// 明文禁令：dispatch 不得讀取 cwd 的 `.env`——cwd 是被審專案，`import "dotenv/config"`
-// 會把該專案的整份 `.env`（資料庫密碼、第三方 token、webhook secret）載入一個正對三家
-// 外部 API 發請求的行程，而 §12 的遮蔽名單認不出那些秘密。此檔取代原本
-// `src/cli.ts` 頂部的 `import "dotenv/config"`。
+// 原本這裡有一支 `loadDispatchEnv`，把 `$DISPATCH_HOME/.env` 灌進 process.env，並為了讓
+// `--doctor` 分辨「ambient 填的」與「.env 填的」而在載入前後各拍一次快照。單一來源之後
+// 那整段連同 dotenv 依賴一起退場——**沒有那段程式，就沒有優先序與來源分辨的問題**。
+//
+// v1.10 §24.4 的禁令（不得讀 cwd 的 `.env`）現在由「根本不依賴 dotenv」保證，比原本的
+// 「只准讀指定路徑」更硬；`dotenv-invariant.test.ts` 的靜態掃描續留，防止有人加回來。
 
-import dotenv from "dotenv";
 import os from "node:os";
 import path from "node:path";
 
@@ -28,16 +28,5 @@ export function resolveDispatchHome(
     return path.join(homedir(), ".config", "dowafu");
   } catch {
     return null;
-  }
-}
-
-// 唯一允許呼叫 dotenv 的地方——`path` 一律明確指定為 dispatchHome 下的 `.env`，
-// 絕不留白（留白即回退成 dotenv 預設讀 cwd 的 `.env`，正是本函式存在的目的所要杜絕的）。
-// 維持 `void` 簽名：讀取失敗一律降級為「沒有設定檔」（見上方註解），呼叫端不需要狀態。
-export function loadDispatchEnv(dispatchHome: string): void {
-  try {
-    dotenv.config({ path: path.join(dispatchHome, ".env") });
-  } catch {
-    // .env 是目錄／無讀取權限／內容畸形等，全部降級，不中止、不拋。
   }
 }

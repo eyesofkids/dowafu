@@ -21,7 +21,7 @@ The tool is `dowafu` (a local CLI, already installed globally); invoke it with y
 
 **If you cannot read them, stop and tell the user — do not go looking elsewhere, and do not write your own.** Those files are the source of the spoke's system prompt: role, prohibitions, output format, and closing line all live there. A self-written version puts the spoke's output out of step with the audit criteria.
 
-**Two: confirm `tmp/` is git-ignored.** A spoke's report contains the verbatim text of the plan and does not belong in version control. If it is not ignored, stop and ask the user whether to add it — **do not edit `.gitignore` yourself**.
+**Two: `tmp/` no longer needs checking.** This used to require confirming `tmp/` was git-ignored, because a spoke's report landed there and the ticket body had to be staged there before writing it in. **Neither is true anymore**: reports now live only in SQLite (§6) and never touch disk; and writing a ticket no longer needs staging either — `create`/`add-spoke` can read the body straight from stdin (§3).
 
 ---
 
@@ -72,11 +72,12 @@ Without it, the CLI prints `Continue? [y/N]` and blocks waiting for input, at wh
 
 > **Do not take it.** Adding `--yes` means pressing the confirmation on the user's behalf, and you must have their explicit agreement in the conversation before you add it.
 
-**Four: run for real in the background, and track progress through a file rather than terminal output.**
+**Four: whether you can poll progress depends on which path you take — running the CLI directly, the path this section covers, still has no such entry point.**
 
-Poll `tmp/spoke/<ticket-id>/run.jsonl` with your file-reading tool: the CLI writes events into that file one by one, so you can see which round it reached and whether there was a `round_error`. **For how to decide it has finished, see §5** — "two `spoke_end` events" is only half of it. Background terminal output is not guaranteed to reach you, and a single spoke can run for several minutes.
+Progress does have somewhere to be read now (a `progress` table in SQLite, one row per round), but the only entry point that can read it back is the MCP `dispatch_status` tool, and it keys on a job id — that only exists when you go through the MCP queue (`dispatch_submit` → `dispatch_approve` → the daemon runs it). **The path this section describes — running the CLI directly — has no job id, so `dispatch_status` cannot be used**: the per-round output exists only in the terminal running the CLI, which you usually cannot see when running in the background. For the details, and the difference between "finished" and "finished and intact", see §5, "Once it is running".
 
-> **Treat the terminal as a launcher, not as a data channel.**
+> **A spoke running silently for several minutes is normal, not a hang.**
+> **Do not rerun because it went quiet** — a rerun means paying again, and the money already spent is unrecoverable. For how to decide it has finished, see §5.
 
 > This section names tools by function ("terminal tool", "file-reading tool") because tool names vary by version and model — a mismatch is normal; use whichever one you actually have.
 
@@ -129,15 +130,15 @@ Each row needs **the path you actually expect the answer in** — not a director
 
 ### One spoke, one landing spot — dig the holes before you dispatch
 
-A spoke's artifacts land in `tmp/spoke/<ticket-id>/` under the group of files named after its agent: `<agent>.md` plus `raw/<agent>.request.json` / `.response.json` / `.errors.json`. That group moves together, so the landing spot is the pair `<ticket-id>` + `<agent>`.
+A spoke's artifacts are the database row keyed by `<ticket-id>` + `<agent>` (report, full request and response, tokens and cost all in the same row, moving together). That pair is the landing spot.
 
 **List the landing spot for every spoke in the dispatch plan. The criterion is one line: as many landing spots as spokes, all distinct.**
 
 | Spoke | Lens | Provider / model | Artifacts land in |
 | --- | --- | --- | --- |
-| 1 | safety | openai / gpt-5.6-luna | `tmp/spoke/auth-review-luna/hole-finder-safety.md` |
-| 2 | safety | deepseek / deepseek-v4-flash | `tmp/spoke/auth-review-ds/hole-finder-safety.md` |
-| 3 | feasibility | gemini / gemini-3.6-flash | `tmp/spoke/auth-review-luna/hole-finder-feasibility.md` |
+| 1 | safety | openai / gpt-5.6-luna | `SQLite results/auth-review-luna/hole-finder-safety.md` |
+| 2 | safety | deepseek / deepseek-v4-flash | `SQLite results/auth-review-ds/hole-finder-safety.md` |
+| 3 | feasibility | gemini / gemini-3.6-flash | `SQLite results/auth-review-luna/hole-finder-feasibility.md` |
 
 **Two spokes resolving to the same path means you are one hole short** — and the fix is not a different filename, it is a separate ticket directory: one model per directory, suffix the ticket-id, dispatch each once. Different lenses can share a directory; their agent names already differ.
 
@@ -172,7 +173,39 @@ How to trade models off is the user's project decision, and this document does n
 
 ## 3. Writing the ticket
 
-Write into `tmp/dispatch/<ticket-id>/`, using a topic slug as `<ticket-id>` (for example `auth-review`).
+Tickets never touch disk — write straight into SQLite through the CLI. The body argument for `create`/`add-spoke` can be a path, or `-` (read the body from stdin, heredoc or pipe both work); the two styles can be mixed:
+
+```bash
+dowafu ticket create <ticket-id> <shared-file>
+dowafu ticket add-spoke <ticket-id> <agent> <provider> <model> <spoke-body-file> [effort]
+dowafu ticket add-allow <ticket-id> <agent> <repo-relative-path> --repo-root .
+```
+
+With `-`, a heredoc is the most direct way to feed the whole body in one shot, nothing staged first:
+
+```bash
+dowafu ticket create <ticket-id> - <<'EOF'
+# Premises
+- none
+
+# Under review
+...
+EOF
+
+dowafu ticket add-spoke <ticket-id> <agent> <provider> <model> - <<'EOF'
+# Questions
+1. ...
+
+# Allowed reads
+- ...
+EOF
+```
+
+`-` only occupies the body's own positional slot, so `add-spoke`'s `[effort]` still follows it (`- low`) and parses correctly whether given or not. Stdin must be piped or redirected — an interactive terminal gets a clear error, not a hang waiting for input. `add-allow`'s path argument was never a body in the first place, so it is unaffected and still takes a path.
+
+`add-allow` validates the path immediately, rejects `_docs/`, and stores its current content in SQLite; dispatch never re-reads it. Migrate an old directory once with `dowafu ticket import <dir> [ticket-id] --repo-root .`. Use `dowafu ticket show <ticket-id>` to inspect models, allowlists, and estimates.
+
+The ticket goes into the database under `<ticket-id>`, a topic slug (for example `auth-review`) — that id is what you pass later to dispatch, to read the report, and to read the results.
 
 ### `_dispatch.md`
 
@@ -244,16 +277,16 @@ When reordering, **the large files still stay pinned at the end** (rule 4 above)
 
 **This is the only checkpoint before money is spent.** Once a ticket really goes out, billing starts, and a failure or interruption partway through does not get the money back — **there is no resume; rerunning means paying again**. A failed dry run costs nothing to fix and repeat. **So this step cannot be skipped.**
 
-What it catches: `repoRoot` pointing at the wrong project, a wrong model name, missing lens definitions, files on the allowlist that do not exist, `tmp/` not being ignored, an estimate over the gate's ceiling — all of it stopped before any API is actually called.
+What it catches: `repoRoot` pointing at the wrong project, a wrong model name, missing lens definitions, files on the allowlist that do not exist, an estimate over the gate's ceiling — all of it stopped before any API is actually called.
 
 **There is also one thing it warns about but does not block**: when the material under review looks like it was cut off by a `#` heading from an embedded document, the report prints an extra `⚠` line (what it looks like and what to do about it are in the report-item table below). The dry run still passes and no money has been spent yet, but what this guards against is "pay in full, review only half" — the same priority as everything above.
 
-> You already confirmed the lens definitions and `tmp/` in section 1. This is not asking you to redo it; it is telling you that **even if section 1 was skipped, this gate still catches them** — but not the other way round, so section 1 still has to be done.
+> You already confirmed the lens definitions in section 1. This is not asking you to redo it; it is telling you that **even if section 1 was skipped, this gate still catches it** — but not the other way round, so section 1 still has to be done.
 
 **What it cannot catch is the ticket's content**: whether the questions are good, and whether the allowlist lines up with them, are both invisible to a dry run. That is what you were supposed to finish in section 2 (the per-question table), and the dry run will not do it for you.
 
 ```bash
-dowafu tmp/dispatch/<ticket-id> --repo-root . --dry-run
+dowafu <ticket-id> --repo-root . --dry-run
 ```
 
 **One dry run covers one ticket directory.** If this batch was split across several directories — which it is whenever one lens runs across several models — **dry-run each of them**, and add the estimates together before putting any number in front of the user. Dry-running the first one and going straight to the real run leaves every other directory unchecked.
@@ -293,7 +326,7 @@ The qualifiers that must survive, by name:
 
 Numbers without these read as firmer than the tool meant them. If you convert tokens to money yourself, say that the conversion is yours and which price line you used.
 
-The report gives tokens, not money, and that **only holds for the dry run**. To convert to money, **the price list is `providers.json`'s `pricing`** (`inputPerM` / `cachedInputPerM` / `outputPerM`) — **do not look it up on the vendor's website**: those numbers are exactly what the CLI bills against, and pulling from the website would make "what you reported" and "what the CLI actually charges" disagree. If `pricingSource.asOf` looks stale, report it to the user rather than editing the number yourself (fix `providers.json` instead). **For the real run**, `summary.md` has an "estimated cost" column, and each spoke also prints a `cost=` line when it finishes — that figure is already computed by the CLI, so **just relay it; do not compute it yourself**.
+The report gives tokens, not money, and that **only holds for the dry run**. To convert to money, **the price list is `providers.json`'s `pricing`** (`inputPerM` / `cachedInputPerM` / `outputPerM`) — **do not look it up on the vendor's website**: those numbers are exactly what the CLI bills against, and pulling from the website would make "what you reported" and "what the CLI actually charges" disagree. If `pricingSource.asOf` looks stale, report it to the user rather than editing the number yourself (fix `providers.json` instead). **For the real run**, the audit table has an "estimated cost" column, and each spoke also prints a `cost=` line when it finishes — that figure is already computed by the CLI, so **just relay it; do not compute it yourself**.
 
 Then check each item: `repoRoot` is this project, `model` matches what you wrote, **the `effort` printed in the report is the tier you expected**, the token estimate is a sensible magnitude, and **there is no `⚠ Output directory ... is not ignored by the git repo it lives in` warning**.
 
@@ -303,21 +336,25 @@ If any item is wrong, fix the ticket and rerun — **do not proceed**.
 
 ## 5. The real run
 
-**The output directory must be one that does not exist yet.** Check `tmp/spoke/<ticket-id>/`: if something is already there, **pick a new ticket-id and dispatch under that** — a fresh id costs nothing and removes the collision entirely.
+**One ticket-id runs once.** Check with `dowafu ticket show <ticket-id>`: if the report ends with a "Completed N times" line, that ticket already has results — **pick a new ticket-id and dispatch under that**. A fresh id costs nothing and removes the collision entirely.
 
-**Deleting artifacts is the user's call, never yours.** Not before dispatching, not to tidy up, not because the directory is in the way. You may ask whether to clear it; you may not clear it yourself, and you may not run over it. What sits there was paid for, and nothing in the directory tells you whether the user still needs it. (Section 7's cleanup is a different thing: that happens *after* they have ruled, because they said so.)
+**Deleting artifacts is the user's call, never yours.** Not before dispatching, not to tidy up, not because something is in the way. You may ask whether to clear it; you may not clear it yourself, and you may not run over it. **Those results were paid for**, and the database will not tell you whether the user still needs them.
 
-**The CLI enforces this.** If the directory is not empty it stops before dispatching — nothing called, nothing spent — and tells you to pick a different ticket-id. **There is no flag that overrides it**: clearing the directory is the user's action, not a switch you can pass.
-
-The CLI clears `run.jsonl` when it starts (stale events would make you miscount), **but that step only happens if it actually starts**. If startup fails, the previous run's artifacts sit there untouched — and **the files will not tell you whether they belong to this run**.
+**The CLI enforces this.** If that ticket-id already has results it stops before dispatching with exit 5 — nothing called, nothing spent — and tells you to pick a different id. **There is no flag that overrides it.**
 
 ```bash
-dowafu tmp/dispatch/<ticket-id> --repo-root . --yes
+dowafu <ticket-id> --repo-root . --yes
 ```
 
 > **This step costs money.** `--yes` means pressing the confirmation on the user's behalf, and **you must have their explicit agreement in the conversation before adding it**.
 >
 > What happens without `--yes` depends on your host — see §1.5. Neither case costs anything.
+
+> **When approval goes through an MCP tool, `dispatch_approve` is `--yes`'s counterpart on that path.**
+> Before calling it, you must first explain to the user, in the conversation, **the hard-cap dollar
+> amount this approval commits to** (already printed in `dispatch_submit`'s summary as "Hard cap $X"),
+> and get their explicit agreement — agreement based on "the worst this could cost", not on "whether
+> to proceed". This is not "you may not call `dispatch_approve`"; like `--yes`, it is "ask first, then press".
 
 > **A single spoke can run for ten minutes, and the speed cannot be predicted in advance** — same material, same ticket, comparable token magnitude, and two runs can still differ several-fold. That is the other side's server load: not attributable, not predictable.
 >
@@ -325,39 +362,38 @@ dowafu tmp/dispatch/<ticket-id> --repo-root . --yes
 >
 > **Foreground execution has its own external tool timeout** (on the order of ten minutes), unrelated to `--timeout`, and `--timeout` cannot prevent it. **If you expect a long run (large list, many questions, a slower model), switch to background execution** rather than waiting it out in the foreground.
 
-### Startup confirmation: confirm it really started before you begin waiting
+### Once it is running: progress depends on which path you took; "finished" and "finished and intact" are different things
 
-**Note the current time before issuing the command** (`date -u +%Y-%m-%dT%H:%M:%SZ`), then read `tmp/spoke/<ticket-id>/run.jsonl` a dozen-odd seconds after:
+**Going through the MCP queue, you can see progress.** On the path where a ticket is submitted (`dispatch_submit`), approved (`dispatch_approve`, or `--yes` above), and run by the daemon, the job enters `running`, and `dispatch_status` prints each spoke's current round, cumulative in/out tokens, and last-update time — or says plainly "no round has completed yet" when there is none. It watches two different signals:
 
-| What you read | Verdict |
-| --- | --- |
-| The file does not exist | **It did not start** — the CLI creates it the moment it runs; this is not "still waiting on the API" |
-| A `spoke_start` whose `ts` is later than when you issued the command | It started; begin polling |
-| Content whose `ts` is earlier than when you issued the command | **It did not start, and what you are reading is the previous run's artifact** |
+- **`jobs.heartbeat_at` — is the worker still alive.** The daemon updates it every 2 seconds; once it has gone more than 15 seconds without an update, `dispatch_status` flags it with `⚠` and notes that the next time the daemon runs its reap pass, the job will be marked `interrupted`.
+- **Progress — is it moving forward.** That is the per-spoke round and token lines above.
 
-`ts` is the ISO 8601 timestamp present on every line, and **it is the only mechanical basis for deciding whether this artifact belongs to this run**.
+**Stuck retrying a 429** looks like "heartbeat fresh, progress not moving"; **the process actually dying** looks like both stopping.
 
-**If it did not start, do not keep waiting.** This failure mode is invisible from the inside: the previous artifact's two `spoke_end` events both say `succeeded`, the format, the audit columns, and the cost all look normal, and the timestamp is the only tell.
+**Running the CLI directly (not through the queue) has no such entry point.** In the foreground the terminal prints per-round tokens and tool calls as they happen; in the background you cannot see that, and there is no substitute — the job id that `dispatch_status` needs simply does not exist on this path.
 
-### How long is too long
+> **No feedback is not a hang.** Ten minutes for a single spoke is normal, and the speed cannot be predicted in advance. **Do not rerun because it went quiet** — a rerun means paying again, and the money already spent is unrecoverable.
 
-**What matters is not total elapsed time but whether `run.jsonl` is still growing.** Ten minutes for a single spoke is normal, but **within any ten minutes there will be a new event written** — the default timeout for a single API call is ten minutes, and both a timeout and a retry write their own `round_error` line.
+**Deciding it has finished**: on the direct-CLI path, the CLI returns on its own (with an exit code); on the queue path, `dispatch_status` reports the job as `completed` or `failed`. **The "Completed N times" line at the end of `dowafu ticket show` only counts jobs that went through the queue — a direct run never increments it** — do not use it to detect completion on the direct-run path.
 
-> **If more than ten minutes pass with no new events, stop and tell the user**; do not keep waiting and do not rerun on your own. Report the last event together with its `ts` and let them decide.
+**"Finished" does not mean "finished and intact".** `completed`, and a plain CLI exit, both only mean it did not fail across the board — three out of four spokes can die and it still counts as finished. Once it is done, check these three entry points: `dispatch_status` prints the success/failure split and the names of any failed agents for a `completed` or `failed` job; `dowafu result <ticket-id>` prints an explicit failure marker for a failed spoke (no longer an empty string); and the audit table prints an extra `Provider-reported truncation:<reason>` column when a provider's response looks cut off. **All three work on either path** — `dowafu result` and the audit table accept a ticket-id or a job-id, unlike progress polling, which only exists on the queue path.
 
-**Progress is judged from `run.jsonl` alone** — the CLI writes events into it one at a time, so even after a Ctrl-C you can see how far it got. Whether the terminal channel is reliable depends on your host (see §1.5); `run.jsonl` is unaffected.
+> **You no longer have to worry about "is this the previous run's artifact?"** — if that ticket-id already has results the CLI stops with exit 5 before dispatching (§5 above), so there is never a second copy to confuse.
 
-**Deciding it has finished requires two things at once**: two `spoke_end` events, **and** that this `run.jsonl` passed the startup confirmation above. Looking only at `spoke_end` treats the previous run's artifact as this run's result.
-
-**If you really hit a failure or timeout: whether to rerun is the user's decision — do not rerun on your own.** A rerun means paying again, and the money already spent before the interruption is unrecoverable (there is no resume). Report the state at the point of interruption (how far `run.jsonl` got, the failure message) and let them judge. This does not conflict with "rerun the whole thing on zero reads": that rule is about "it did not run", this one is about "it ran and was interrupted" — different cost structures.
+**If you really hit a failure or timeout: whether to rerun is the user's decision — do not rerun on your own.** A rerun means paying again, and the money already spent before the interruption is unrecoverable (there is no resume). Report the last state visible in the terminal and the failure message, and let them judge. This does not conflict with "rerun the whole thing on zero reads": that rule is about "it did not run", this one is about "it ran and was interrupted" — different cost structures.
 
 ---
 
 ## 6. Collection — summary by default, verbatim the exception
 
-The artifacts are in `tmp/spoke/<ticket-id>/`: `<agent>.md` (the report), `summary.md` (the audit table), `run.jsonl` (the execution log), and `raw/` (complete requests and responses).
+**Read the results back with `dowafu result <ticket-id>`** (before that command existed the only way was to open sqlite3 yourself):
 
-**`run.jsonl` is appended event by event and is never overwritten.** If the artifacts and `raw/` were clobbered — by a rerun, or by another spoke writing to the same name — that file still holds each spoke's `spoke_start` (provider and model), per-round usage, every read attempt including the refused ones, any errors, and the `spoke_end` token and cost figures. The report text is gone; what was spent and what was read can still be reconstructed.
+```bash
+dowafu result <ticket-id>
+```
+
+It prints the audit table (first) and each spoke's report. The complete request, response, tokens and cost sit in the same row for later reconciliation. **Artifacts are never overwritten** — if that ticket-id already has results, the CLI refuses to rerun it (§5).
 
 > **Confirm §5's startup check passed before collecting.** No file in this directory will tell you whether it belongs to this run.
 
@@ -366,14 +402,14 @@ The artifacts are in `tmp/spoke/<ticket-id>/`: `<agent>.md` (the report), `summa
 1. **The user must see each spoke's content**, labeled with lens and model. **Synthesis is the default**, satisfying four required conditions:
    1. **Declare the trade-off explicitly** — state at the top of the section that "this is a summary, not verbatim"; never summarize silently
    2. **The reading must cover every item, skipping none** — every observation from every spoke has to appear in the "hub reading" below, which is what replaces verbatim reproduction as the source of auditability: an original not laid out in front of the user does not mean it went unread
-   3. **Point to the original's path** (`tmp/spoke/<ticket-id>/<agent>.md`) so the user can compare at any time
+   3. **Tell the user how to pull up the original themselves** (`dowafu result <ticket-id>`) so they can compare at any time
    4. **This only holds while the artifacts still exist** — once section 7 has cleared them there is no original to check against
    > What this rule guards against is not "no original exists", it is **the hub cherry-picking what suits it**. Satisfy those four and a summary guards against it just as well; what has to be preserved is the purpose, not the "verbatim" mechanism itself.
 
    **Reproduce it verbatim in two situations**: the artifacts have already been cleared by section 7 (there is no original left to check, so a summary cannot satisfy condition 4), or a single report is short enough that summarizing would be overkill. Everything else defaults to a summary.
 
    **If you cannot meet condition 2, dispatch fewer spokes rather than falling back to verbatim** — the problem is dispatch scale, not presentation; do not treat "not confident" as a reason to revert to full reproduction.
-2. **Relay `summary.md`'s audit cell into that same section by naming every segment it contains.** One line per segment per spoke, **in the order `summary.md` prints them** — `Tool calls:` comes first, ahead of `Closing line:`. Where a segment is empty the CLI prints its own word for that (`none`); **copy what it printed, and never leave a segment out**. Writing them all out costs you nothing over writing out most of them, and a missing name is something the user can see — a missing row is not.
+2. **Relay the audit table into that same section by naming every segment it contains.** One line per segment per spoke, **in the order the audit table prints them** — `Tool calls:` comes first, ahead of `Closing line:`. Where a segment is empty the CLI prints its own word for that (`none`); **copy what it printed, and never leave a segment out**. Writing them all out costs you nothing over writing out most of them, and a missing name is something the user can see — a missing row is not.
 
    **A segment beginning with `⚠` is never dropped, and neither is `(audit unavailable)`.** Those are not decoration sitting outside the named columns; they are the audit telling you something went wrong, and dropping them leaves the user holding only the parts that said nothing did.
 
@@ -386,7 +422,7 @@ The artifacts are in `tmp/spoke/<ticket-id>/`: `<agent>.md` (the report), `summa
 
 ### Three things you must verify when assessing a report
 
-**One: `toolCalls[]` in `run.jsonl`.** That is what it actually read, not what it says it read. A spoke with zero tool calls produced a text-only review, and its claims about the code should be discounted.
+**One: the audit table's tool-call column.** That is what it actually read, not what it says it read (the raw `toolCalls[]` sits in the response column of the result row; the audit table has already counted it for you). A spoke with zero tool calls produced a text-only review, and its claims about the code should be discounted.
 
 **Two: any claim about safety or correctness — open the file and verify it yourself before passing it on.** Do not report a spoke's claim to the user as a conclusion.
 
@@ -402,7 +438,7 @@ The artifacts are in `tmp/spoke/<ticket-id>/`: `<agent>.md` (the report), `summa
 
 | Column | Meaning |
 | --- | --- |
-| `Tool calls:N (allowed N / rejected N)` | How many reads, how many rejected — the statistics from `toolCalls[]` in `run.jsonl`. **Printed first**, ahead of the closing line |
+| `Tool calls:N (allowed N / rejected N)` | How many reads, how many rejected — statistics from the run's `toolCalls[]`. **Printed first**, ahead of the closing line |
 | `Closing line:` | pass / fail |
 | `Observations:N` | The item count; `uncountable` means the format could not be recognized — go read the original |
 | `Cannot-verify section:` | Whether that section was written per the template. **When judging output quality, look at how specific this section is** (for example, noting per item which conclusion depended on which unreadable file), not at the observation count — counts are unreliable, since overlap and padding both inflate them without indicating quality |
@@ -443,15 +479,11 @@ Finally, tell the user what happened.
 
 ---
 
-## 7. Cleanup (after the user has ruled)
+## 7. Artifacts stay; there is nothing to clean up
 
-```bash
-rm -rf tmp/spoke/<ticket-id> tmp/dispatch/<ticket-id>
-```
+Tickets and results live in SQLite; there is no directory on disk to tidy. **You neither need to nor should delete them** — those results were paid for, and the next round simply uses a different ticket-id (§5).
 
-**This is the only place in this workflow where you delete anything, and only once the user has ruled and told you to.** Anywhere else — including a directory that is in your way before dispatch — follow §5: you may ask, you may not delete.
-
-Leave the lens definitions; they will be used again.
+Lens definitions stay too; you will use them again.
 
 ---
 
@@ -460,11 +492,11 @@ Leave the lens definitions; they will be used again.
 | Symptom | What to do |
 | --- | --- |
 | The report's numbers look wrong | Stop at `--dry-run` and check `_dispatch.md` |
-| Failure partway through | Read the `round_error` events in `run.jsonl` (status code, message, which round) and `raw/<agent>.errors.json`; the content of completed rounds is still written out |
+| Failure partway through | **There is nothing to read midway** (§5). Wait for the CLI to return; the reason will be in its output. Rounds that completed are still billed and still recorded |
 | A genuine failure or timeout | **Ask the user whether to rerun; do not rerun on your own** — a rerun means paying again, and what was spent before the interruption is unrecoverable |
 | Hitting 429 | Rerun with `--concurrency 1` |
 | Poor report quality | Rerun with a different model, or run the same configuration again and take the union (see "how to run it 2–3 times" in section 3) |
-| Missing API key | The user has to set it in `~/.config/dowafu/.env`; **do not touch that file yourself** |
+| Missing API key | The user has to run `dowafu key` and store it in the database (this version no longer reads `.env` or environment variables). **Do not set it for them — those are their credentials** |
 | `dowafu` not found | **Not found does not mean not installed** — see §1.5; usually the sandbox is not reading the home directory |
 | `Operation not permitted` | Blocked by your host's sandbox, **not a problem with the ticket or the command**. Allow it per the prompt and run again |
 

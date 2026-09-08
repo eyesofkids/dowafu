@@ -165,11 +165,13 @@ test("parseProvidersFile：reasoning.default 非字串 → 中止，訊息依 la
   );
 });
 
-test("parseProvidersFile：models 未填時視為空陣列（不做型號檢查）", () => {
+test("parseProvidersFile：models 缺席／空／非字串一律拒絕（fail closed）", () => {
   const raw = baseProvider();
   delete (raw as Record<string, unknown>).models;
-  const parsed = parseProvidersFile(providersFile({ openai: raw }), "zh");
-  assert.deepEqual(parsed.openai.models, []);
+  for (const models of [undefined, [], ["model-a", 1]]) {
+    const candidate = { ...raw, ...(models === undefined ? {} : { models }) };
+    assert.throws(() => parseProvidersFile(providersFile({ openai: candidate }), "zh"), DispatchError);
+  }
 });
 
 test("parseProvidersFile：charsPerToken 未填時為 null（交給 CLI 全域值）", () => {

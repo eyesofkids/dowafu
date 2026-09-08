@@ -93,6 +93,24 @@ async function executeToolCall(
 ): Promise<{ resultText: string; log: ToolCallLog }> {
   const requestedPath = typeof call.args.path === "string" ? call.args.path : "";
   const startedAt = Date.now();
+  // D1: DB tickets carry a content snapshot. Do this before checkAllowlist so no
+  // runtime path resolution or file read can leak back into the ticket workflow.
+  if (spoke.readableContent) {
+    const stored = spoke.readableContent.get(requestedPath);
+    if (stored === undefined) {
+      return {
+        resultText: allowlistRejectMessage(spoke.lang),
+        log: { path: requestedPath, allowed: false, reason: "not_in_allowlist", startedAt, durationMs: Date.now() - startedAt },
+      };
+    }
+    const buf = Buffer.from(stored, "utf8");
+    let content = stored;
+    if (buf.byteLength > MAX_FILE_BYTES) {
+      const suffix = spoke.lang === "en" ? FILE_TRUNCATED_SUFFIX_EN : FILE_TRUNCATED_SUFFIX;
+      content = buf.subarray(0, MAX_FILE_BYTES).toString("utf8") + suffix;
+    }
+    return { resultText: content, log: { path: requestedPath, allowed: true, startedAt, durationMs: Date.now() - startedAt } };
+  }
   const check = checkAllowlist(spoke.allowSet, requestedPath, repoRoot);
 
   if (!check.allowed) {

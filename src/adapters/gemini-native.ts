@@ -8,6 +8,7 @@
 
 import type { Adapter, Conversation, Lang, SendOptions, SendResult, ToolCall, Turn } from "../types.js";
 import { normalizeFinishReason, normalizeGeminiUsage } from "../usage.js";
+import { OUTPUT_TOKEN_CAP } from "../cost.js";
 import { ProviderHttpError } from "../mask.js";
 import { checkRawObjectIntegrity } from "../raw-integrity.js";
 import { readFileToolDescription } from "./read-file-tool-description.js";
@@ -67,9 +68,17 @@ function turnToContent(turn: Turn): GeminiContent {
 // plan_dispatch_v1.8.md §5「reasoning.style 的三種轉換」（實測確認）：位置與大小寫都關鍵——
 // 頂層 thinking_level 會 400；巢狀內 snake_case（thinking_level）會 200 但 Google 對未知
 // 欄位靜默忽略、不生效。正確路徑是 generationConfig.thinkingConfig.thinkingLevel（camelCase）。
-function buildReasoningParams(effort: string | undefined): Record<string, unknown> {
-  if (!effort) return {};
-  return { generationConfig: { thinkingConfig: { thinkingLevel: effort } } };
+//
+// 票 cost-cap §A-1：maxOutputTokens 先前完全沒送（無界），現在與 thinkingConfig 同層送出，
+// 值一律無條件送（不像 thinkingConfig 那樣依 effort 留白與否決定），故 generationConfig
+// 不再可能整個缺席——effort 留白時只是少了 thinkingConfig 這個子欄位。
+function buildGenerationConfig(effort: string | undefined): Record<string, unknown> {
+  return {
+    generationConfig: {
+      maxOutputTokens: OUTPUT_TOKEN_CAP,
+      ...(effort ? { thinkingConfig: { thinkingLevel: effort } } : {}),
+    },
+  };
 }
 
 // 純函式：組出實際會送出的 request body，並執行 §8 的 raw 完整性自我檢查（違反即拋
@@ -86,7 +95,7 @@ export function buildGeminiRequest(
     contents,
     system_instruction: { parts: [{ text: conv.systemPrompt }] },
     ...(opts.enableTools === false ? {} : { tools: [buildGeminiTool(lang)] }),
-    ...buildReasoningParams(opts.effort),
+    ...buildGenerationConfig(opts.effort),
   };
   return { contents, body };
 }

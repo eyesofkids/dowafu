@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { buildGeminiRequest } from "./gemini-native.js";
+import { buildGeminiRequest, createGeminiAdapter } from "./gemini-native.js";
+import { OUTPUT_TOKEN_CAP } from "../cost.js";
 import type { Conversation } from "../types.js";
 
 // plan_dispatch_v1.5.md §8：同一份自我檢查兩家 adapter 都要做——gemini 這側雖然
@@ -63,18 +64,46 @@ test("buildGeminiRequest：enableTools 預設（未指定）帶 tools 欄位", (
   assert.equal("tools" in body, true);
 });
 
-test("buildGeminiRequest：effort 有值時送 generationConfig.thinkingConfig.thinkingLevel（camelCase，v1.8 §5 實測正確路徑）", () => {
+test("buildGeminiRequest：effort 有值時送 generationConfig.thinkingConfig.thinkingLevel（camelCase，v1.8 §5 實測正確路徑），同層帶 maxOutputTokens", () => {
   const conv: Conversation = { systemPrompt: "s", turns: [{ role: "user", text: "hi" }] };
   const { body } = buildGeminiRequest(conv, { model: "gemini-3.1-flash-lite", effort: "high" }, "zh");
   assert.deepEqual((body as { generationConfig: unknown }).generationConfig, {
+    maxOutputTokens: OUTPUT_TOKEN_CAP,
     thinkingConfig: { thinkingLevel: "high" },
   });
 });
 
-test("buildGeminiRequest：effort 留白則不送 generationConfig（v1.7 §5 舊行為：頂層 thinking_level 會 400，此前完全未接線）", () => {
+// 票 cost-cap §A-1：maxOutputTokens 先前完全沒送（無界）。effort 留白時 generationConfig
+// 不再整個缺席——它現在無條件帶 maxOutputTokens，只是少了 thinkingConfig 子欄位
+// （v1.7 §5 舊行為：頂層 thinking_level 會 400，此前完全未接線，這條規矩對 thinkingConfig
+// 仍然成立，只是不再等於「整個 generationConfig 都不送」）。
+test("buildGeminiRequest：effort 留白時 generationConfig 仍帶 maxOutputTokens，但不含 thinkingConfig", () => {
   const conv: Conversation = { systemPrompt: "s", turns: [{ role: "user", text: "hi" }] };
   const { body } = buildGeminiRequest(conv, { model: "gemini-3.1-flash-lite" }, "zh");
-  assert.equal("generationConfig" in body, false);
+  assert.deepEqual((body as { generationConfig: unknown }).generationConfig, { maxOutputTokens: OUTPUT_TOKEN_CAP });
+});
+
+test("createGeminiAdapter().send()：candidate.finishReason 為 MAX_TOKENS（撞到 output 天花板）時，finishReason 不是 stop", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async () =>
+    new Response(
+      JSON.stringify({
+        candidates: [{ content: { role: "model", parts: [{ text: "" }] }, finishReason: "MAX_TOKENS" }],
+        usageMetadata: { promptTokenCount: 10, candidatesTokenCount: OUTPUT_TOKEN_CAP, totalTokenCount: 10 + OUTPUT_TOKEN_CAP },
+        modelVersion: "gemini-3.1-flash-lite",
+      }),
+      { status: 200, headers: { "content-type": "application/json" } },
+    )) as typeof fetch;
+  try {
+    const adapter = createGeminiAdapter({ apiKey: "unused", baseURL: "https://generativelanguage.googleapis.com/v1beta", lang: "zh" });
+    const conv: Conversation = { systemPrompt: "s", turns: [{ role: "user", text: "hi" }] };
+    const result = await adapter.send(conv, { model: "gemini-3.1-flash-lite" });
+    assert.notEqual(result.meta.finishReason, "stop", "撞到天花板的回應不得被當成正常完成");
+    assert.equal(result.meta.finishReason, "MAX_TOKENS");
+    assert.equal(result.meta.finishReasonRaw, "MAX_TOKENS");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });
 
 // i18n_classification_t2.md §三之3：read_file 工具 description 是 C 類雙語常數，由

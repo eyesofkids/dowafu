@@ -91,7 +91,7 @@ export type ProviderConfig = {
   store: false | null; // true 不合法，載入即中止（設計原則 6）
   toolCalling: boolean;
   reasoning: ReasoningConfig;
-  models: string[]; // §5：工單 model 白名單。空陣列 = 不做型號檢查
+  models: string[]; // §5：工單 model 非空白名單；空、缺席或型別不對的 models 一律拒絕載入。
   charsPerToken: number | null; // §14：閘門一估算係數，逐家覆寫；null = 用 CLI 全域值
   tpmLimit: number | null;
   maxSpokeTokens: number | null;
@@ -104,7 +104,7 @@ export type ProviderConfig = {
 
 export type ProvidersFile = Record<string, ProviderConfig>;
 
-// §7：每次 tool 呼叫（含被拒的）記入 run.jsonl，並標明拒絕原因分類。
+// §7：每次 tool 呼叫（含被拒的）收在 SQLite `results.response` 的序列化 SpokeRunResult 裡，並標明拒絕原因分類。
 export type ToolCallLog = {
   path: string;
   allowed: boolean;

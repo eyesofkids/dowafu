@@ -7,7 +7,9 @@
 // 完整用法（原僅一行）。
 
 import { DispatchError } from "./types.js";
+import { DEFAULT_HTTP_PORT } from "./mcp/http.js";
 import { getCommandName } from "./pkg-info.js";
+import { DEFAULT_MAX_TOOL_CALLS } from "./cost.js";
 import { m } from "./messages.js";
 import type { CliOptions } from "./report.js";
 import type { RunEvent } from "./runner.js";
@@ -27,10 +29,11 @@ const DEFAULTS: CliOptions = {
   retries: 2,
   rateLimitRetries: 5,
   maxRateWaitSec: 30,
-  maxToolCalls: 30,
+  maxToolCalls: DEFAULT_MAX_TOOL_CALLS,
   charsPerToken: 1.0,
   maxSpokeReasoningTokens: 50_000,
   maxRoundReasoningTokens: null,
+  httpPort: DEFAULT_HTTP_PORT,
   json: false,
   dryRun: false,
   yes: false,
@@ -39,7 +42,11 @@ const DEFAULTS: CliOptions = {
 export type ParsedArgs =
   | { mode: "help" }
   | { mode: "version" }
-  | { mode: "doctor" }
+  // A（gaps #1）：doctor 現在帶著 options——`--db` 在旗標迴圈裡本來就解析好了，只是先前
+  // 沒被回傳，於是 `--doctor --db <路徑>` 會靜默對著預設 DB 回答。
+  | { mode: "doctor"; options: CliOptions }
+  | { mode: "serve"; options: CliOptions; stop: boolean }
+  | { mode: "mcp"; options: CliOptions }
   | { mode: "run"; ticketDir: string; options: CliOptions };
 
 // plan_i18n_v1.3.md §二之1：--lang 與 DISPATCH_LANG 走同一個判定函式，接受 en／zh-tw／zh，
@@ -112,8 +119,19 @@ export function parseArgs(argv: string[], lang: Lang): ParsedArgs {
   if (argv.includes("--version") || argv.includes("-V")) return { mode: "version" };
 
   const options = { ...DEFAULTS };
+  // 熱修補（票 C 驗收）：`DOWAFU_HTTP_PORT` 原本只寫在 `daemon.ts` 的 `serve()` 參數預設值裡，
+  // 而 `cli.ts` 一律傳 `parsed.options.httpPort`（DEFAULTS 給了具體數字），所以那個預設永遠
+  // 用不到——環境變數看起來支援、實際是死的。同一行呼叫裡 maxConcurrent 傳的是 `undefined`，
+  // 所以 `DOWAFU_MAX_CONCURRENT` 是活的：**兩個環境變數一活一死，而死的那個沒有任何徵兆**。
+  // 在這裡讀（而不是在 module-level 的 DEFAULTS 讀）才能每次呼叫重新取值，測試也才注得進去。
+  // 優先序：--http-port > DOWAFU_HTTP_PORT > 內建預設。旗標在下方解析，故此處放在它之前。
+  const envHttpPort = Number(process.env.DOWAFU_HTTP_PORT);
+  if (Number.isInteger(envHttpPort) && envHttpPort > 0 && envHttpPort < 65536) options.httpPort = envHttpPort;
   let ticketDir: string | undefined;
   let doctorMode = false;
+  let serveMode = false;
+  let serveStop = false;
+  let mcpMode = false;
 
   const numFlag = (name: string, apply: (n: number) => void) => {
     flagHandlers[name] = (v) => {
@@ -126,7 +144,10 @@ export function parseArgs(argv: string[], lang: Lang): ParsedArgs {
   const flagHandlers: Record<string, (v: string) => void> = {};
   flagHandlers["out"] = (v) => (options.out = v);
   flagHandlers["repo-root"] = (v) => (options.repoRoot = v);
-  flagHandlers["providers"] = (v) => (options.providersPath = v);
+  flagHandlers["db"] = (v) => (options.dbPath = v);
+  // Used by the local daemon worker only.  It gives each queued run its own
+  // result rows without changing the normal D1 ticket-id result key.
+  flagHandlers["job-id"] = (v) => (options.jobId = v);
   // 這裡只存原始字串，不驗證格式——格式與 DISPATCH_LANG 的組合判定需要 process.env，
   // parseArgs 是純函式不碰它，交給 cli.ts 呼叫 resolveLang（見下）。重複帶 --lang 時
   // 最後一次覆蓋前一次，與其他旗標一致（v1.3 §二之2 #8）。
@@ -142,6 +163,7 @@ export function parseArgs(argv: string[], lang: Lang): ParsedArgs {
   numFlag("chars-per-token", (n) => (options.charsPerToken = n));
   numFlag("max-spoke-reasoning-tokens", (n) => (options.maxSpokeReasoningTokens = n));
   numFlag("max-round-reasoning-tokens", (n) => (options.maxRoundReasoningTokens = n));
+  numFlag("http-port", (n) => (options.httpPort = n));
 
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
@@ -156,6 +178,12 @@ export function parseArgs(argv: string[], lang: Lang): ParsedArgs {
       // 故不在頂部用 argv.includes() 直接短路，而是隨主迴圈掃完，迴圈後統一判定
       // （見迴圈後方）——這樣 --doctor 與 --lang 之類的已知旗標仍可同時給、彼此不衝突。
       doctorMode = true;
+    } else if (arg === "serve") {
+      serveMode = true;
+    } else if (arg === "--stop") {
+      serveStop = true;
+    } else if (arg === "mcp") {
+      mcpMode = true;
     } else if (arg.startsWith("--")) {
       const name = arg.slice(2);
       const handler = flagHandlers[name];
@@ -183,7 +211,20 @@ export function parseArgs(argv: string[], lang: Lang): ParsedArgs {
     if (ticketDir !== undefined) {
       throw new DispatchError(m(lang, "tooManyArgs", ticketDir, "--doctor", helpText), 2);
     }
-    return { mode: "doctor" };
+    if (serveStop) throw new DispatchError(m(lang, "stopRequiresServe"), 2);
+    return { mode: "doctor", options };
+  }
+
+  if (serveMode) {
+    if (ticketDir !== undefined) throw new DispatchError(m(lang, "tooManyArgs", ticketDir, "serve", helpText), 2);
+    return { mode: "serve", options, stop: serveStop };
+  }
+
+  if (serveStop) throw new DispatchError(m(lang, "stopRequiresServe"), 2);
+
+  if (mcpMode) {
+    if (ticketDir !== undefined) throw new DispatchError(m(lang, "tooManyArgs", ticketDir, "mcp", helpText), 2);
+    return { mode: "mcp", options };
   }
 
   if (!ticketDir) {

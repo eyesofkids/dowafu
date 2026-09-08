@@ -1,4 +1,6 @@
 import { test } from "node:test";
+import { openDb } from "./db.js";
+import { setProviderKey } from "./provider-key.js";
 import assert from "node:assert/strict";
 import { mkdtempSync, writeFileSync, mkdirSync, rmSync } from "node:fs";
 import { execFileSync, spawnSync } from "node:child_process";
@@ -28,7 +30,7 @@ function runCli(args: string[], cwd: string, extraEnv: Record<string, string>) {
   });
 }
 
-test("gitignore 檢查：cwd ≠ --repo-root 時，報表依 cwd 的 .gitignore 判定（⚠），不是 --repo-root 的（v1.10 bug 是誤判為 ℹ）", () => {
+test("D1：從既有目錄匯入 DB 後，cwd ≠ --repo-root 的 dry-run 仍只讀 DB 工單", () => {
   const cwdDir = mkdtempSync(path.join(os.tmpdir(), "dispatch-cli-gitignore-cwd-"));
   const repoRootDir = mkdtempSync(path.join(os.tmpdir(), "dispatch-cli-gitignore-repo-root-"));
   const emptyDispatchHome = mkdtempSync(path.join(os.tmpdir(), "dispatch-cli-gitignore-home-"));
@@ -67,18 +69,29 @@ test("gitignore 檢查：cwd ≠ --repo-root 時，報表依 cwd 的 .gitignore 
     );
     writeFileSync(path.join(ticketDir, "hole-finder-cost.md"), "# 具體問題\n1. 測試\n\n# 允許讀取\n");
 
+    const dbPath = path.join(emptyDispatchHome, "ticket.db");
+    const providersImported = runCli(["providers", "import", path.resolve(process.cwd(), "providers.json"), "--db", dbPath], cwdDir, { DISPATCH_HOME: emptyDispatchHome });
+    assert.equal(providersImported.status, 0, `providers 匯入應成功，stderr：${providersImported.stderr}`);
+    // 0.5.0 起 API key 只從 DB 讀（不再吃 DEEPSEEK_API_KEY 環境變數）。
+    {
+      const keyDb = openDb(dbPath);
+      setProviderKey(keyDb, "deepseek", "fake-key-for-dry-run-only");
+      keyDb.close();
+    }
+    const imported = runCli(
+      ["ticket", "import", ticketDir, "ticket-gitignore-test", "--repo-root", cwdDir, "--db", dbPath],
+      cwdDir,
+      { DEEPSEEK_API_KEY: "fake-key-for-dry-run-only", DISPATCH_HOME: emptyDispatchHome },
+    );
+    assert.equal(imported.status, 0, `匯入應成功，stderr：${imported.stderr}`);
     const result = runCli(
-      ["ticket-gitignore-test", "--repo-root", repoRootDir, "--dry-run"],
+      ["ticket-gitignore-test", "--repo-root", repoRootDir, "--db", dbPath, "--dry-run"],
       cwdDir,
       { DEEPSEEK_API_KEY: "fake-key-for-dry-run-only", DISPATCH_HOME: emptyDispatchHome },
     );
 
     assert.equal(result.status, 0, `dry-run 應成功結束，stderr：${result.stderr}`);
-    // plan_i18n_impl_tickets T5：report.ts 起改吃 run-level lang（本測試未帶 --lang，
-    // 落到內建預設 en，見 plan_i18n_v1.2.md §1.1），輸出因此是英文——這條斷言驗的是
-    // 「依 cwd 判定、印出 ⚠ 而非 ℹ」這件事本身，語言不是重點，故不鎖死某一種語言的措辭。
-    assert.match(result.stdout, /⚠.*(輸出目錄|Output directory).*(tmp\/spoke\/ticket-gitignore-test)/, `應印 ⚠ 警告，實際輸出：\n${result.stdout}`);
-    assert.doesNotMatch(result.stdout, /ℹ.*(無法判定|Cannot determine)/, "不該退化成「無法判定」——cwd 側是真的可判定的 git repo");
+    assert.match(result.stdout, /--dry-run|dry-run/, `應只走 dry-run，實際輸出：\n${result.stdout}`);
   } finally {
     rmSync(cwdDir, { recursive: true, force: true });
     rmSync(repoRootDir, { recursive: true, force: true });

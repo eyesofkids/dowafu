@@ -9,6 +9,7 @@ import { DispatchError, type Lang, type ProviderConfig, type ProvidersFile } fro
 import { stripFrontmatter, type Ticket } from "./ticket.js";
 import { buildAllowSet } from "./whitelist.js";
 import { m } from "./messages.js";
+import { getCommandName } from "./pkg-info.js";
 
 export type ResolvedSpoke = {
   agent: string;
@@ -21,13 +22,13 @@ export type ResolvedSpoke = {
   allowSet: Set<string>;
   allowedReadsResolved: string[]; // realpath，供 buildAllowSet 使用
   allowedReadsRelative: string[]; // 工單原文相對路徑，供稽核（§15 引用路徑比對）比對
+  // D1: a DB ticket supplies content captured when its allowlist was added. Undefined
+  // retains the legacy parser-test path only; the CLI never uses that path.
+  allowedReadsContent?: string[];
+  readableContent?: Map<string, string>;
   lang: Lang; // plan_i18n_v1.3.md §一：run-level 注入（--lang > DISPATCH_LANG > 內建
   // 預設），與工單標記無關——見 resolveSpokes 的 lang 參數
 };
-
-function apiKeyEnvFor(provider: string): string {
-  return `${provider.toUpperCase()}_API_KEY`;
-}
 
 async function readAgentBody(agentsDir: string, agent: string, lang: Lang): Promise<string> {
   const agentDefPath = path.join(agentsDir, `${agent}.md`);
@@ -52,9 +53,24 @@ export async function resolveSpokes(
   // plan_i18n_v1.3.md §一之3 第 3 點：必填、不得有預設值——有預設值的話呼叫端漏傳會
   // 靜默回退成舊來源，連紅字都沒有，等同「傳了但傳的是舊來源」那種型別系統看不見的錯誤。
   lang: Lang,
+  // 熱修補：本參數原本有 `= () => true` 的預設值，於是 cli.ts 的接線被拿掉之後
+  // 463 條測試全綠——「函式對」不代表「有人在對的時機叫它」。上面那段講 lang 的理由
+  // 一字不改地適用於這裡，故改為必填並移到 agentsDir 之前（必填參數不得跟在選填之後）。
+  isModelEnabled: (provider: string, model: string) => boolean,
+  // 同上：必填、不得有預設值。0.5.0 起 API key 的唯一來源是 DB 的 `provider_keys` 表，
+  // 而本模組不持有 db handle——比照 isModelEnabled 收一個回呼，由 cli.ts 接上。
+  // 原本這裡直接讀 `process.env[`${PROVIDER}_API_KEY`]`，key 搬進 DB 之後那段就成了
+  // 一道「更早的、只認環境變數」的閘門，會在 createAdapterFor 之前先攔下所有派工。
+  hasApiKey: (provider: string) => boolean,
   agentsDir: string = path.join(repoRoot, ".claude", "agents"),
 ): Promise<ResolvedSpoke[]> {
   const resolved: ResolvedSpoke[] = [];
+
+  // 熱修補（缺口三）：同 ticket-store——空表要講「去匯入」，
+  // 不要讓 providerUndefinedInRow 把人帶去查工單裡的 provider 名稱。
+  if (Object.keys(providers).length === 0) {
+    throw new DispatchError(m(lang, "providersDbEmpty", getCommandName()), 2);
+  }
 
   for (const row of ticket.rows) {
     const providerConfig = providers[row.provider];
@@ -63,17 +79,19 @@ export async function resolveSpokes(
     }
 
     // §18：只檢查本次工單用到的 provider，缺即中止。
-    const envName = apiKeyEnvFor(row.provider);
-    if (!process.env[envName]) {
-      throw new DispatchError(m(lang, "missingEnvVar", envName, row.agent, row.provider), 2);
+    if (!hasApiKey(row.provider)) {
+      throw new DispatchError(m(lang, "apiKeyNotConfigured", row.agent, row.provider, getCommandName()), 2);
     }
 
-    // §5：model 須在 providers.json 的 models 白名單內；白名單為空 = 不做型號檢查。
-    if (providerConfig.models.length > 0 && !providerConfig.models.includes(row.model)) {
+    // A-1: parser guarantees this whitelist is non-empty; never leave a bypass.
+    if (!providerConfig.models.includes(row.model)) {
       throw new DispatchError(
         m(lang, "modelNotWhitelisted", row.agent, row.model, row.provider, providerConfig.models.join(", ")),
         2,
       );
+    }
+    if (!isModelEnabled(row.provider, row.model)) {
+      throw new DispatchError(m(lang, "modelDisabled", row.model, getCommandName()), 6);
     }
 
     // §4：effort 填了但不在該 provider 的 allowed 內即中止（含 allowed 為空陣列）。
@@ -100,25 +118,44 @@ export async function resolveSpokes(
 
     // §4「針對 hub 會寫錯」：_docs/ 一律拒絕；允許清單逐一驗證存在，任一不存在即中止並指名。
     const allowedReadsResolved: string[] = [];
-    for (const rel of agentTicket.allowedReads) {
-      const resolvedPath = path.resolve(repoRoot, rel);
-      if (isUnderDocsDir(repoRoot, resolvedPath)) {
-        throw new DispatchError(m(lang, "allowedReadsUnderDocs", row.agent, rel), 2);
+    const allowedReadsContent: string[] = [];
+    const readableContent = ticket.allowedContent ? new Map<string, string>() : undefined;
+    if (ticket.allowedContent) {
+      const dbContent = readableContent!;
+      for (const rel of agentTicket.allowedReads) {
+        const content = ticket.allowedContent.get(rel);
+        if (content === undefined) throw new DispatchError(m(lang, "allowedReadsPathNotFound", row.agent, rel), 2);
+        allowedReadsResolved.push(rel);
+        allowedReadsContent.push(content);
+        dbContent.set(rel, content);
       }
-      let real: string;
-      try {
-        real = fs.realpathSync(resolvedPath);
-      } catch {
-        throw new DispatchError(m(lang, "allowedReadsPathNotFound", row.agent, rel), 2);
+      const sharedKey = `${ticket.ticketDir}/_shared.md`;
+      const ownKey = `${ticket.ticketDir}/${row.agent}.md`;
+      dbContent.set(sharedKey, ticket.allowedContent.get(sharedKey) ?? "");
+      dbContent.set(ownKey, ticket.allowedContent.get(ownKey) ?? "");
+    } else {
+      for (const rel of agentTicket.allowedReads) {
+        const resolvedPath = path.resolve(repoRoot, rel);
+        if (isUnderDocsDir(repoRoot, resolvedPath)) {
+          throw new DispatchError(m(lang, "allowedReadsUnderDocs", row.agent, rel), 2);
+        }
+        let real: string;
+        try {
+          real = fs.realpathSync(resolvedPath);
+        } catch {
+          throw new DispatchError(m(lang, "allowedReadsPathNotFound", row.agent, rel), 2);
+        }
+        allowedReadsResolved.push(real);
       }
-      allowedReadsResolved.push(real);
     }
 
     const agentBody = await readAgentBody(agentsDir, row.agent, lang);
 
     const sharedPath = path.join(ticket.ticketDir, "_shared.md");
     const ownAgentPath = path.join(ticket.ticketDir, `${row.agent}.md`);
-    const allowSet = buildAllowSet([sharedPath, ownAgentPath, ...allowedReadsResolved]);
+    const allowSet = ticket.allowedContent
+      ? new Set(ticket.allowedContent.keys())
+      : buildAllowSet([sharedPath, ownAgentPath, ...allowedReadsResolved]);
 
     resolved.push({
       agent: row.agent,
@@ -131,6 +168,8 @@ export async function resolveSpokes(
       allowSet,
       allowedReadsResolved,
       allowedReadsRelative: agentTicket.allowedReads,
+      allowedReadsContent: ticket.allowedContent ? allowedReadsContent : undefined,
+      readableContent,
       lang,
     });
   }

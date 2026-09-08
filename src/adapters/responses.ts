@@ -4,6 +4,7 @@
 // 不用 toolCalls 重建——這是 v1.3 犯錯、v1.4 §8 明訂修正的地方。
 
 import OpenAI from "openai";
+import type { Fetch } from "openai/core";
 import type {
   Adapter,
   Conversation,
@@ -15,6 +16,7 @@ import type {
   Turn,
 } from "../types.js";
 import { normalizeFinishReason, normalizeResponsesUsage } from "../usage.js";
+import { OUTPUT_TOKEN_CAP } from "../cost.js";
 import { ProviderHttpError } from "../mask.js";
 import { checkRawArrayIntegrity } from "../raw-integrity.js";
 import { readFileToolDescription } from "./read-file-tool-description.js";
@@ -40,6 +42,9 @@ export type ResponsesAdapterConfig = {
   store: false | null; // §5：null 代表該 API 無此參數（v1 的 responses provider 恆為 false）
   reasoning: ReasoningConfig;
   lang: Lang; // T5：read_file 工具 description 依 spoke.lang 選用（C 類雙語常數）
+  // 測試專用：OpenAI SDK 在自己的模組載入時就綁定 fetch 參照，事後改寫 globalThis.fetch
+  // 攔截不到。生產呼叫端一律不傳，沿用 SDK 預設（Node 原生 fetch）。
+  fetch?: Fetch;
 };
 
 // plan_dispatch_v1.8.md §5「reasoning.style 的三種轉換」（實測確認，v1.7 兩處填錯已修正）：
@@ -85,6 +90,9 @@ export function buildResponsesRequest(
     model: opts.model,
     instructions: conv.systemPrompt,
     input,
+    // 票 cost-cap §A-1：openai／deepseek 共用此 adapter，先前完全沒送這個參數（無界）。
+    // 值的出處見 cost.ts 的 OUTPUT_TOKEN_CAP，三家 adapter 共用同一個常數。
+    max_output_tokens: OUTPUT_TOKEN_CAP,
     ...(opts.enableTools === false ? {} : { tools: [buildReadFileTool(config.lang)] }),
     ...(config.store === false ? { store: false as const } : {}),
     include: ["reasoning.encrypted_content"],
@@ -93,7 +101,7 @@ export function buildResponsesRequest(
 }
 
 export function createResponsesAdapter(config: ResponsesAdapterConfig): Adapter {
-  const client = new OpenAI({ apiKey: config.apiKey, baseURL: config.baseURL });
+  const client = new OpenAI({ apiKey: config.apiKey, baseURL: config.baseURL, ...(config.fetch ? { fetch: config.fetch } : {}) });
 
   return {
     async send(conv: Conversation, opts: SendOptions): Promise<SendResult> {

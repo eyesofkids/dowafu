@@ -21,6 +21,7 @@
 
 import type { Adapter, Conversation, Lang, ReasoningConfig, SendOptions, SendResult, ToolCall, Turn } from "../types.js";
 import { normalizeAnthropicUsage, normalizeFinishReason } from "../usage.js";
+import { OUTPUT_TOKEN_CAP } from "../cost.js";
 import { ProviderHttpError } from "../mask.js";
 import { checkRawObjectIntegrity } from "../raw-integrity.js";
 import { readFileToolDescription } from "./read-file-tool-description.js";
@@ -29,9 +30,10 @@ const ANTHROPIC_VERSION = "2023-06-01";
 
 // §29 規格四：max_tokens 是 Anthropic 專屬必要參數，SendOptions 沒有這個概念（openai／gemini
 // 都不需要）。寫死在 adapter，不提升到 SendOptions——那會逼另外兩個 adapter 處理用不到的欄位。
-// 初始值推導見規格四：十次派工單支最高 40,970 output token，32k 有 20% 餘裕；本版預設 effort
-// 不會用到官方建議 64k 起跳的 xhigh／max。撞到 stop_reason:"max_tokens" 再調，不在此臆測。
-const ANTHROPIC_MAX_TOKENS = 32768;
+// 票 cost-cap §A-1：原本 32,768 是「必填欄位的填充值，不是算過的」（舊註解原話）。現在改引用
+// cost.ts 的 OUTPUT_TOKEN_CAP（65,536）——四家 adapter 共用同一個常數，見 facts_output_cap.md
+// §六：高於三家實測單輪 output max（53,391）約 22% 餘裕，遠高於官方建議 25,000 下限。
+const ANTHROPIC_MAX_TOKENS = OUTPUT_TOKEN_CAP;
 
 function buildReadFileTool(lang: Lang) {
   return {

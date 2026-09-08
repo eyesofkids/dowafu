@@ -7,8 +7,9 @@ import type { ResolvedSpoke } from "./validate.js";
 import type { GitignoreStatus } from "./gitignore-check.js";
 import { stripFrontmatter } from "./ticket.js";
 import { FIXED_CLOSING_LINE, FIXED_CLOSING_LINE_EN } from "./audit.js";
+import { estimateHardCapUsd } from "./cost.js";
 import { m } from "./messages.js";
-import type { Lang } from "./types.js";
+import type { Lang, ModelPricing } from "./types.js";
 
 export type CliOptions = {
   out: string;
@@ -24,7 +25,10 @@ export type CliOptions = {
   maxSpokeReasoningTokens: number; // §14：累積推理 token 上限
   maxRoundReasoningTokens: number | null; // §14：單輪推理 token 上限，null = 不檢查
   repoRoot?: string; // v1.10 §9：白名單邊界與 .claude/agents 的根，未填則用 cwd
-  providersPath?: string; // v1.10 §9：整檔取代出貨的 providers.json，未填則用出貨版本
+  dbPath?: string; // D1: ticket and result store; absent selects the dispatch-home default
+  httpPort: number; // 工單 C：serve 模式的 HTTP binding 埠，僅 serve 使用
+  // Private daemon-to-worker hand-off.  User-facing D1 dispatches leave it unset.
+  jobId?: string;
   // plan_i18n_impl_tickets T3〈T1 驗收帶出的兩條〉：欄位由 lang 改名 langRaw——它是
   // --lang 的原始值，未經 parseLang 驗證，可能是 undefined（沒帶旗標）或 "ZH-TW"
   // （未正規化）。CLI 層訊息一律用 resolveLang() 的回傳值決定語言，不得讀這個欄位；
@@ -39,9 +43,7 @@ export type CliOptions = {
 
 // v1.10 §11：報表明列 providers 來源，與 §24.3「方案 D：隨工具出貨、不可覆寫」對應。
 export type ProvidersSource = {
-  kind: "bundled" | "explicit";
-  path?: string;
-  formatVersion: number;
+  kind: "database";
 };
 
 export function effectiveCap(spoke: ResolvedSpoke, cli: CliOptions): number {
@@ -53,8 +55,7 @@ export function effectiveCharsPerToken(spoke: ResolvedSpoke, cli: CliOptions): n
 }
 
 function formatProvidersSource(src: ProvidersSource, lang: Lang): string {
-  if (src.kind === "bundled") return m(lang, "providersBundled", src.formatVersion);
-  return m(lang, "providersExplicit", src.path ?? "", src.formatVersion);
+  return m(lang, "providersDatabase");
 }
 
 // v1.10 §10：三態不得合併——「未忽略」是需要處理的狀態，「無法判定」不是，措辭須區分。
@@ -63,12 +64,15 @@ function formatProvidersSource(src: ProvidersSource, lang: Lang): string {
 // 已訂輸出目錄屬呼叫端 cwd，checkGitignore 檢查的也是 cwd 所屬的 repo——cwd 與
 // --repo-root 指的目標專案是兩回事（v1.11 §10 修的正是這個基準不一致）。「目標專案」
 // 這個詞在 cwd ≠ repoRoot 時會指錯對象，故改為不預設兩者相同的措辭。
-function formatGitignoreWarning(status: GitignoreStatus, outDir: string, lang: Lang): string | null {
+// 票 cost-cap §E #1：先前檢查的是 outDir（`db:<id>` 這種假路徑，git 永遠判不出結果，
+// 於是被寫死成 "unknown"、印出編出來的理由）。產物已搬進 DB（v1.11 §24.5），真正該檢查
+// 的是資料庫檔案本身的位置——呼叫端（cli.ts）改傳實際解析出的 DB 路徑。
+function formatGitignoreWarning(status: GitignoreStatus, dbPath: string, lang: Lang): string | null {
   if (status === "ignored") return null;
   if (status === "not_ignored") {
-    return m(lang, "gitignoreNotIgnored", outDir);
+    return m(lang, "gitignoreNotIgnored", dbPath);
   }
-  return m(lang, "gitignoreUnknown", outDir);
+  return m(lang, "gitignoreUnknown", dbPath);
 }
 
 // plan_i18n_v1.2.md §6.3：呼叫前提示 lens 收尾句落在哪一個 FIXED_CLOSING_LINE*——只提示不擋
@@ -103,13 +107,12 @@ function formatLensClosingLineNotice(spoke: ResolvedSpoke, lang: Lang): string |
 // **這一行讓那個檔不必被找到。** 順帶也解決 `--providers` 覆寫之後 hub 讀到錯的那一份。
 // 缺價目時明講「無價目資料」而不是印 0——與 cost.ts 的 null 語意一致（§4：「無法估算」
 // 與「估算出來是零」不是同一件事）。
-function formatModelPricing(spoke: ResolvedSpoke, lang: Lang): string {
-  const pricing = spoke.providerConfig.pricing?.[spoke.model];
-  if (!pricing) return m(lang, "modelPricingMissing", spoke.model);
+export function formatModelPricing(pricing: ModelPricing | undefined, pricingAsOf: string | undefined, lang: Lang): string {
+  if (!pricing) return m(lang, "noPricingData");
   const cached =
     pricing.cachedInputPerM !== undefined ? m(lang, "modelPricingCachedSuffix", pricing.cachedInputPerM) : "";
-  const asOf = spoke.providerConfig.pricingAsOf
-    ? m(lang, "modelPricingAsOfSuffix", spoke.providerConfig.pricingAsOf)
+  const asOf = pricingAsOf
+    ? m(lang, "modelPricingAsOfSuffix", pricingAsOf)
     : "";
   return m(lang, "modelPricing", pricing.inputPerM, pricing.outputPerM, cached, asOf);
 }
@@ -125,6 +128,9 @@ export function buildReport(
     repoRoot: string;
     providersSource: ProvidersSource;
     gitignoreStatus: GitignoreStatus;
+    // 票 cost-cap §E #1：gitignore 三態實際檢查的路徑——選填，缺席時退回 outDir（既有呼叫端
+    // 若一時沒有更新，行為與改動前一致，不強制所有既有測試呼叫端同步補這個欄位）。
+    dbPath?: string;
     // 2026-08-15：待審段落的字數與 `_shared.md` 裡的可疑頂層章節，供付費前的截斷警告使用。
     reviewTextChars: number;
     strayHeadings: string[];
@@ -149,7 +155,8 @@ export function buildReport(
         `store=${spoke.providerConfig.store === false ? "false" : "n/a"} ` +
         `est. ${est.toLocaleString()}  cap ${cap.toLocaleString()}`,
     );
-    lines.push(`  ${formatModelPricing(spoke, lang)}`);
+    const pricing = spoke.providerConfig.pricing?.[spoke.model];
+    lines.push(`  ${pricing ? formatModelPricing(pricing, spoke.providerConfig.pricingAsOf, lang) : m(lang, "modelPricingMissing", spoke.model)}`);
     if (spoke.allowedReadsRelative.length === 0) {
       lines.push(m(lang, "allowedReadsListEmpty"));
     } else {
@@ -206,6 +213,19 @@ export function buildReport(
   }
 
   lines.push(m(lang, "worstCaseTotal", worstTotal.toLocaleString()));
+
+  // 票 cost-cap §B／§C：各 spoke 的絕對上界（B-2 算式）加總，不是取最大（B-3 #2）。
+  // 缺任一 spoke 的價目資料就整體回 null（不得把「不知道」的那部分當 $0 相加）。
+  const hardCapParts = spokes.map((spoke) => {
+    const est = estByAgent.get(spoke.agent) ?? 0;
+    const pricing = spoke.providerConfig.pricing?.[spoke.model];
+    return estimateHardCapUsd(est, cli.maxToolCalls, pricing);
+  });
+  const totalHardCapUsd = hardCapParts.some((p) => p === null)
+    ? null
+    : (hardCapParts as number[]).reduce((s, p) => s + p, 0);
+  lines.push(totalHardCapUsd !== null ? m(lang, "hardCapLine", totalHardCapUsd.toFixed(4)) : m(lang, "hardCapMissingPricing"));
+
   lines.push(m(lang, "concurrencyLine", cli.concurrency));
 
   const byProvider = new Map<string, { tpmLimit: number | null; peak: number }>();
@@ -222,7 +242,7 @@ export function buildReport(
   }
 
   const allowedCount = spokes.reduce((s, spoke) => s + spoke.allowedReadsResolved.length, 0);
-  lines.push(m(lang, "allowedReadsSummary", allowedCount, outDir));
+  lines.push(m(lang, "allowedReadsSummary", allowedCount));
 
   // 2026-08-15：待審段落疑似被切斷的警告，排在 gitignore 警告之前——後者關係到產物落在哪，
   // 前者關係到這次派工有沒有意義（付全額、審半份）。
@@ -230,7 +250,7 @@ export function buildReport(
     lines.push(m(lang, "strayHeadingsWarning", meta.reviewTextChars, meta.strayHeadings));
   }
 
-  const gitignoreWarning = formatGitignoreWarning(meta.gitignoreStatus, outDir, lang);
+  const gitignoreWarning = formatGitignoreWarning(meta.gitignoreStatus, meta.dbPath ?? outDir, lang);
   if (gitignoreWarning) lines.push(gitignoreWarning);
 
   return lines.join("\n");

@@ -14,12 +14,19 @@
 // plan_dispatch_v1.11.md §26：金鑰只該有一個位置——與 CLI 同一條載入路徑
 // （$DISPATCH_HOME/.env，ambient 優先），不讀 cwd 的 .env（§24.4 禁令對此腳本雖不
 // 直接適用，但雙來源會讓「repo 的 .env 到底還要不要留」變成無法從程式碼看出答案的狀態）。
-import { loadDispatchEnv, resolveDispatchHome } from "../src/dispatch-home.js";
+import { defaultDbPath, openDb } from "../src/db.js";
+import { listProviderKeys } from "../src/provider-key.js";
 import OpenAI from "openai";
 import { writeFile, mkdir } from "node:fs/promises";
 
-const dispatchHome = resolveDispatchHome();
-if (dispatchHome !== null) loadDispatchEnv(dispatchHome);
+// 0.5.0 起 API key 的唯一來源是 DB（見 src/provider-key.ts 檔頭）。本腳本其餘部分沿用
+// `process.env[<PROVIDER>_API_KEY]` 的既有寫法，這裡把 DB 那份填進去即可——腳本是手動執行
+// 的開發者工具，不進 dist，這個 process.env 的用法不構成產品的第二來源。
+{
+  const db = openDb(defaultDbPath());
+  for (const row of listProviderKeys(db)) process.env[`${row.provider.toUpperCase()}_API_KEY`] = row.apiKey;
+  db.close();
+}
 
 // --model <provider>=<model>：覆寫該 provider 的預設型號，可重複帶，供單一新型號 smoke 用。
 const KNOWN_PROVIDERS = new Set(["openai", "deepseek", "gemini", "anthropic"]);

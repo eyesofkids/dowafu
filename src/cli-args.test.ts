@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { parseArgs, parseLang, resolveLang, resolveFallbackLang, formatEvent, buildStdoutSummary } from "./cli-args.js";
+import { DEFAULT_MAX_TOOL_CALLS } from "./cost.js";
 import { DispatchError } from "./types.js";
 import { m } from "./messages.js";
 import { getCommandName } from "./pkg-info.js";
@@ -24,16 +25,30 @@ test("parseArgs：基本情況——只有 ticketDir，其餘走預設值", () =
   assert.equal(parsed.ticketDir, "tmp/dispatch/t1");
   assert.equal(parsed.options.json, false);
   assert.equal(parsed.options.repoRoot, undefined);
-  assert.equal(parsed.options.providersPath, undefined);
   assert.equal(parsed.options.retries, 2); // v1.7 裁示的預設值，非本輪變更但一併確認未被本輪改動打壞
 });
 
-test("parseArgs：--repo-root 與 --providers 正確寫入 options", () => {
-  const parsed = parseArgs(["t1", "--repo-root", "/some/project", "--providers", "/custom/providers.json"], "en");
+// 票 cost-cap §D：30 → 20，實測從未超過 15 輪（facts_output_cap.md §四）。--max-tool-calls
+// 明確覆寫時（見既有的 numFlag 測試）仍照舊生效，這裡只鎖預設值本身。
+test("parseArgs：--max-tool-calls 預設值為 20（票 cost-cap §D，30 → 20）", () => {
+  const parsed = parseArgs(["tmp/dispatch/t1"], "en");
+  if (parsed.mode !== "run") throw new Error("unreachable");
+  assert.equal(parsed.options.maxToolCalls, 20);
+  assert.equal(DEFAULT_MAX_TOOL_CALLS, 20);
+});
+
+test("parseArgs：--max-tool-calls 明確帶上去仍可覆寫預設值（硬上限不得寫死）", () => {
+  const parsed = parseArgs(["tmp/dispatch/t1", "--max-tool-calls", "30"], "en");
+  if (parsed.mode !== "run") throw new Error("unreachable");
+  assert.equal(parsed.options.maxToolCalls, 30);
+});
+
+test("parseArgs：--repo-root 正確寫入 options，--providers 已退場", () => {
+  const parsed = parseArgs(["t1", "--repo-root", "/some/project"], "en");
   assert.equal(parsed.mode, "run");
   if (parsed.mode !== "run") throw new Error("unreachable");
   assert.equal(parsed.options.repoRoot, "/some/project");
-  assert.equal(parsed.options.providersPath, "/custom/providers.json");
+  assert.throws(() => parseArgs(["t1", "--providers", "/custom/providers.json"], "en"), DispatchError);
 });
 
 test("parseArgs：--json 旗標", () => {
@@ -61,12 +76,71 @@ test("parseArgs：--version／-V 不需要 ticketDir，回傳 mode:version", () 
 // 與 --help 同時給時 --help 優先（help > version > doctor）。
 
 test("parseArgs：--doctor 不需要 ticketDir，回傳 mode:doctor", () => {
-  assert.deepEqual(parseArgs(["--doctor"], "en"), { mode: "doctor" });
+  assert.equal(parseArgs(["--doctor"], "en").mode, "doctor");
 });
 
 test("parseArgs：--doctor 與已知旗標（如 --lang）同時給仍生效，不因此中止", () => {
-  const parsed = parseArgs(["--doctor", "--lang", "zh-tw"], "en");
-  assert.deepEqual(parsed, { mode: "doctor" });
+  assert.equal(parseArgs(["--doctor", "--lang", "zh-tw"], "en").mode, "doctor");
+});
+
+// A（gaps #1）：doctor 要帶著 options 回來。旗標迴圈本來就解析了 --db，先前只是沒回傳，
+// 於是 `--doctor --db <路徑>` 靜默對著預設 DB 回答——這條鎖住「它真的帶回來了」。
+test("parseArgs：--doctor 帶回 options，--db 不會被丟掉", () => {
+  const parsed = parseArgs(["--doctor", "--db", "/tmp/other.db"], "en");
+  assert.equal(parsed.mode, "doctor");
+  if (parsed.mode !== "doctor") throw new Error("unreachable");
+  assert.equal(parsed.options.dbPath, "/tmp/other.db");
+});
+
+test("parseArgs：serve 是常駐 daemon 子命令，仍可帶既有 --db", () => {
+  const parsed = parseArgs(["serve", "--db", "/tmp/dowafu.db"], "en");
+  assert.equal(parsed.mode, "serve");
+  if (parsed.mode !== "serve") throw new Error("unreachable");
+  assert.equal(parsed.options.dbPath, "/tmp/dowafu.db");
+  assert.equal(parsed.stop, false);
+});
+
+test("parseArgs：serve --stop 保持在 serve 介面，--yes 可作為明確強制旗標", () => {
+  const parsed = parseArgs(["serve", "--stop", "--yes"], "en");
+  assert.equal(parsed.mode, "serve");
+  if (parsed.mode !== "serve") throw new Error("unreachable");
+  assert.equal(parsed.stop, true);
+  assert.equal(parsed.options.yes, true);
+});
+
+test("parseArgs：--stop 沒有 serve 時 fail closed", () => {
+  assert.throws(() => parseArgs(["--stop"], "en"), DispatchError);
+  assert.throws(() => parseArgs(["--doctor", "--stop"], "en"), DispatchError);
+});
+
+test("parseArgs：serve 的 --http-port 有預設值，且可覆寫", () => {
+  const withDefault = parseArgs(["serve"], "en");
+  assert.equal(withDefault.mode, "serve");
+  if (withDefault.mode !== "serve") throw new Error("unreachable");
+  assert.equal(withDefault.options.httpPort, 7391);
+
+  const overridden = parseArgs(["serve", "--http-port", "9000"], "en");
+  if (overridden.mode !== "serve") throw new Error("unreachable");
+  assert.equal(overridden.options.httpPort, 9000);
+});
+
+test("parseArgs：--http-port 非數字時 fail closed", () => {
+  assert.throws(() => parseArgs(["serve", "--http-port", "not-a-number"], "en"), DispatchError);
+});
+
+test("parseArgs：mcp 是 stdio 子命令，仍可帶既有 --db", () => {
+  const parsed = parseArgs(["mcp", "--db", "/tmp/dowafu.db"], "en");
+  assert.equal(parsed.mode, "mcp");
+  if (parsed.mode !== "mcp") throw new Error("unreachable");
+  assert.equal(parsed.options.dbPath, "/tmp/dowafu.db");
+});
+
+test("parseArgs：daemon 的內部 job-id 只登錄，不改一般 ticket positional", () => {
+  const parsed = parseArgs(["ticket-a", "--job-id", "job-a"], "en");
+  assert.equal(parsed.mode, "run");
+  if (parsed.mode !== "run") throw new Error("unreachable");
+  assert.equal(parsed.ticketDir, "ticket-a");
+  assert.equal(parsed.options.jobId, "job-a");
 });
 
 test("parseArgs：--doctor 與 --help 同時給，--help 優先", () => {
@@ -523,4 +597,33 @@ test("buildStdoutSummary：多支 spoke 逐行、以換行連接，並涵蓋無�
       "spoke-b: failed  model=—  token=0  cost=No pricing data  elapsed=222ms",
     ].join("\n"),
   );
+});
+
+// 熱修補（票 C 驗收）：DOWAFU_HTTP_PORT 原本是死的——只寫在 serve() 的參數預設值，
+// 而 cli.ts 一律傳具體的 options.httpPort，所以那條路永遠走不到。環境變數看起來支援、
+// 實際被靜默忽略，而同一行呼叫裡 DOWAFU_MAX_CONCURRENT 是活的。優先序必須是
+// 旗標 > 環境變數 > 內建預設，三段都要驗到。
+test("parseArgs：--http-port > DOWAFU_HTTP_PORT > 內建預設", () => {
+  const saved = process.env.DOWAFU_HTTP_PORT;
+  try {
+    delete process.env.DOWAFU_HTTP_PORT;
+    const fallback = parseArgs(["serve"], "en");
+    assert.equal(fallback.mode, "serve");
+    const builtIn = fallback.mode === "serve" ? fallback.options.httpPort : -1;
+
+    process.env.DOWAFU_HTTP_PORT = "7777";
+    const fromEnv = parseArgs(["serve"], "en");
+    assert.equal(fromEnv.mode === "serve" && fromEnv.options.httpPort, 7777, "環境變數必須生效");
+    assert.notEqual(builtIn, 7777, "測試若與內建預設同值就證明不了任何事");
+
+    const fromFlag = parseArgs(["serve", "--http-port", "7888"], "en");
+    assert.equal(fromFlag.mode === "serve" && fromFlag.options.httpPort, 7888, "旗標必須壓過環境變數");
+
+    process.env.DOWAFU_HTTP_PORT = "not-a-port";
+    const bogus = parseArgs(["serve"], "en");
+    assert.equal(bogus.mode === "serve" && bogus.options.httpPort, builtIn, "無效值要退回內建預設，不是 NaN");
+  } finally {
+    if (saved === undefined) delete process.env.DOWAFU_HTTP_PORT;
+    else process.env.DOWAFU_HTTP_PORT = saved;
+  }
 });

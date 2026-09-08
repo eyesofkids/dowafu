@@ -1,10 +1,12 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import path from "node:path";
-import { buildDoctorReport, type DoctorProbe, type DoctorProvidersResult } from "./doctor.js";
+import { buildDoctorReport, buildDoctorReportData, renderDoctorReport, type DoctorProbe, type DoctorProvidersResult } from "./doctor.js";
 import { m } from "./messages.js";
 import { FIXED_CLOSING_LINE, FIXED_CLOSING_LINE_EN } from "./audit.js";
 import type { ProviderConfig } from "./types.js";
+import type { KeyStatusRow } from "./provider-key.js";
+import type { DaemonLiveness } from "./liveness.js";
 
 // 工單 W1（fix_batch_4）§一之8：注入假的 env／homedir／檔案探針，驗四類案例。
 // **不驗完整輸出的逐字快照**——那會讓之後每次改字都紅，只斷言會變的那一行。
@@ -29,6 +31,13 @@ const FAKE_PROVIDERS: DoctorProvidersResult = {
     openai: fakeProvider(["a", "b", "c"]),
     deepseek: fakeProvider(["a", "b"]),
   },
+  models: [
+    { provider: "openai", model: "a", inputPerM: 1, cachedInputPerM: undefined, cacheWritePerM: undefined, outputPerM: 2, enabled: true },
+    { provider: "openai", model: "b", inputPerM: 1, cachedInputPerM: undefined, cacheWritePerM: undefined, outputPerM: 3, enabled: false },
+    { provider: "openai", model: "c", inputPerM: 1, cachedInputPerM: undefined, cacheWritePerM: undefined, outputPerM: 4, enabled: false },
+    { provider: "deepseek", model: "a", inputPerM: 1, cachedInputPerM: undefined, cacheWritePerM: undefined, outputPerM: 5, enabled: false },
+    { provider: "deepseek", model: "b", inputPerM: 1, cachedInputPerM: undefined, cacheWritePerM: undefined, outputPerM: 6, enabled: false },
+  ],
 };
 
 function noProbe(): DoctorProbe {
@@ -102,43 +111,67 @@ test("buildDoctorReport：homedir() 拋錯（無 HOME）→ 印無法解析，�
   assert.equal(line, m("en", "doctorConfigDirLine", m("en", "doctorConfigDirUnresolved")));
 });
 
-// ②key 全有／全無／混合三種情況的 ✓✗ 排列
+// ②key 全有／全無／混合三種情況——工單 key-db §B-3 #6：改為逐 provider 印「哪一層生效」
+// （DB／env／未設定），不再是 process.env 的單純 ✓／✗。keyStatusRows 由 cli.ts 算好傳入，
+// 這裡直接建假資料，不碰真實 DB。
 
-test("buildDoctorReport：API key 全無 → 四項皆 ✗，不省略整行", () => {
-  const report = buildDoctorReport("en", "dowafu", FAKE_PROVIDERS, {}, () => "/home/testuser", noProbe(), "/cwd");
+const ALL_MISSING_ROWS: KeyStatusRow[] = ["deepseek", "gemini", "openai", "anthropic"].map((provider) => ({
+  provider,
+  maskedTail: null,
+  updatedAt: null,
+  lastTestedAt: null,
+  lastTestModel: null,
+  lastTestSucceeded: null,
+}));
+
+test("buildDoctorReport：API key 全無 → 四項皆未設定，不省略任何一項", () => {
+  const report = buildDoctorReport("en", "dowafu", FAKE_PROVIDERS, {}, () => "/home/testuser", noProbe(), "/cwd", undefined, ALL_MISSING_ROWS);
   const line = lineStartingWith(report, "  API keys");
-  assert.match(line, /DEEPSEEK ✗ {2}GEMINI ✗ {2}OPENAI ✗ {2}ANTHROPIC ✗/);
+  for (const provider of ["DEEPSEEK", "GEMINI", "OPENAI", "ANTHROPIC"]) {
+    assert.match(line, new RegExp(`${provider} ${m("en", "doctorApiKeySourceMissing")}`));
+  }
 });
 
-test("buildDoctorReport：API key 全有 → 四項皆 ✓", () => {
-  const env = {
-    DEEPSEEK_API_KEY: "x",
-    GEMINI_API_KEY: "x",
-    OPENAI_API_KEY: "x",
-    ANTHROPIC_API_KEY: "x",
-  };
-  const report = buildDoctorReport("en", "dowafu", FAKE_PROVIDERS, env, () => "/home/testuser", noProbe(), "/cwd");
+test("buildDoctorReport：API key 全部來自 DB → 逐項印遮罩尾碼與日期", () => {
+  const rows: KeyStatusRow[] = [
+    { provider: "deepseek", maskedTail: "…aaaa", updatedAt: "2026-09-01T00:00:00.000Z", lastTestedAt: null, lastTestModel: null, lastTestSucceeded: null },
+    { provider: "openai", maskedTail: "…bbbb", updatedAt: "2026-09-02T00:00:00.000Z", lastTestedAt: null, lastTestModel: null, lastTestSucceeded: null },
+  ];
+  const report = buildDoctorReport("en", "dowafu", FAKE_PROVIDERS, {}, () => "/home/testuser", noProbe(), "/cwd", undefined, rows);
   const line = lineStartingWith(report, "  API keys");
-  assert.match(line, /DEEPSEEK ✓ {2}GEMINI ✓ {2}OPENAI ✓ {2}ANTHROPIC ✓/);
+  assert.match(line, /DEEPSEEK DB \(…aaaa, 2026-09-01\)/);
+  assert.match(line, /OPENAI DB \(…bbbb, 2026-09-02\)/);
 });
 
-test("buildDoctorReport：API key 混合有無 → 逐項對應各自的 ✓／✗", () => {
-  const env = { DEEPSEEK_API_KEY: "x", OPENAI_API_KEY: "x" };
-  const report = buildDoctorReport("en", "dowafu", FAKE_PROVIDERS, env, () => "/home/testuser", noProbe(), "/cwd");
+// 0.5.0 起 DB 是唯一來源，所以逐項只有「已設定／未設定」兩種，沒有來源要對應。
+test("buildDoctorReport：部分 provider 有 key、部分沒有 → 逐項各自顯示", () => {
+  const rows: KeyStatusRow[] = [
+    { provider: "deepseek", maskedTail: "…aaaa", updatedAt: "2026-09-01T00:00:00.000Z", lastTestedAt: null, lastTestModel: null, lastTestSucceeded: null },
+    { provider: "openai", maskedTail: null, updatedAt: null, lastTestedAt: null, lastTestModel: null, lastTestSucceeded: null },
+    { provider: "gemini", maskedTail: "…cccc", updatedAt: "2026-08-01T00:00:00.000Z", lastTestedAt: null, lastTestModel: null, lastTestSucceeded: null },
+    { provider: "anthropic", maskedTail: null, updatedAt: null, lastTestedAt: null, lastTestModel: null, lastTestSucceeded: null },
+  ];
+  const report = buildDoctorReport("en", "dowafu", FAKE_PROVIDERS, {}, () => "/home/testuser", noProbe(), "/cwd", undefined, rows);
   const line = lineStartingWith(report, "  API keys");
-  assert.match(line, /DEEPSEEK ✓ {2}GEMINI ✗ {2}OPENAI ✓ {2}ANTHROPIC ✗/);
+  assert.match(line, /DEEPSEEK DB \(…aaaa, 2026-09-01\)/);
+  assert.match(line, /GEMINI DB \(…cccc, 2026-08-01\)/);
+  assert.match(line, /OPENAI not set/);
+  assert.match(line, /ANTHROPIC not set/);
 });
 
-test("buildDoctorReport：API key 不印值也不印片段（長度、前後綴皆不行）", () => {
-  const env = { DEEPSEEK_API_KEY: "sk-super-secret-value-should-never-leak" };
-  const report = buildDoctorReport("en", "dowafu", FAKE_PROVIDERS, env, () => "/home/testuser", noProbe(), "/cwd");
+test("buildDoctorReport：不印任何明文或原始 env 值，即使 env 裡真的放著長得像 key 的字串", () => {
+  const env = { OPENAI_API_KEY: "sk-super-secret-value-should-never-leak" };
+  const rows: KeyStatusRow[] = [{ provider: "openai", maskedTail: null, updatedAt: null, lastTestedAt: null, lastTestModel: null, lastTestSucceeded: null }];
+  const report = buildDoctorReport("en", "dowafu", FAKE_PROVIDERS, env, () => "/home/testuser", noProbe(), "/cwd", undefined, rows);
   assert.doesNotMatch(report, /sk-super-secret/);
   assert.doesNotMatch(report, /super-secret-value-should-never-leak/);
 });
 
-// ③.env 不存在時的字
+// ③.env 的行只在檔案真的存在時才印
 
-test("buildDoctorReport：.env 不存在 → 印沒有＋完整路徑", () => {
+// A（gaps #2）：本版根本不讀 `.env`，所以「這個檔不存在」不是診斷是雜訊——它讀起來像
+// 「你少了這個檔」。整行不印，而不是印一行「沒有」。
+test("buildDoctorReport：.env 不存在 → 整行不出現", () => {
   const report = buildDoctorReport(
     "en",
     "dowafu",
@@ -148,11 +181,27 @@ test("buildDoctorReport：.env 不存在 → 印沒有＋完整路徑", () => {
     noProbe(),
     "/cwd",
   );
-  const line = lineStartingWith(report, "  .env");
-  assert.equal(
-    line,
-    m("en", "doctorEnvLine", m("en", "doctorEnvMissingValue", "/explicit/home/.env")),
+  // lineStartingWith 找不到時是拋錯不是回 undefined，所以這裡直接驗整份報表。
+  assert.equal(report.split("\n").filter((line) => line.startsWith("  .env")).length, 0);
+  assert.doesNotMatch(report, /\.env/);
+});
+
+// A（gaps #1）：doctor 要印出這次真的會用到的 DB 檔——金鑰／工單／結果全在那個檔裡，
+// 而先前整份報表從頭到尾沒印過它。
+test("buildDoctorReport：印出傳入的 DB 路徑", () => {
+  const report = buildDoctorReport(
+    "en",
+    "dowafu",
+    FAKE_PROVIDERS,
+    { DISPATCH_HOME: "/explicit/home" },
+    () => "/home/testuser",
+    noProbe(),
+    "/cwd",
+    undefined,
+    [],
+    "/somewhere/else/other.db",
   );
+  assert.equal(lineStartingWith(report, "  Database"), m("en", "doctorDbLine", "/somewhere/else/other.db"));
 });
 
 test("buildDoctorReport：.env 存在 → 印有（不讀內容）", () => {
@@ -178,6 +227,13 @@ test("buildDoctorReport：lens 目錄不存在 → 印目錄不存在＋路徑�
   const expectedDir = "/some/project/.claude/agents";
   assert.equal(line, m("en", "doctorLensLine", m("en", "doctorLensDirMissingValue", expectedDir)));
   assert.doesNotMatch(line, /error|Error|失敗|錯誤/);
+});
+
+test("buildDoctorReport：daemon 存活態明列 pid，離線態不可假裝成功", () => {
+  const alive = buildDoctorReport("en", "dowafu", FAKE_PROVIDERS, {}, () => "/home/testuser", noProbe(), "/cwd", { alive: true, pid: 42 });
+  assert.equal(lineStartingWith(alive, "  Daemon"), m("en", "doctorDaemonLine", m("en", "doctorDaemonAlive", 42)));
+  const offline = buildDoctorReport("en", "dowafu", FAKE_PROVIDERS, {}, () => "/home/testuser", noProbe(), "/cwd", { alive: false, reason: "heartbeat_stale" });
+  assert.equal(lineStartingWith(offline, "  Daemon"), m("en", "doctorDaemonLine", m("en", "doctorDaemonMissing", "heartbeat_stale")));
 });
 
 // 工單 X1 v1.1 §三：doctor 的 lens 偵測不再綁 hole-finder 這個名字——列出目錄下所有 .md，
@@ -339,10 +395,33 @@ test("buildDoctorReport：providers 載入失敗 → 印失敗原因，函式本
 // zh 版同一組行為的抽樣覆核（不逐字比對整份報告，只比對會變的那幾行）
 
 test("buildDoctorReport：zh 語言下的設定目錄與 API key 行", () => {
-  const report = buildDoctorReport("zh", "dowafu", FAKE_PROVIDERS, {}, () => "/home/testuser", noProbe(), "/cwd");
+  const report = buildDoctorReport("zh", "dowafu", FAKE_PROVIDERS, {}, () => "/home/testuser", noProbe(), "/cwd", undefined, ALL_MISSING_ROWS);
   assert.equal(
     lineStartingWith(report, "  設定目錄"),
     m("zh", "doctorConfigDirLine", m("zh", "doctorConfigDirSourceDefault", "/home/testuser/.config/dowafu")),
   );
-  assert.match(lineStartingWith(report, "  API key"), /DEEPSEEK ✗ {2}GEMINI ✗ {2}OPENAI ✗ {2}ANTHROPIC ✗/);
+  const line = lineStartingWith(report, "  API key");
+  for (const provider of ["DEEPSEEK", "GEMINI", "OPENAI", "ANTHROPIC"]) {
+    assert.match(line, new RegExp(`${provider} ${m("zh", "doctorApiKeySourceMissing")}`));
+  }
+});
+
+test("doctor JSON 與人類版共用同一判定，且 JSON 只帶遮罩 key 尾碼與 daemon 三態", () => {
+  const rawKey = "sk-super-secret-value-should-never-leak";
+  const rows: KeyStatusRow[] = [{ provider: "openai", maskedTail: "…leak", updatedAt: "2026-09-08T00:00:00.000Z", lastTestedAt: null, lastTestModel: null, lastTestSucceeded: null }];
+  for (const daemon of [
+    { alive: false, reason: "heartbeat_missing" as const },
+    { alive: false, reason: "heartbeat_stale" as const },
+    { alive: false, reason: "pid_gone" as const },
+  ] satisfies DaemonLiveness[]) {
+    const data = buildDoctorReportData("dowafu", FAKE_PROVIDERS, { OPENAI_API_KEY: rawKey }, () => "/home/testuser", noProbe(), "/cwd", daemon, rows, "/tmp/dowafu.db");
+    const json = JSON.stringify(data);
+    const human = renderDoctorReport("en", "dowafu", data);
+    assert.equal(data.daemon, daemon, "JSON 與文字版必須讀同一個 daemon 判定物件");
+    assert.match(json, new RegExp(daemon.reason));
+    assert.match(human, new RegExp(daemon.reason));
+    assert.match(json, /…leak/);
+    assert.doesNotMatch(json, new RegExp(rawKey));
+    assert.doesNotMatch(human, new RegExp(rawKey));
+  }
 });

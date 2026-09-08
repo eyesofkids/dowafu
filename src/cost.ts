@@ -21,6 +21,18 @@
 
 import type { ModelPricing, NormalizedUsage, ProviderConfig } from "./types.js";
 
+// _docs/dispatch/v0_5_0/facts_output_cap.md §六：65,536（2^16）＝實測單輪 max 53,391
+// （deepseek-v4-flash，96.6% 是 reasoning）加約 22% 餘裕，且遠高於 OpenAI 官方建議的
+// 25,000 下限。四家 adapter 共用同一個常數（見 responses.ts／gemini-native.ts／
+// anthropic-messages.ts），改一處三家跟著動——不得在各 adapter 各自寫死字面量。
+export const OUTPUT_TOKEN_CAP = 65_536;
+
+// 票 cost-cap §D：實測 75 次 spoke 級派工最多只跑到 15 輪（facts_output_cap.md §四），
+// 降到 20 不影響任何一次既有派工；輪數對成本上界是線性的（estimateHardCapUsd）。
+// 放在這裡（不放 cli-args.ts）是為了讓 ticket-store.ts 也能匯入而不與 cli-args.ts 互相
+// 匯入成環——cli-args.ts 經 mcp/http.ts → mcp/protocol.ts 會匯回 ticket-store.ts。
+export const DEFAULT_MAX_TOOL_CALLS = 20;
+
 // exhaustive 對照表，缺一支會被 TypeScript 擋下——與 usage.ts 的 usageProviderKeyFor
 // 同樣理由：不留「其餘」預設分支，逼新增第四家 provider 時必須手動同步。
 const REASONING_INCLUDED_IN_OUTPUT: Record<ProviderConfig["api"], boolean> = {
@@ -65,4 +77,22 @@ export function estimateCostUsd(
     (cacheWriteTokens / 1_000_000) * cacheWritePricePerM +
     (billableOutputTokens / 1_000_000) * pricing.outputPerM
   );
+}
+
+// 票 cost-cap §B：呼叫前的絕對上界，不是預測——與 estimateCostUsd（事後實算）互不相干，
+// 不吃 usage。R = maxToolCalls + 1（最後一輪不呼叫 tool，見 §D／cli-args.ts）；
+// 每輪都可能撞到 output 天花板，且最壞情況下每輪重送全部初始 prompt（無 cached 折扣）。
+// 實測顯示這是實際花費的 20–30 倍（facts_output_cap.md §六）——那是上界的本質，不是算錯；
+// 不得為了讓數字好看而調整這支算式，要調的是輪數上限（maxToolCalls）。
+// 缺價目資料時回傳 null，不是 0——與 estimateCostUsd 同一條規矩（§4）。
+export function estimateHardCapUsd(
+  estimatedPromptTokens: number,
+  maxToolCalls: number,
+  pricing: ModelPricing | undefined,
+): number | null {
+  if (!pricing) return null;
+  const rounds = maxToolCalls + 1;
+  const outputCapTokens = OUTPUT_TOKEN_CAP * rounds;
+  const inputCapTokens = estimatedPromptTokens * rounds;
+  return (inputCapTokens / 1_000_000) * pricing.inputPerM + (outputCapTokens / 1_000_000) * pricing.outputPerM;
 }
