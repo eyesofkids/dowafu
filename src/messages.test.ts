@@ -40,6 +40,16 @@ test("m()：1 參數 key", () => {
   assert.equal(m("en", "missingProviders", "/x/providers.json"), "providers.json not found: /x/providers.json");
 });
 
+test("m()：佇列既有結果提醒與非法 lang 訊息中英都有且文字不同", () => {
+  const zhReminder = m("zh", "mcpPriorResultsReminder", 2);
+  const enReminder = m("en", "mcpPriorResultsReminder", 2);
+  assert.match(zhReminder, /提醒.*不是錯誤/);
+  assert.match(enReminder, /Reminder.*not an error/);
+  assert.notEqual(zhReminder, enReminder);
+  assert.match(m("zh", "mcpSubmitInvalidLang", "fr", "en、zh-tw、zh"), /未建立 job/);
+  assert.match(m("en", "mcpSubmitInvalidLang", "fr", "en, zh-tw, zh"), /No job was created/);
+});
+
 // D1 之後產物只在 DB。這三則以前都印一個假路徑（`db:<id>/`），其中兩則還叫使用者去
 // 「清掉那個目錄」——一個不存在的目錄。改寫時發現三則都沒有任何測試守著措辭，
 // 所以在這裡補上：它們是使用者唯一會看到的說明，錯了不會有任何東西變紅。

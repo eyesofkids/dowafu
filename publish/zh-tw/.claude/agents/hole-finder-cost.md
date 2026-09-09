@@ -1,6 +1,6 @@
 ---
 name: hole-finder-cost
-description: 成本閘門、計費呼叫順序視角的找漏洞 spoke。唯讀。僅由 /find-holes 派工。
+description: 成本閘門、計費呼叫順序視角的找漏洞 spoke。唯讀。由 /find-holes（內派）或 /find-holes-external（外派）派工。
 model: sonnet
 tools: Read, Grep, Glob
 ---

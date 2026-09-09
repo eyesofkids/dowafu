@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { test } from "node:test";
 import { openDb } from "./db.js";
-import { approveJob, claimNextJob, findJobsByIdPrefix, finishJob, listPendingApprovalJobs, reapInterruptedJobs, rejectJob, submitJob } from "./job.js";
+import { approveJob, claimNextJob, countTicketResultRuns, findJobsByIdPrefix, finishJob, listPendingApprovalJobs, reapInterruptedJobs, rejectJob, submitJob } from "./job.js";
 import { createTicket } from "./ticket-store.js";
 
 function resultCost(db: ReturnType<typeof openDb>, jobId: string): number | null {
@@ -32,6 +32,22 @@ test("job：submit 預設待核准，只有 approve 後才可被認領", () => {
     assert.equal(claimNextJob(db), null);
     assert.equal(approveJob(db, job.id)?.status, "approved");
     assert.equal(claimNextJob(db)?.status, "running");
+  });
+});
+
+test("job：結果次數聯集 CLI ticket key 與 queue job key，summary 與 spoke 不重複計次", () => {
+  withDb((db) => {
+    ticket(db);
+    // CLI direct run: both rows share the ticket-name key.
+    db.prepare("INSERT INTO results (job_id, agent, output) VALUES (?, ?, ?)").run("ticket", "__summary__", "summary");
+    db.prepare("INSERT INTO results (job_id, agent, output) VALUES (?, ?, ?)").run("ticket", "reviewer", "direct result");
+    // Queue runs: each job-id key has the same summary-plus-spoke shape.
+    for (const id of ["queued-1", "queued-2"]) {
+      submitJob(db, "ticket", id);
+      db.prepare("INSERT INTO results (job_id, agent, output) VALUES (?, ?, ?)").run(id, "__summary__", "summary");
+      db.prepare("INSERT INTO results (job_id, agent, output) VALUES (?, ?, ?)").run(id, "reviewer", "queued result");
+    }
+    assert.equal(countTicketResultRuns(db, "ticket"), 3);
   });
 });
 

@@ -1,6 +1,6 @@
 ---
 name: hole-finder-feasibility
-description: 可行性、可實作性視角的找漏洞 spoke。只依 hub 提供的 need-to-know 工單工作，唯讀。僅由 /find-holes 派工。
+description: 可行性、可實作性視角的找漏洞 spoke。只依 hub 提供的 need-to-know 工單工作，唯讀。由 /find-holes（內派）或 /find-holes-external（外派）派工。
 model: sonnet
 tools: Read, Grep, Glob
 ---

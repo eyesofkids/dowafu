@@ -118,9 +118,13 @@ export function runCliJob(
 ): Promise<{ error?: string }> {
   const sourceMode = fileURLToPath(import.meta.url).endsWith(".ts");
   const cliPath = fileURLToPath(new URL(sourceMode ? "./cli.ts" : "./cli.js", import.meta.url));
+  // v5 jobs carry an explicit language; rows queued by an older client keep NULL and retain
+  // the daemon-startup fallback.  Pass the resolved value to the child so its prompt and
+  // stdout use the same language as the daemon's own failure message.
+  const jobLang = job.lang ?? lang;
   const args = sourceMode
-    ? ["--import", "tsx", cliPath, job.ticket, "--yes", "--job-id", job.id, "--db", dbPath]
-    : [cliPath, job.ticket, "--yes", "--job-id", job.id, "--db", dbPath];
+    ? ["--import", "tsx", cliPath, job.ticket, "--yes", "--job-id", job.id, "--db", dbPath, "--lang", jobLang]
+    : [cliPath, job.ticket, "--yes", "--job-id", job.id, "--db", dbPath, "--lang", jobLang];
   return new Promise((resolve) => {
     const child: ChildProcess = deps.spawn(process.execPath, args, { stdio: ["inherit", "inherit", "pipe"], env: process.env });
     let stderrTail = Buffer.alloc(0);
@@ -129,10 +133,10 @@ export function runCliJob(
       deps.stderr.write(chunk);
       stderrTail = Buffer.concat([stderrTail, chunk]).subarray(-WORKER_STDERR_TAIL_BYTES);
     });
-    child.once("error", (err) => resolve({ error: m(lang, "daemonWorkerSpawnFailed", maskString(String(err))) }));
+    child.once("error", (err) => resolve({ error: m(jobLang, "daemonWorkerSpawnFailed", maskString(String(err))) }));
     child.once("exit", (code, signal) => {
       if (code === 0) resolve({});
-      else resolve({ error: workerFailureMessage(lang, code, signal, stderrTail.toString("utf8")) });
+      else resolve({ error: workerFailureMessage(jobLang, code, signal, stderrTail.toString("utf8")) });
     });
   });
 }

@@ -336,6 +336,29 @@ test("auditSpoke：回歸——正常回報（無佔位符）→ templatePlaceho
   assert.equal(result.observationCount, 1);
 });
 
+test("OBSERVATION_PATTERNS：既有八條字面量原封不動，避免稽核格式在本票被收緊或漂移", () => {
+  const source = readFileSync(fileURLToPath(new URL("./audit.ts", import.meta.url)), "utf8");
+  const start = source.indexOf("const OBSERVATION_PATTERNS");
+  const end = source.indexOf("];", start);
+  assert.ok(start >= 0 && end > start, "找不到 OBSERVATION_PATTERNS 陣列");
+  const actual = source
+    .slice(start, end)
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => /^\/(?!\/)/.test(line))
+    .map((line) => line.replace(/,\s*(?:\/\/.*)?$/, ""));
+  assert.deepEqual(actual, [
+    "/^\\d+\\.\\s/",
+    "/^\\*\\*\\d+\\.\\s/",
+    "/^(?:\\*\\*)?觀察\\s*\\d+(?:[.-]\\d+)?(?:[^\\n:：]*)?(?:\\*\\*)?[:：]/",
+    "/^#{2,4}\\s*觀察\\s*\\d+/",
+    "/^(?:\\*\\*)?Observation\\s*\\d+(?:[.-]\\d+)?(?:[^\\n:：]*)?(?:\\*\\*)?[:：]/i",
+    "/^#{2,4}\\s*Observation\\s*\\d+/i",
+    "/^#{2,4}\\s*\\d+[.、]/",
+    "/^Q\\d+-\\d+\\s/",
+  ]);
+});
+
 // 工單 B2 §五：i18n 12 格重跑三格「無法計數」的實際形態，字面取自那三格的真實產物。
 
 test("auditSpoke：「**觀察 N-N**」連字號分隔正確計數（i18n-readme-dsfl-r2 實際格式）", () => {

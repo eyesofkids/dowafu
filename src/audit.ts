@@ -28,8 +28,8 @@ function getSection(sections: Map<string, string>, names: string[]): string | un
 // 比對方式維持精確集合比對不變，只改路徑抽取的容許字元。
 const PATH_REGEX = /`?([\w.\-[\]]+(?:\/[\w.\-[\]]+)+\.[A-Za-z0-9]{1,10})(?::\d+)?`?/g;
 
-// 工單 X1 v1.1 §二：模板佔位符字面若留在回報裡（spoke 忘了填空），只有標題欄變成雜訊，
-// 觀察計數不受影響——四格產物實測零標記。掃描不看語言，中英兩套一起查。
+// 工單 report-format §二：已知污染標記若留在回報裡，只有稽核欄變成 fail，觀察計數與 job
+// status 都不受影響。掃描不看語言，中英兩套一起查，並保留模板已淘汰的標記以辨識舊污染。
 export type TemplatePlaceholderHit = { placeholder: string; count: number };
 
 function countOccurrences(text: string, needle: string): number {

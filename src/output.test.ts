@@ -148,7 +148,7 @@ test("buildSummaryMarkdown：非零讀取時不顯示警告，但仍顯示工具
 // 工單 X1 v1.1 §二：模板佔位符若被留在回報裡，列出是哪幾個、各幾次；§五、§六：稽核欄
 // 由「收尾句／觀察／清單外引用／無法驗證欄／疑似禁止內容」5 格改為「收尾句／觀察／
 // 無法驗證欄／佔位符」4 格。
-test("buildSummaryMarkdown：佔位符欄列出命中的佔位符與次數（zh／en，手寫字面量）", () => {
+test("buildSummaryMarkdown：佔位符命中是可操作的 fail（zh／en，手寫字面量）", () => {
   const auditMap = new Map([
     [
       "hole-finder-feasibility",
@@ -169,7 +169,7 @@ test("buildSummaryMarkdown：佔位符欄列出命中的佔位符與次數（zh�
     toolCallMap,
     "zh",
   );
-  assert.match(mdZh, /佔位符:<觀察>×4, <\/觀察>×2/);
+  assert.match(mdZh, /佔位符:fail（內容可用，但含 6 處佔位符標記，交付前請清理）/);
 
   const mdEn = buildSummaryMarkdown(
     "t1",
@@ -178,16 +178,29 @@ test("buildSummaryMarkdown：佔位符欄列出命中的佔位符與次數（zh�
     toolCallMap,
     "en",
   );
-  assert.match(mdEn, /Template placeholders:<觀察>×4, <\/觀察>×2/);
+  assert.match(mdEn, /Template placeholders:fail \(content is usable, but contains 6 placeholder marker\(s\); clean them before delivery\)/);
 });
 
-test("buildSummaryMarkdown：佔位符未命中時顯示無／none（既有風格）", () => {
+test("buildSummaryMarkdown：佔位符未命中時顯示 pass（zh／en）", () => {
   const auditMap = new Map([["hole-finder-cost", mkAudit({ templatePlaceholdersFound: [] })]]);
   const toolCallMap = new Map([["hole-finder-cost", mkToolCallAudit()]]);
   const mdZh = buildSummaryMarkdown("t1", [mkResult({ agent: "hole-finder-cost" })], auditMap, toolCallMap, "zh");
-  assert.match(mdZh, /佔位符:無/);
+  assert.match(mdZh, /佔位符:pass/);
   const mdEn = buildSummaryMarkdown("t1", [mkResult({ agent: "hole-finder-cost" })], auditMap, toolCallMap, "en");
-  assert.match(mdEn, /Template placeholders:none/);
+  assert.match(mdEn, /Template placeholders:pass/);
+});
+
+test("buildSummaryMarkdown：佔位符只影響稽核格，不改既有 succeeded 狀態", () => {
+  const auditMap = new Map([["hole-finder-cost", mkAudit({ templatePlaceholdersFound: [{ placeholder: "<observation>", count: 1 }] })]]);
+  const markdown = buildSummaryMarkdown(
+    "t1",
+    [mkResult({ agent: "hole-finder-cost", status: "succeeded" })],
+    auditMap,
+    new Map([["hole-finder-cost", mkToolCallAudit()]]),
+    "en",
+  );
+  assert.match(markdown, /\| hole-finder-cost .* \| succeeded \|/);
+  assert.match(markdown, /Template placeholders:fail/);
 });
 
 test("buildSummaryMarkdown：audit 與 toolCallAudit 皆缺失時仍印 (無法稽核)，不拋錯（防禦分支，zh／en）", () => {

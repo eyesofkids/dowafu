@@ -1,6 +1,6 @@
 ---
 name: hole-finder-cost
-description: Hole-finder spoke focused on the cost-gating and billed-call-ordering lens. Read-only. Dispatched only by /find-holes.
+description: Hole-finder spoke focused on the cost-gating and billed-call-ordering lens. Read-only. Dispatched by /find-holes (in-process) or /find-holes-external (external).
 model: sonnet
 tools: Read, Grep, Glob
 ---

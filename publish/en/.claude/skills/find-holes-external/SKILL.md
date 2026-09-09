@@ -35,11 +35,15 @@ The tool is `dowafu` (a local CLI, already installed globally); invoke it with y
 
 ### You are a Claude Code agent
 
-Three things; everything else follows the process below:
+Four things; everything else follows the process below:
 
 - **Without `--yes` the CLI aborts immediately and calls no API** (stdin is not a TTY, so nobody can answer the confirmation prompt). That is a mechanical guarantee — but it stops "nobody is present", not "you decided to run it yourself"
 - **The terminal streams live output** during the run: per-round tokens and tool calls. That channel is reliable
 - `dowafu` is on PATH; issue the command directly
+- **To tell whether MCP is available, check whether you hold the `dispatch_*` tools** — do
+  **not** go by connection errors in the system prompt; those may refer to a *different*
+  server with a similar name. To be sure, actually call `dispatch_tickets` once: if the tool
+  is not in your list you cannot invoke it, and claim meets fact immediately
 
 ### You are not a Claude Code agent
 

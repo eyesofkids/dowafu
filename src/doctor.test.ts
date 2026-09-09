@@ -378,7 +378,9 @@ test("buildDoctorReport：回歸——本 repo 實際目錄跑 --doctor，四支
   // 熱修補（2026-08-15）：排序基準是「去掉 .md 的名字」，不是檔名——否則 '-'(45) < '.'(46)
   // 會讓無後綴的 hole-finder 排到 hole-finder-cost 之後，看起來像被降級。
   assert.match(block, /hole-finder, hole-finder-cost, hole-finder-feasibility, hole-finder-safety/);
-  assert.match(block, /1 more without a closing line: explore-haiku/);
+  // e2e_fixes ⑤（log 的 E4）：explore-haiku 不是 lens 而是 Claude Code 的探索 sub-agent，
+  // 舊措辭「無收尾句」把它講成一個不完整的 lens，實測誘導 agent 誤讀。
+  assert.match(block, /1 other agent file\(s\), not lenses: explore-haiku/);
 });
 
 // 額外：providers 載入失敗時印失敗原因、不中止（buildDoctorReport 本身不拋）

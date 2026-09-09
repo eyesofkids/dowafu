@@ -194,6 +194,18 @@ const MIGRATIONS: Migration[] = [
       if (!columns.has("last_test_succeeded")) db.exec("ALTER TABLE provider_keys ADD COLUMN last_test_succeeded INTEGER");
     },
   },
+  // queue-lang-rerun §A: old queued rows deliberately remain NULL so they keep the daemon's
+  // startup-language behavior.  Inspect columns even when a downgraded fixture already has
+  // user_version 5; SQLite has no ADD COLUMN IF NOT EXISTS form for this migration.
+  {
+    version: 5,
+    up: (db) => {
+      const columns = new Set(
+        (db.prepare("PRAGMA table_info(jobs)").all() as Array<{ name: string }>).map((column) => column.name),
+      );
+      if (!columns.has("lang")) db.exec("ALTER TABLE jobs ADD COLUMN lang TEXT");
+    },
+  },
 ];
 
 const LATEST_SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1].version;

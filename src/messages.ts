@@ -120,6 +120,8 @@ type MessageArgs = {
   mcpEnabledModelsTitle: [];
   mcpEnabledModelRow: [provider: string, model: string];
   mcpSubmitQueued: [jobId: string];
+  mcpSubmitInvalidLang: [value: string, available: string];
+  mcpPriorResultsReminder: [runs: number];
   mcpApproveCommand: [command: string];
   mcpJobStarted: [at: string];
   mcpJobFinished: [at: string];
@@ -282,9 +284,9 @@ type MessageArgs = {
   observationCountCell: [display: string];
   cannotCountObservations: [];
   cannotVerifySectionCell: [passFail: string];
-  // 工單 X1 v1.1 §二：模板佔位符稽核欄——單一佔位符字面＋次數的格式化，以及整格組裝。
-  templatePlaceholderEntry: [placeholder: string, count: number];
-  templatePlaceholdersCell: [detail: string];
+  // 工單 report-format §三 B：佔位符是交付前需清理的稽核失敗，不改 job status。
+  templatePlaceholdersPassCell: [];
+  templatePlaceholdersFailCell: [count: number];
   auditUnavailable: [];
   summaryHeader: [ticketId: string];
 
@@ -395,6 +397,17 @@ const MESSAGES: Record<Lang, MessageDefs> = {
 
     helpText: (cmd) => `用法：${cmd} <ticket-id> [options]
 
+子指令（各自有自己的 --help／用法訊息）：
+  ${cmd} ticket ...        建立、匯入、檢視工單
+  ${cmd} result <id>       印出一次派工的結果（各 spoke 原文與稽核表）
+  ${cmd} key               設定 provider API key（互動選單）
+  ${cmd} providers ...     型號白名單與啟用狀態
+  ${cmd} token ...         入站 HTTP 憑證的發／列／撤銷
+  ${cmd} approve [jobId]   核准佇列中等待的派工
+  ${cmd} serve             啟動常駐 daemon（含 MCP 的 HTTP binding）
+  ${cmd} serve --stop [--yes] 停止常駐 daemon；有執行中的 job 時會先確認
+  ${cmd} mcp               以 stdio 提供 MCP server
+
   --lang <en|zh-tw>        CLI 輸出與 spoke prompt 的語言，預設 en
   --repo-root <dir>        白名單邊界與 .claude/agents 的根，預設 cwd
   --db <path>              SQLite 工單與產物資料庫，預設 DISPATCH_HOME/dowafu.db
@@ -415,18 +428,7 @@ const MESSAGES: Record<Lang, MessageDefs> = {
   --yes                    略過派工確認。非互動環境（stdin 不是 TTY）沒帶就中止
   --doctor                 印出設定自檢（不呼叫 API、不花錢）後結束（exit 0）
   --help, -h               印本說明後結束（exit 0）
-  --version, -V            印版本號後結束（exit 0）
-
-子指令（各自有自己的 --help／用法訊息）：
-  ${cmd} ticket ...        建立、匯入、檢視工單
-  ${cmd} result <id>       印出一次派工的結果（各 spoke 原文與稽核表）
-  ${cmd} key               設定 provider API key（互動選單）
-  ${cmd} providers ...     型號白名單與啟用狀態
-  ${cmd} token ...         入站 HTTP 憑證的發／列／撤銷
-  ${cmd} approve [jobId]   核准佇列中等待的派工
-  ${cmd} serve             啟動常駐 daemon（含 MCP 的 HTTP binding）
-  ${cmd} serve --stop [--yes] 停止常駐 daemon；有執行中的 job 時會先確認
-  ${cmd} mcp               以 stdio 提供 MCP server`,
+  --version, -V            印版本號後結束（exit 0）`,
     availableLangValues: () => "en、zh-tw、zh",
     availableValuesSuffix: (values) => `（可用值：${values}）`,
     numberFlagInvalid: (name, value) => `--${name} 需要數字，收到：${value}`,
@@ -516,6 +518,8 @@ const MESSAGES: Record<Lang, MessageDefs> = {
     mcpEnabledModelsTitle: () => "已啟用型號白名單：",
     mcpEnabledModelRow: (provider, model) => `  ${provider}/${model}`,
     mcpSubmitQueued: (jobId) => `已排入佇列，job id = ${jobId}，狀態 pending_approval。尚未執行，須由人在終端機核准。`,
+    mcpSubmitInvalidLang: (value, available) => `dispatch_submit 的 lang 無效：${value}（可用值：${available}）。未建立 job。`,
+    mcpPriorResultsReminder: (runs) => `提醒：這張工單已有 ${runs} 次結果；這不是錯誤，仍可照常排入佇列。`,
     mcpApproveCommand: (command) => `請在終端機執行：${command}`,
     mcpJobStarted: (at) => `開始於 ${at}`,
     mcpJobFinished: (at) => `結束於 ${at}`,
@@ -682,8 +686,8 @@ const MESSAGES: Record<Lang, MessageDefs> = {
     observationCountCell: (display) => `觀察:${display}`,
     cannotCountObservations: () => "無法計數",
     cannotVerifySectionCell: (passFail) => `無法驗證欄:${passFail}`,
-    templatePlaceholderEntry: (placeholder, count) => `${placeholder}×${count}`,
-    templatePlaceholdersCell: (detail) => `佔位符:${detail}`,
+    templatePlaceholdersPassCell: () => "佔位符:pass",
+    templatePlaceholdersFailCell: (count) => `佔位符:fail（內容可用，但含 ${count} 處佔位符標記，交付前請清理）`,
     auditUnavailable: () => "(無法稽核)",
     summaryHeader: (ticketId) => `# dispatch summary — ${ticketId}
 
@@ -771,7 +775,7 @@ const MESSAGES: Record<Lang, MessageDefs> = {
     doctorLensLine: (value) => `  lens 定義   ${value}`,
     doctorLensFoundValue: (dirPath, total, closingCount, closingNames, noClosingSuffix) =>
       `${dirPath} 找到 ${total} 個定義檔，其中 ${closingCount} 個具備固定收尾句：\n${" ".repeat(14)}${closingNames}${noClosingSuffix}`,
-    doctorLensNoClosingSuffix: (count, names) => `\n${" ".repeat(14)}（另 ${count} 個無收尾句：${names}）`,
+    doctorLensNoClosingSuffix: (count, names) => `\n${" ".repeat(14)}（另有 ${count} 個不是 lens：${names}）`,
     doctorLensDirMissingValue: (dirPath) => `目錄不存在：${dirPath}`,
     doctorFooter: () => "本指令不呼叫任何 API，不會花錢。缺的項目怎麼補，見 README 的〈API keys〉一節。",
   },
@@ -781,6 +785,17 @@ const MESSAGES: Record<Lang, MessageDefs> = {
     dryRunNotice: () => "--dry-run: parsed, validated, estimated, and reported only; no API calls were made.",
 
     helpText: (cmd) => `Usage: ${cmd} <ticket-id> [options]
+
+Subcommands (each has its own usage message):
+  ${cmd} ticket ...        Create, import and inspect tickets
+  ${cmd} result <id>       Print the results of one dispatch (spoke output and audit table)
+  ${cmd} key               Set provider API keys (interactive menu)
+  ${cmd} providers ...     Model whitelist and enabled state
+  ${cmd} token ...         Issue, list and revoke inbound HTTP tokens
+  ${cmd} approve [jobId]   Approve a dispatch waiting in the queue
+  ${cmd} serve             Run the daemon (includes the MCP HTTP binding)
+  ${cmd} serve --stop [--yes] Stop the daemon; asks first if jobs are running
+  ${cmd} mcp               Serve MCP over stdio
 
   --lang <en|zh-tw>        Language for CLI output and spoke prompts, default en
   --repo-root <dir>        Root for the allowlist boundary and .claude/agents, default cwd
@@ -802,18 +817,7 @@ const MESSAGES: Record<Lang, MessageDefs> = {
   --yes                    Skip the dispatch confirmation. Aborts in non-interactive environments (stdin not a TTY) unless given
   --doctor                 Print the configuration self-check (no API call, no cost) and exit (exit 0)
   --help, -h               Print this help and exit (exit 0)
-  --version, -V            Print the version and exit (exit 0)
-
-Subcommands (each has its own usage message):
-  ${cmd} ticket ...        Create, import and inspect tickets
-  ${cmd} result <id>       Print the results of one dispatch (spoke output and audit table)
-  ${cmd} key               Set provider API keys (interactive menu)
-  ${cmd} providers ...     Model whitelist and enabled state
-  ${cmd} token ...         Issue, list and revoke inbound HTTP tokens
-  ${cmd} approve [jobId]   Approve a dispatch waiting in the queue
-  ${cmd} serve             Run the daemon (includes the MCP HTTP binding)
-  ${cmd} serve --stop [--yes] Stop the daemon; asks first if jobs are running
-  ${cmd} mcp               Serve MCP over stdio`,
+  --version, -V            Print the version and exit (exit 0)`,
     availableLangValues: () => "en, zh-tw, zh",
     availableValuesSuffix: (values) => ` (available: ${values})`,
     numberFlagInvalid: (name, value) => `--${name} requires a number, got: ${value}`,
@@ -903,6 +907,8 @@ Subcommands (each has its own usage message):
     mcpEnabledModelsTitle: () => "Enabled model allowlist:",
     mcpEnabledModelRow: (provider, model) => `  ${provider}/${model}`,
     mcpSubmitQueued: (jobId) => `Job queued: ${jobId}; status pending_approval. It has not started and needs terminal approval by a human.`,
+    mcpSubmitInvalidLang: (value, available) => `dispatch_submit lang is invalid: ${value} (available values: ${available}). No job was created.`,
+    mcpPriorResultsReminder: (runs) => `Reminder: this ticket already has ${runs} result run(s). This is not an error; it can still be queued.`,
     mcpApproveCommand: (command) => `Run this in a terminal: ${command}`,
     mcpJobStarted: (at) => `Started at ${at}`,
     mcpJobFinished: (at) => `Finished at ${at}`,
@@ -1083,8 +1089,9 @@ Subcommands (each has its own usage message):
     observationCountCell: (display) => `Observations:${display}`,
     cannotCountObservations: () => "uncountable",
     cannotVerifySectionCell: (passFail) => `Cannot-verify section:${passFail}`,
-    templatePlaceholderEntry: (placeholder, count) => `${placeholder}×${count}`,
-    templatePlaceholdersCell: (detail) => `Template placeholders:${detail}`,
+    templatePlaceholdersPassCell: () => "Template placeholders:pass",
+    templatePlaceholdersFailCell: (count) =>
+      `Template placeholders:fail (content is usable, but contains ${count} placeholder marker(s); clean them before delivery)`,
     auditUnavailable: () => "(audit unavailable)",
     summaryHeader: (ticketId) => `# dispatch summary — ${ticketId}
 
@@ -1175,7 +1182,7 @@ Subcommands (each has its own usage message):
     doctorLensLine: (value) => `  Lens defs    ${value}`,
     doctorLensFoundValue: (dirPath, total, closingCount, closingNames, noClosingSuffix) =>
       `${dirPath} holds ${total} definition file(s), ${closingCount} with a fixed closing line:\n${" ".repeat(15)}${closingNames}${noClosingSuffix}`,
-    doctorLensNoClosingSuffix: (count, names) => `\n${" ".repeat(15)}(${count} more without a closing line: ${names})`,
+    doctorLensNoClosingSuffix: (count, names) => `\n${" ".repeat(15)}(${count} other agent file(s), not lenses: ${names})`,
     doctorLensDirMissingValue: (dirPath) => `directory not found: ${dirPath}`,
     doctorFooter: () =>
       'This command calls no API and costs nothing. To fill in what is missing, see "API keys" in the README.',

@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
 import { now } from "./db.js";
+import type { Lang } from "./types.js";
 
 export const JOB_STATUSES = [
   "pending_approval",
@@ -17,6 +18,8 @@ export type JobStatus = (typeof JOB_STATUSES)[number];
 export type Job = {
   id: string;
   ticket: string;
+  // null is intentional: jobs queued before schema v5 retain the daemon's startup language.
+  lang: Lang | null;
   status: JobStatus;
   created_at: string;
   approved_at: string | null;
@@ -43,11 +46,31 @@ export function listPendingApprovalJobs(db: DatabaseSync): Job[] {
   return db.prepare("SELECT * FROM jobs WHERE status = 'pending_approval' ORDER BY created_at, id").all() as Job[];
 }
 
-export function submitJob(db: DatabaseSync, ticket: string, id: string = randomUUID()): Job {
+export function submitJob(db: DatabaseSync, ticket: string, id: string = randomUUID(), lang: Lang | null = null): Job {
   if (!db.prepare("SELECT 1 FROM tickets WHERE name = ?").get(ticket)) throw new Error(`ticket does not exist: ${ticket}`);
   const createdAt = now();
-  db.prepare("INSERT INTO jobs (id, ticket, status, created_at) VALUES (?, ?, 'pending_approval', ?)").run(id, ticket, createdAt);
+  db.prepare("INSERT INTO jobs (id, ticket, lang, status, created_at) VALUES (?, ?, ?, 'pending_approval', ?)").run(id, ticket, lang, createdAt);
   return getJob(db, id)!;
+}
+
+// A dispatch can leave one __summary__ row plus one row per spoke.  Count distinct result
+// keys rather than rows so a single run remains one reminder even when its summary is absent
+// or it has many spokes.  The UNION covers both historical CLI keys (ticket name) and queued
+// job keys (jobs.id for the same ticket) without double-counting a pathological overlap.
+export function countTicketResultRuns(db: DatabaseSync, ticket: string): number {
+  const row = db
+    .prepare(
+      `SELECT COUNT(*) AS count FROM (
+         SELECT job_id FROM results WHERE job_id = ? GROUP BY job_id
+         UNION
+         SELECT r.job_id
+           FROM jobs j JOIN results r ON r.job_id = j.id
+          WHERE j.ticket = ?
+          GROUP BY r.job_id
+       )`,
+    )
+    .get(ticket, ticket) as { count: number };
+  return Number(row.count);
 }
 
 export function approveJob(db: DatabaseSync, id: string): Job | null {

@@ -1,7 +1,7 @@
 import type { DatabaseSync } from "node:sqlite";
 import path from "node:path";
 import { defaultDbPath, openDb } from "../db.js";
-import { approveJob, findJobsByIdPrefix, getJob, submitJob, type Job } from "../job.js";
+import { approveJob, countTicketResultRuns, findJobsByIdPrefix, getJob, submitJob, type Job } from "../job.js";
 import { DAEMON_STALE_MS, daemonAlive, daemonStatePath, daemonWarning, type DaemonLiveness } from "../liveness.js";
 import { readProgress } from "../progress.js";
 import { m } from "../messages.js";
@@ -29,7 +29,10 @@ export const TOOLS: McpTool[] = [
     description: "Queue a DB ticket by name. It remains pending human terminal approval and is not executed by this tool.",
     inputSchema: {
       type: "object",
-      properties: { ticket: { type: "string", description: "DB ticket name, not a filesystem path" } },
+      properties: {
+        ticket: { type: "string", description: "DB ticket name, not a filesystem path" },
+        lang: { type: "string", enum: ["en", "zh-tw", "zh"], description: "Language for this queued job's CLI output and spoke prompts" },
+      },
       required: ["ticket"],
     },
   },
@@ -100,6 +103,16 @@ function stringParam(params: unknown, name: string): string | null {
   return typeof value === "string" && value.length > 0 ? value : null;
 }
 
+// Keep this acceptance and normalization identical to the CLI's --lang contract without
+// importing cli-args.ts: cli-args imports the MCP HTTP transport, so sharing it here would
+// create a protocol -> CLI args -> HTTP -> protocol runtime cycle.
+function parseSubmitLang(value: string): Lang | null {
+  const normalized = value.trim().toLowerCase();
+  if (normalized === "en") return "en";
+  if (normalized === "zh-tw" || normalized === "zh") return "zh";
+  return null;
+}
+
 function keyStatusText(lang: Lang, row: KeyStatusRow): string {
   if (row.maskedTail === null) return m(lang, "keyStatusMissing");
   const configured = m(lang, "keyStatusDb", row.maskedTail, row.updatedAt ? row.updatedAt.slice(0, 10) : "");
@@ -156,6 +169,8 @@ export function createProtocol(options: ProtocolOptions) {
         for (const { name: ticket } of names) {
           const doc = getTicketDoc(options.db, ticket, options.lang);
           lines.push(m(options.lang, "mcpTicketsRow", ticket, doc.spokes.length));
+          const priorRuns = countTicketResultRuns(options.db, ticket);
+          if (priorRuns > 0) lines.push(`  ${m(options.lang, "mcpPriorResultsReminder", priorRuns)}`);
           for (const spoke of doc.spokes) {
             lines.push(m(options.lang, "mcpTicketsSpoke", spoke.agent, spoke.provider, spoke.model, spoke.allow.length));
           }
@@ -171,11 +186,20 @@ export function createProtocol(options: ProtocolOptions) {
       case "dispatch_submit": {
         const ticket = stringParam(args, "ticket");
         if (!ticket) return text("dispatch_submit requires a non-empty ticket name", true);
+        const suppliedLang = record(args)?.lang;
+        let jobLang: Lang | null = null;
+        if (suppliedLang !== undefined) {
+          if (typeof suppliedLang !== "string") return text(m(options.lang, "mcpSubmitInvalidLang", "(not a string)", m(options.lang, "availableLangValues")), true);
+          jobLang = parseSubmitLang(suppliedLang);
+          if (jobLang === null) return text(m(options.lang, "mcpSubmitInvalidLang", suppliedLang, m(options.lang, "availableLangValues")), true);
+        }
         try {
-          const job = submitJob(options.db, ticket);
+          const priorRuns = countTicketResultRuns(options.db, ticket);
+          const job = submitJob(options.db, ticket, undefined, jobLang);
           const cliPath = path.resolve(process.argv[1] ?? "cli.js");
           const approveCommand = `node ${JSON.stringify(cliPath)} approve ${job.id.slice(0, 8)} --db ${JSON.stringify(options.dbPath)}`;
           const lines = [m(options.lang, "mcpSubmitQueued", job.id), m(options.lang, "mcpApproveCommand", approveCommand), formatTicket(options.db, ticket, options.lang)];
+          if (priorRuns > 0) lines.push(m(options.lang, "mcpPriorResultsReminder", priorRuns));
           const offline = warning();
           if (offline) lines.push(offline);
           return text(lines.join("\n"));

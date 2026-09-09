@@ -1,6 +1,6 @@
 ---
 name: hole-finder-safety
-description: 安全、併發競態、失敗態視角的找漏洞 spoke。深推理 lens，模型 opus。唯讀。僅由 /find-holes 派工。
+description: 安全、併發競態、失敗態視角的找漏洞 spoke。深推理 lens。唯讀。由 /find-holes（內派）或 /find-holes-external（外派）派工。
 model: opus
 tools: Read, Grep, Glob
 ---

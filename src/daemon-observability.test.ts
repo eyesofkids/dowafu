@@ -8,7 +8,7 @@ import { m } from "./messages.js";
 import type { Job } from "./job.js";
 
 const JOB: Job = {
-  id: "job-1", ticket: "ticket-1", status: "running", created_at: "2026-09-08T00:00:00.000Z", approved_at: null,
+  id: "job-1", ticket: "ticket-1", lang: "zh", status: "running", created_at: "2026-09-08T00:00:00.000Z", approved_at: null,
   claimed_at: null, heartbeat_at: null, finished_at: null, error: null, cost_usd: null,
 };
 
@@ -18,10 +18,12 @@ test("runCliJob：stderr tee 後遮罩寫入 error，並保留 exit code", async
   const child = Object.assign(events, { stderr: stderrEvents }) as unknown as ChildProcess;
   const written: string[] = [];
   let receivedStdio: unknown;
+  let receivedArgs: unknown;
   registerSecrets(["stored-secret-token"]);
   try {
     const outcome = runCliJob(JOB, "/tmp/dowafu.db", "en", {
       spawn: ((...args: unknown[]) => {
+        receivedArgs = args[1];
         receivedStdio = (args[2] as { stdio?: unknown }).stdio;
         return child;
       }) as typeof spawn,
@@ -31,13 +33,30 @@ test("runCliJob：stderr tee 後遮罩寫入 error，並保留 exit code", async
     events.emit("exit", 2, null);
     const result = await outcome;
     assert.deepEqual(receivedStdio, ["inherit", "inherit", "pipe"]);
+    assert.deepEqual((receivedArgs as string[]).slice(-2), ["--lang", "zh"], "job language must override the daemon fallback");
     assert.equal(written.join(""), "request failed: stored-secret-token\\n");
-    assert.match(result.error ?? "", /worker exited 2/);
+    assert.match(result.error ?? "", /worker 以 exit code 2 結束/);
     assert.match(result.error ?? "", /request failed/);
     assert.doesNotMatch(result.error ?? "", /stored-secret-token/);
   } finally {
     registerSecrets([]);
   }
+});
+
+test("runCliJob：舊 job 沒有 lang 時沿用 daemon 起動時語言", async () => {
+  const events = new EventEmitter();
+  const child = Object.assign(events, { stderr: new EventEmitter() }) as unknown as ChildProcess;
+  let receivedArgs: unknown;
+  const outcome = runCliJob({ ...JOB, lang: null }, "/tmp/dowafu.db", "en", {
+    spawn: ((...args: unknown[]) => {
+      receivedArgs = args[1];
+      return child;
+    }) as typeof spawn,
+    stderr: { write: () => true },
+  });
+  events.emit("exit", 0, null);
+  assert.deepEqual(await outcome, {});
+  assert.deepEqual((receivedArgs as string[]).slice(-2), ["--lang", "en"]);
 });
 
 test("worker failure：空 stderr 仍可讀，兩種語言不能固定回英文", () => {

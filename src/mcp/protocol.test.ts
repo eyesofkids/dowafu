@@ -42,6 +42,7 @@ function content(outcome: ReturnType<ReturnType<typeof createProtocol>["handleRp
 test("mcp protocol：宣告五個 tool，dispatch_approve 在內", () => {
   assert.deepEqual(TOOLS.map((tool) => tool.name), ["dispatch_tickets", "dispatch_submit", "dispatch_status", "dispatch_result", "dispatch_approve"]);
   assert.deepEqual(TOOLS.find((tool) => tool.name === "dispatch_submit")?.inputSchema.required, ["ticket"]);
+  assert.deepEqual((TOOLS.find((tool) => tool.name === "dispatch_submit")?.inputSchema.properties.lang as { enum: string[] }).enum, ["en", "zh-tw", "zh"]);
   assert.deepEqual(TOOLS.find((tool) => tool.name === "dispatch_approve")?.inputSchema.required, ["jobId", "hardCapUsd"]);
 });
 
@@ -93,6 +94,47 @@ test("mcp protocol：submit 立即回 job id、D2a 摘要與 daemon 離線警告
     assert.match(output, /Run this in a terminal: node .* approve [\w-]{8}/);
     assert.match(output, /queued but will not execute/);
     assert.equal((db.prepare("SELECT status FROM jobs WHERE id = ?").get(match[1]) as { status: string }).status, "pending_approval");
+  });
+});
+
+test("mcp protocol：submit lang 正規化存進 job；非法值不建 job，並列出可用值", () => {
+  withProtocol((protocol, db) => {
+    const valid = content(
+      protocol.handleRpc({ id: 20, method: "tools/call", params: { name: "dispatch_submit", arguments: { ticket: "ticket-a", lang: "ZH-TW" } } }),
+    );
+    const jobId = valid.match(/Job queued: ([\w-]+)/)?.[1];
+    assert.ok(jobId);
+    assert.equal((db.prepare("SELECT lang FROM jobs WHERE id = ?").get(jobId) as { lang: string | null }).lang, "zh");
+
+    const invalid = toolResult(
+      protocol.handleRpc({ id: 21, method: "tools/call", params: { name: "dispatch_submit", arguments: { ticket: "ticket-a", lang: "fr" } } }),
+    );
+    assert.equal(invalid.isError, true);
+    assert.match(invalid.content[0].text, /available values: en, zh-tw, zh/);
+    assert.match(invalid.content[0].text, /No job was created/);
+    assert.equal((db.prepare("SELECT COUNT(*) AS count FROM jobs").get() as { count: number }).count, 1);
+  });
+});
+
+test("mcp protocol：已有結果提醒同時計 CLI 與 queue key，且 submit／approve 不受阻擋", () => {
+  withProtocol((protocol, db) => {
+    db.prepare("INSERT INTO results (job_id, agent, output) VALUES (?, ?, ?)").run("ticket-a", "__summary__", "direct summary");
+    db.prepare("INSERT INTO results (job_id, agent, output) VALUES (?, ?, ?)").run("ticket-a", "reviewer", "direct result");
+    const historical = submitJob(db, "ticket-a", "historical-job");
+    db.prepare("INSERT INTO results (job_id, agent, output) VALUES (?, ?, ?)").run(historical.id, "__summary__", "queued summary");
+    db.prepare("INSERT INTO results (job_id, agent, output) VALUES (?, ?, ?)").run(historical.id, "reviewer", "queued result");
+
+    const tickets = content(protocol.handleRpc({ id: 22, method: "tools/call", params: { name: "dispatch_tickets", arguments: {} } }));
+    assert.match(tickets, /already has 2 result run\(s\)/, "one direct and one queued run must both be visible");
+
+    const submit = content(protocol.handleRpc({ id: 23, method: "tools/call", params: { name: "dispatch_submit", arguments: { ticket: "ticket-a" } } }));
+    assert.match(submit, /already has 2 result run\(s\)/);
+    const jobId = submit.match(/Job queued: ([\w-]+)/)?.[1];
+    const hardCapUsd = submit.match(/Hard cap \$([\d.]+)/)?.[1];
+    assert.ok(jobId && hardCapUsd, submit);
+    const approved = content(protocol.handleRpc({ id: 24, method: "tools/call", params: { name: "dispatch_approve", arguments: { jobId, hardCapUsd } } }));
+    assert.match(approved, /Approved job/);
+    assert.equal((db.prepare("SELECT status FROM jobs WHERE id = ?").get(jobId) as { status: string }).status, "approved");
   });
 });
 

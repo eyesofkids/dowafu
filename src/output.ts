@@ -30,11 +30,15 @@ function formatFinishReasonCell(r: SpokeRunResult, lang: Lang): string | null {
   return m(lang, "finishReasonWarningCell", r.finishReason ?? "unknown");
 }
 
-// 工單 X1 v1.1 §二：模板佔位符若被留在回報裡，列出是哪幾個、各幾次；沒有命中維持既有
-// 風格印「無」。
+// 工單 report-format §三 B：污染標記只改稽核欄的 pass／fail 語義，絕不改 SpokeRunResult
+// （其 status 仍由執行器／job 狀態機決定）。失敗格給可操作的總命中數，細節仍在 JSON audit。
 function formatPlaceholdersCell(hits: TemplatePlaceholderHit[], lang: Lang): string {
-  if (hits.length === 0) return m(lang, "noneLabel");
-  return hits.map((h) => m(lang, "templatePlaceholderEntry", h.placeholder, h.count)).join(", ");
+  if (hits.length === 0) return m(lang, "templatePlaceholdersPassCell");
+  return m(
+    lang,
+    "templatePlaceholdersFailCell",
+    hits.reduce((total, hit) => total + hit.count, 0),
+  );
 }
 
 export function buildSummaryMarkdown(
@@ -74,7 +78,7 @@ export function buildSummaryMarkdown(
           a.observationCount !== null ? String(a.observationCount) : m(lang, "cannotCountObservations"),
         ),
         m(lang, "cannotVerifySectionCell", a.cannotVerifySectionPresent ? "pass" : "fail"),
-        m(lang, "templatePlaceholdersCell", formatPlaceholdersCell(a.templatePlaceholdersFound, lang)),
+        formatPlaceholdersCell(a.templatePlaceholdersFound, lang),
       );
     }
     const auditCell = cells.length > 0 ? cells.join(" / ") : m(lang, "auditUnavailable");

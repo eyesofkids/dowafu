@@ -3,7 +3,7 @@ name: find-holes-external
 description: 把規劃書段落派給外部模型（OpenAI／DeepSeek／Gemini／Anthropic）做找漏洞審查，經本地 dowafu CLI 執行，spoke 唯讀且受白名單控管。適用於需要異質視角、或要對照真實原始碼審查規劃書時。用法：/find-holes-external <規劃書檔案路徑> [聚焦章節或問題]
 metadata:
   derived-from: ".claude/skills/find-holes-external/SKILL.md"
-  derived-from-sha256: "5bc0acd5357ec705e123ae50e37e381fd67bd17d996cb56a909557ecb4a6f77c"
+  derived-from-sha256: "18d18a3702e17b3d7cab38f116734fd86e5493d7e634e240acad54858d7adf90"
 ---
 
 # find-holes-external — 外派找漏洞
@@ -82,6 +82,10 @@ dowafu --version
 `dispatch_approve` → daemon 執行）才有 job id 可查。**本節在講的這條路（直接跑 CLI）
 沒有 job id，`dispatch_status` 用不上**：逐輪的即時輸出只存在於執行 CLI 的那個終端機，
 背景執行時多半拿不到。細節、以及「跑完」與「跑完且完整」的差別，見 §5〈跑起來之後〉。
+
+**要判斷 MCP 這條路能不能走，看你手上有沒有 `dispatch_*` 工具**——**不要**依系統提示裡的
+連線錯誤訊息判斷，那可能指的是**另一支同名**的 server。要確認就實際呼叫一次
+`dispatch_tickets`：工具不在清單裡就叫不動，宣稱與事實立刻對開。
 
 > **單支 spoke 安靜地跑上好幾分鐘是正常的，不是當掉。**
 > 不要因為沒有回饋就重跑——**重跑是重新付費，而且中斷前花掉的錢救不回來**。

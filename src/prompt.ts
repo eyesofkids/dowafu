@@ -11,9 +11,10 @@ import type { Lang } from "./types.js";
 // 結束，因為稽核靠那句話判斷回報有沒有寫完。翻譯時刻意保留祈使句與「原文是主要依據、
 // 行號是輔助」這兩處措辭：實測顯示 spoke 對句型敏感，描述句會被當成建議略過。
 const REPORT_TEMPLATE_EN = `# Observations
-1. <observation>
+1. Example: a retry after a timeout can repeat a write operation.
    Evidence: <file:line, or explicit reasoning>
    Quote: <when citing a file, copy that one line verbatim; write "reasoning" when the evidence is reasoning>
+   —— follow this shape for every observation; replace every angle-bracket marker with actual content and do not leave any behind.
    —— when citing a file, the path must match the string in "Allowed reads" character for character; do not abbreviate it or write the filename alone.
    —— **the quote is the primary evidence, the line number is secondary**: the hub locates the
      real position by matching the quote, so quote verbatim. Copy only the line you are sure
@@ -25,9 +26,10 @@ const REPORT_TEMPLATE_EN = `# Observations
 These are observations and questions. Whether to adopt them is for the hub and the user to decide.`;
 
 const REPORT_TEMPLATE = `# 觀察
-1. <觀察>
+1. 範例：逾時後的重試作業可能重複執行一次寫入。
    依據：<檔案:行號 或 明確推理>
    原文：<引用檔案時，逐字複製該處的一行原文；依據為推理時寫「推理」>
+   ——每條觀察均依此形狀撰寫；所有角括號標記都要換成實際內容，不要保留。
    ——引用檔案時，路徑須與「允許讀取」清單中的字串逐字相同，不得縮寫或只寫檔名。
    ——**原文是主要依據，行號是輔助**：hub 會用原文比對出實際位置，所以原文必須逐字，
      寧可只複製確定的那一行，也不要憑印象重寫。
@@ -37,9 +39,9 @@ const REPORT_TEMPLATE = `# 觀察
 
 以上為觀察與問題，採用與否由 hub 與使用者裁決。`;
 
-// 工單 X1 v1.1 §二：模板要求 spoke 填空，卻沒有檢查空有沒有被填——四格產物實測中過招
-// （`<觀察>` 字面留在回報裡）。清單從這裡匯出，audit.ts 不得重打一份字串，否則模板改了
-// 檢查就會跟著失效。
+// 工單 report-format §二：這是「已知污染標記」清單，不再與模板雙向同源。模板現有的尖括號
+// 標記仍須收錄（prompt.test.ts 防漏），而已移除的 <觀察>／<observation> 也必須保留：真實
+// spoke 曾把它們原樣帶進交付物。清單從這裡匯出，audit.ts 不得重打一份字串。
 export const REPORT_PLACEHOLDERS = [
   "<觀察>",
   "<檔案:行號 或 明確推理>",

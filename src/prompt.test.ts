@@ -153,25 +153,39 @@ test("buildFinalizeUserText：lang=en 時給英文收束指示", () => {
   assert.match(buildFinalizeUserText("zh"), /不要再呼叫工具/);
 });
 
-// 工單 X1 v1.1 §二驗收補件：REPORT_PLACEHOLDERS 是從 REPORT_TEMPLATE／REPORT_TEMPLATE_EN
-// 手打出來的第二份清單，兩者之間沒有任何機制強制同源——改模板的人要自己記得同步改常數，
-// 沒有東西會擋。這裡把雙向一致性鎖住，兩個方向都要測：
-//   方向一：清單裡的每一條都真的在模板裡（清單多寫、模板沒有 → 紅）
-//   方向二：模板裡用到的每一個佔位符都在清單裡（模板加了新的、清單沒跟上 → 紅，這是重點）
+// 工單 report-format §二：REPORT_PLACEHOLDERS 的語義由「模板的所有佔位符」改為「已知污染
+// 標記」。X1 v1.1 的方向一（清單中的每條皆在模板）因此不再適用：<觀察>／<observation>
+// 已從模板移除，卻是實測過、必須繼續抓的交付污染。方向二仍保留，防模板日後新增尖括號
+// 佔位符卻漏進偵測清單。
 // 刻意不重構 REPORT_TEMPLATE／REPORT_TEMPLATE_EN 字面（prompt.ts:10-12：那些措辭對 spoke
 // 的行為敏感，實測描述句會被當建議略過），也不把模板常數另外 export 出來給測試用——
 // buildSystemPrompt("", lang) 用空字串 agent body 就能拿到「工具說明＋回報模板」的完整文本，
 // 不必擴大對外 API。
 
-test("REPORT_PLACEHOLDERS：清單裡每一條都真的出現在其中一份 system prompt 裡（清單有、模板沒有 → 紅）", () => {
+test("REPORT_PLACEHOLDERS：已淘汰的觀察標記仍在偵測清單、但不再出現在模板（防污染回歸）", () => {
   const zhPrompt = buildSystemPrompt("", "zh");
   const enPrompt = buildSystemPrompt("", "en");
-  for (const placeholder of REPORT_PLACEHOLDERS) {
-    assert.ok(
+  for (const placeholder of ["<觀察>", "<observation>"]) {
+    assert.ok(REPORT_PLACEHOLDERS.includes(placeholder), `已知污染標記 "${placeholder}" 不得從偵測清單移除`);
+    assert.equal(
       zhPrompt.includes(placeholder) || enPrompt.includes(placeholder),
-      `REPORT_PLACEHOLDERS 裡的 "${placeholder}" 沒有出現在任何一份 system prompt 裡——清單與模板已經不同源`,
+      false,
+      `模板不得再含已淘汰的觀察標記 "${placeholder}"`,
     );
   }
+});
+
+test("buildSystemPrompt：中英文觀察範例逐條對應，且兩份都禁止保留角括號標記", () => {
+  const zhPrompt = buildSystemPrompt("", "zh");
+  const enPrompt = buildSystemPrompt("", "en");
+  assert.match(zhPrompt, /1\. 範例：逾時後的重試作業可能重複執行一次寫入。/);
+  assert.match(enPrompt, /1\. Example: a retry after a timeout can repeat a write operation\./);
+  assert.match(zhPrompt, /所有角括號標記都要換成實際內容，不要保留。/);
+  assert.match(enPrompt, /replace every angle-bracket marker with actual content and do not leave any behind\./);
+  assert.ok(zhPrompt.indexOf("# 觀察") < zhPrompt.indexOf("# 無法驗證"));
+  assert.ok(enPrompt.indexOf("# Observations") < enPrompt.indexOf("# Cannot verify"));
+  assert.ok(zhPrompt.trimEnd().endsWith(FIXED_CLOSING_LINE));
+  assert.ok(enPrompt.trimEnd().endsWith(FIXED_CLOSING_LINE_EN));
 });
 
 // 尖括號形態 <…> 在 system prompt 裡只有回報模板的佔位符會用到——agent body 這裡傳空字串，

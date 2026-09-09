@@ -3,7 +3,7 @@ name: find-holes-external
 description: Dispatch sections of a plan document to external models (OpenAI / DeepSeek / Gemini / Anthropic) for hole-finding review, executed through the local dowafu CLI, where spokes are read-only and governed by an allowlist. Use when you need a heterogeneous perspective, or when the plan has to be reviewed against the real source code. Usage: /find-holes-external <path to plan> [section or question to focus on]
 metadata:
   derived-from: ".claude/skills/find-holes-external/SKILL.md"
-  derived-from-sha256: "8060685f58f770a0abe6e7e9c0caaeb78b744681abb29ffca29fc1782e99fed1"
+  derived-from-sha256: "a432f7e551c83182e1b3b2ceef7a3f7df85cd22b3528bc900ba666e7a3fe31b4"
 ---
 
 # find-holes-external — external hole-finding
@@ -64,6 +64,8 @@ Without it, the CLI prints `Continue? [y/N]` and blocks waiting for input, at wh
 **Four: whether you can poll progress depends on which path you take — running the CLI directly, the path this section covers, still has no such entry point.**
 
 Progress does have somewhere to be read now (a `progress` table in SQLite, one row per round), but the only entry point that can read it back is the MCP `dispatch_status` tool, and it keys on a job id — that only exists when you go through the MCP queue (`dispatch_submit` → `dispatch_approve` → the daemon runs it). **The path this section describes — running the CLI directly — has no job id, so `dispatch_status` cannot be used**: the per-round output exists only in the terminal running the CLI, which you usually cannot see when running in the background. For the details, and the difference between "finished" and "finished and intact", see §5, "Once it is running".
+
+**To tell whether the MCP path is available at all, check whether you hold the `dispatch_*` tools** — do **not** go by connection errors in the system prompt; those may refer to a *different* server with a similar name. To be sure, actually call `dispatch_tickets` once: if the tool is not in your list you cannot invoke it, and claim meets fact immediately.
 
 > **A spoke running silently for several minutes is normal, not a hang.**
 > **Do not rerun because it went quiet** — a rerun means paying again, and the money already spent is unrecoverable. For how to decide it has finished, see §5.

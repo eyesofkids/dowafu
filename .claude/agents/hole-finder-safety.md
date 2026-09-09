@@ -1,6 +1,6 @@
 ---
 name: hole-finder-safety
-description: Hole-finder spoke focused on the security, concurrency-race, and failure-state lens. Deep-reasoning lens, opus model. Read-only. Dispatched only by /find-holes.
+description: Hole-finder spoke focused on the security, concurrency-race, and failure-state lens. Deep-reasoning lens. Read-only. Dispatched by /find-holes (in-process) or /find-holes-external (external).
 model: opus
 tools: Read, Grep, Glob
 ---

@@ -182,7 +182,7 @@ test("key-visibility：user_version 為 3 的 DB 升級到 v4 時保留 key 並�
     seeded.close();
 
     const db = openDb(dbPath);
-    assert.equal(schemaVersion(db), 4);
+    assert.equal(schemaVersion(db), LATEST_SCHEMA_VERSION);
     const row = db.prepare("SELECT api_key, last_tested_at, last_test_model, last_test_succeeded FROM provider_keys WHERE provider = ?").get("openai") as {
       api_key: string; last_tested_at: string | null; last_test_model: string | null; last_test_succeeded: number | null;
     };
@@ -193,7 +193,31 @@ test("key-visibility：user_version 為 3 的 DB 升級到 v4 時保留 key 並�
     db.close();
 
     const reopened = openDb(dbPath);
-    assert.equal(schemaVersion(reopened), 4, "v4 再開一次不得重跑 ALTER TABLE");
+    assert.equal(schemaVersion(reopened), LATEST_SCHEMA_VERSION, "v4 再開一次不得重跑 ALTER TABLE");
+  });
+});
+
+test("queue-lang-rerun：v5 補 jobs.lang、保留舊 job，且欄位已在時可由版本回退重跑", async () => {
+  await withTempDb(async (dbPath) => {
+    const seeded = openDb(dbPath);
+    seeded.prepare("INSERT INTO tickets (name, doc, created_at) VALUES (?, ?, ?)").run("kept", '{"spokes":[]}', "2026-09-09T00:00:00.000Z");
+    seeded.prepare("INSERT INTO jobs (id, ticket, status, created_at) VALUES (?, ?, ?, ?)").run("old-job", "kept", "pending_approval", "2026-09-09T00:00:00.000Z");
+    seeded.exec("ALTER TABLE jobs DROP COLUMN lang");
+    seeded.exec("PRAGMA user_version = 4");
+    seeded.close();
+
+    const migrated = openDb(dbPath);
+    assert.equal(schemaVersion(migrated), 5);
+    assert.deepEqual(
+      { ...(migrated.prepare("SELECT id, ticket, lang FROM jobs WHERE id = ?").get("old-job") as { id: string; ticket: string; lang: string | null }) },
+      { id: "old-job", ticket: "kept", lang: null },
+    );
+    // Simulate a rollback fixture whose v5 column survived while its header was reset.
+    migrated.exec("PRAGMA user_version = 4");
+    migrated.close();
+    const rerun = openDb(dbPath);
+    assert.equal(schemaVersion(rerun), 5);
+    assert.equal((rerun.prepare("SELECT lang FROM jobs WHERE id = ?").get("old-job") as { lang: string | null }).lang, null);
   });
 });
 

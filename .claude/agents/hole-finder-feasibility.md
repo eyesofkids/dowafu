@@ -1,6 +1,6 @@
 ---
 name: hole-finder-feasibility
-description: Hole-finder spoke focused on the feasibility and implementability lens. Works only from the need-to-know ticket the hub provides, read-only. Dispatched only by /find-holes.
+description: Hole-finder spoke focused on the feasibility and implementability lens. Works only from the need-to-know ticket the hub provides, read-only. Dispatched by /find-holes (in-process) or /find-holes-external (external).
 model: sonnet
 tools: Read, Grep, Glob
 ---

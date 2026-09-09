@@ -77,3 +77,20 @@ test("--help：--lang zh-tw 不影響 help 的語言（短路在旗標迴圈之�
     rmSync(emptyHome, { recursive: true, force: true });
   }
 });
+
+test("--help：兩種輸出語言的 Subcommands 都在選項前且前 25 行內", () => {
+  const emptyHome = mkdtempSync(path.join(os.tmpdir(), "dispatch-cli-help-order-home-"));
+  try {
+    for (const [lang, heading] of [["en", "Subcommands"], ["zh", "子指令"]] as const) {
+      const result = runCli(["--help"], { DISPATCH_HOME: emptyHome, DISPATCH_LANG: lang });
+      assert.equal(result.status, 0, `${lang} --help 應以 exit 0 結束，stderr：${result.stderr}`);
+      const lines = result.stdout.split(/\r?\n/);
+      const subcommandsLine = lines.findIndex((line) => line.startsWith(heading));
+      const firstOptionLine = lines.findIndex((line) => line.trimStart().startsWith("--lang"));
+      assert.ok(subcommandsLine >= 0 && subcommandsLine < 25, `${lang} Subcommands 必須在前 25 行內`);
+      assert.ok(firstOptionLine > subcommandsLine, `${lang} Subcommands 必須在選項清單之前`);
+    }
+  } finally {
+    rmSync(emptyHome, { recursive: true, force: true });
+  }
+});
