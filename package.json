@@ -25,7 +25,7 @@
   },
   "type": "module",
   "engines": {
-    "node": ">=20"
+    "node": ">=22.13.0"
   },
   "bin": {
     "dowafu": "dist/cli.js"
