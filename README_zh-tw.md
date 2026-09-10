@@ -199,7 +199,7 @@ dowafu providers import <path>             # 匯入自己的設定檔
 `publish/` 提供兩種語言：`publish/en/` 與 `publish/zh-tw/`。**擇一複製，不可混裝**——審查者的固定收尾句必須與稽核檢查用的範本是同一種語言。
 
 ```bash
-npx degit eyesofkids/dowafu/publish/zh-tw#v0.5.0 .claude-pack   # 或 publish/en
+npx degit eyesofkids/dowafu/publish/zh-tw#v0.6.0 .claude-pack   # 或 publish/en
 
 cd .claude-pack
 TARGET=<your project>
@@ -238,8 +238,8 @@ Agent 可以不走 shell，改用 MCP 驅動 `dowafu`。露出五個 tool：`dis
 ### 兩條路都需要 `dowafu serve`
 
 `dowafu mcp` 只回應 tool 呼叫，**它不執行任何 reviewer**。真正花錢的 worker 在
-`dowafu serve` 裡。沒有它，核准過的 job 會永遠留在佇列裡，而且沒有任何東西會告訴 agent
-為什麼。
+`dowafu serve` 裡。沒有它，核准過的 job 永遠不會執行——`dispatch_submit`、`dispatch_approve`、
+`dispatch_status` 都會印一行 `⚠` 說明這件事。
 
 ```
 stdio：  你的 client ──spawn──→ dowafu mcp ──┐
@@ -249,8 +249,9 @@ stdio：  你的 client ──spawn──→ dowafu mcp ──┐
 HTTP：   你的 client ──x-api-key──→ dowafu serve  （端點與 worker 同一個行程）
 ```
 
-所以走 stdio 時，要在 client 旁邊另開一個終端機讓 `dowafu serve` 跑著。這條路的順序很寬鬆
-——核准之前或之後才起都可以，daemon 下一個 tick 就會把它撿走。
+所以走 stdio 時，要在 client 旁邊另開一個終端機讓 `dowafu serve` 跑著。**要先起 daemon，再核准。**
+daemon 只執行它在線期間核准的 job：它啟動時、以及停止時，還停在「已核准」的 job 會被退回待核准，
+所以在 daemon 起來之前給的核准要再給一次。`dowafu serve` 會印出退回了幾張。
 
 ### stdio
 
@@ -338,6 +339,20 @@ WantedBy=default.target
 daemon 常駐之後，stdio 那條路不需要任何額外動作——`dowafu mcp` 會找到已經在跑的 worker。
 這時自己再打 `dowafu serve` 會被擋下並回報 `daemon already running (pid N)`：
 **那是守衛在運作，不是故障。**
+
+### 停止與重啟
+
+`dowafu serve --stop` 停掉 daemon；`dowafu serve --restart` 停掉之後再起一支新的
+（沒在跑的話就直接起）。有東西會受影響時，兩者都會先分開問兩件事：
+
+- **還在執行的 job**——停掉 daemon 不會停掉已經在跑的審查者，它會跑完，結果與 API 成本照樣記帳。
+- **已核准但還沒開始的 job**——會退回待核准，下一支 daemon 沒有新的核准就不會跑它們。
+
+沒有終端機可以回答時（agent 代為呼叫、腳本），問題一律視為「不要」，什麼都不會停；要繼續就帶 `--yes`。
+
+daemon 收到 SIGTERM 卻沒停下來時，`--stop` 會明說並印出要檢查的 pid。**不要改用 SIGKILL**：
+審查者的 worker 行程可能比 daemon 活得久，照樣會寫入結果。停掉之後 daemon 馬上又回來，
+代表有服務管理器（上面的 `KeepAlive`／`Restart=always`）在重拉它——那要用 `launchctl` 或 `systemctl` 停。
 
 ### 核准仍然是獨立的一步
 

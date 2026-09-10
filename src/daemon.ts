@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import type { DatabaseSync } from "node:sqlite";
 import { hasAnyActiveToken } from "./api-token.js";
 import { defaultDbPath, openDb } from "./db.js";
-import { claimNextJob, finishJob, heartbeatJob, reapInterruptedJobs, type Job } from "./job.js";
+import { claimNextJob, finishJob, heartbeatJob, reapInterruptedJobs, requeueApprovedJobs, type Job } from "./job.js";
 import { DAEMON_STALE_MS, daemonAlive, daemonStatePath, writeHeartbeat } from "./liveness.js";
 import { createHttpServer, DEFAULT_HTTP_PORT } from "./mcp/http.js";
 import { maskString } from "./mask.js";
@@ -143,16 +143,19 @@ export function runCliJob(
 
 export type StopDaemonOutcome =
   | { status: "not_running"; reason: "heartbeat_missing" | "heartbeat_stale" | "pid_gone" }
-  | { status: "cancelled"; runningJobs: number }
+  | { status: "cancelled"; runningJobs: number; approvedJobs: number }
   | { status: "pid_not_dowafu"; pid: number }
-  | { status: "signal_failed"; pid: number }
-  | { status: "stopped"; pid: number }
+  | { status: "signal_failed"; pid: number; requeuedApprovedJobs: number }
+  | { status: "stopped"; pid: number; requeuedApprovedJobs: number }
   | { status: "restarted"; pid: number };
 
 export type StopDaemonDeps = {
   liveness: (statePath: string) => ReturnType<typeof daemonAlive>;
   countRunningJobs: (dbPath: string) => number;
+  countApprovedJobs: (dbPath: string) => number;
+  requeueApprovedJobs: (dbPath: string) => number;
   processCommand: (pid: number) => string | null;
+  processExists: (pid: number) => boolean;
   kill: (pid: number, signal: NodeJS.Signals) => void;
   wait: (ms: number) => Promise<void>;
 };
@@ -167,11 +170,24 @@ const DEFAULT_STOP_DAEMON_DEPS: StopDaemonDeps = {
     const row = openDb(dbPath).prepare("SELECT COUNT(*) AS count FROM jobs WHERE status = 'running'").get() as { count: number };
     return row.count;
   },
+  countApprovedJobs: (dbPath) => {
+    const row = openDb(dbPath).prepare("SELECT COUNT(*) AS count FROM jobs WHERE status = 'approved'").get() as { count: number };
+    return row.count;
+  },
+  requeueApprovedJobs: (dbPath) => requeueApprovedJobs(openDb(dbPath)),
   processCommand: (pid) => {
     try {
       return execFileSync("ps", ["-p", String(pid), "-o", "command="], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
     } catch {
       return null;
+    }
+  },
+  processExists: (pid) => {
+    try {
+      process.kill(pid, 0);
+      return true;
+    } catch {
+      return false;
     }
   },
   kill: (pid, signal) => process.kill(pid, signal),
@@ -187,6 +203,7 @@ export async function stopDaemon(
   options: {
     force?: boolean;
     confirmRunningJobs?: (count: number) => Promise<boolean>;
+    confirmApprovedJobs?: (count: number) => Promise<boolean>;
     deps?: StopDaemonDeps;
   } = {},
 ): Promise<StopDaemonOutcome> {
@@ -195,30 +212,35 @@ export async function stopDaemon(
   const initial = deps.liveness(statePath);
   if (!initial.alive) return { status: "not_running", reason: initial.reason };
 
-  const runningJobs = deps.countRunningJobs(dbPath);
-  if (runningJobs > 0 && !options.force) {
-    const confirmed = await (options.confirmRunningJobs?.(runningJobs) ?? Promise.resolve(false));
-    if (!confirmed) return { status: "cancelled", runningJobs };
-  }
-
   if (!isDowafuProcess(deps.processCommand(initial.pid))) return { status: "pid_not_dowafu", pid: initial.pid };
+  const runningJobs = deps.countRunningJobs(dbPath);
+  const approvedJobs = deps.countApprovedJobs(dbPath);
+  const confirmedRunning = runningJobs === 0 || options.force || await (options.confirmRunningJobs?.(runningJobs) ?? Promise.resolve(false));
+  // Ask independently even when the stop confirmation was declined.  A running
+  // worker warning and an old-approval cleanup warning describe different risks.
+  const confirmedApproved = approvedJobs === 0 || options.force || await (options.confirmApprovedJobs?.(approvedJobs) ?? Promise.resolve(false));
+  if (!confirmedRunning || !confirmedApproved) return { status: "cancelled", runningJobs, approvedJobs };
+
+  const requeuedApprovedJobs = deps.requeueApprovedJobs(dbPath);
   try {
     deps.kill(initial.pid, "SIGTERM");
   } catch {
-    return { status: "signal_failed", pid: initial.pid };
+    return { status: "signal_failed", pid: initial.pid, requeuedApprovedJobs };
   }
 
   for (let attempt = 0; attempt < STOP_CHECK_ATTEMPTS; attempt++) {
     await deps.wait(STOP_CHECK_INTERVAL_MS);
-    if (!deps.liveness(statePath).alive) {
+    if (!deps.liveness(statePath).alive && !deps.processExists(initial.pid)) {
       await deps.wait(STOP_RESTART_WAIT_MS);
-      return deps.liveness(statePath).alive ? { status: "restarted", pid: initial.pid } : { status: "stopped", pid: initial.pid };
+      return deps.liveness(statePath).alive
+        ? { status: "restarted", pid: initial.pid }
+        : { status: "stopped", pid: initial.pid, requeuedApprovedJobs };
     }
   }
-  return { status: "signal_failed", pid: initial.pid };
+  return { status: "signal_failed", pid: initial.pid, requeuedApprovedJobs };
 }
 
-export type ServeResult = Daemon & { httpPort: number; hasActiveToken: boolean };
+export type ServeResult = Daemon & { httpPort: number; hasActiveToken: boolean; requeuedApprovedJobs: number };
 
 function bindHttp(db: DatabaseSync, dbPath: string, httpPort: number): Promise<Server> {
   return new Promise((resolve, reject) => {
@@ -256,7 +278,9 @@ export function serve(
   const db = openDb(dbPath);
   return bindHttp(db, dbPath, httpPort).then((httpServer) => {
     let daemon: Daemon;
+    let requeuedApprovedJobs: number;
     try {
+      requeuedApprovedJobs = requeueApprovedJobs(db);
       daemon = createDaemon(db, { dbPath, maxConcurrent, execute: (job) => runCliJob(job, dbPath, lang) });
     } catch (err) {
       httpServer.close();
@@ -277,6 +301,7 @@ export function serve(
       },
       httpPort: boundPort,
       hasActiveToken: hasAnyActiveToken(db),
+      requeuedApprovedJobs,
     };
   });
 }

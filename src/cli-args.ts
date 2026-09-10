@@ -45,7 +45,7 @@ export type ParsedArgs =
   // A（gaps #1）：doctor 現在帶著 options——`--db` 在旗標迴圈裡本來就解析好了，只是先前
   // 沒被回傳，於是 `--doctor --db <路徑>` 會靜默對著預設 DB 回答。
   | { mode: "doctor"; options: CliOptions }
-  | { mode: "serve"; options: CliOptions; stop: boolean }
+  | { mode: "serve"; options: CliOptions; stop: boolean; restart: boolean }
   | { mode: "mcp"; options: CliOptions }
   | { mode: "run"; ticketDir: string; options: CliOptions };
 
@@ -131,6 +131,7 @@ export function parseArgs(argv: string[], lang: Lang): ParsedArgs {
   let doctorMode = false;
   let serveMode = false;
   let serveStop = false;
+  let serveRestart = false;
   let mcpMode = false;
 
   const numFlag = (name: string, apply: (n: number) => void) => {
@@ -182,6 +183,8 @@ export function parseArgs(argv: string[], lang: Lang): ParsedArgs {
       serveMode = true;
     } else if (arg === "--stop") {
       serveStop = true;
+    } else if (arg === "--restart") {
+      serveRestart = true;
     } else if (arg === "mcp") {
       mcpMode = true;
     } else if (arg.startsWith("--")) {
@@ -211,16 +214,17 @@ export function parseArgs(argv: string[], lang: Lang): ParsedArgs {
     if (ticketDir !== undefined) {
       throw new DispatchError(m(lang, "tooManyArgs", ticketDir, "--doctor", helpText), 2);
     }
-    if (serveStop) throw new DispatchError(m(lang, "stopRequiresServe"), 2);
+    if (serveStop || serveRestart) throw new DispatchError(m(lang, "stopRequiresServe"), 2);
     return { mode: "doctor", options };
   }
 
   if (serveMode) {
     if (ticketDir !== undefined) throw new DispatchError(m(lang, "tooManyArgs", ticketDir, "serve", helpText), 2);
-    return { mode: "serve", options, stop: serveStop };
+    if (serveStop && serveRestart) throw new DispatchError(m(lang, "stopRestartConflict"), 2);
+    return { mode: "serve", options, stop: serveStop, restart: serveRestart };
   }
 
-  if (serveStop) throw new DispatchError(m(lang, "stopRequiresServe"), 2);
+  if (serveStop || serveRestart) throw new DispatchError(m(lang, "stopRequiresServe"), 2);
 
   if (mcpMode) {
     if (ticketDir !== undefined) throw new DispatchError(m(lang, "tooManyArgs", ticketDir, "mcp", helpText), 2);

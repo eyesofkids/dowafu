@@ -30,6 +30,14 @@ export type Job = {
   cost_usd: number | null;
 };
 
+// Doctor reports these three queue states separately: each means a distinct next
+// action (human approval, daemon claim, or paid work in progress).
+export type JobQueueCounts = {
+  pendingApproval: number;
+  approved: number;
+  running: number;
+};
+
 function one(db: DatabaseSync, sql: string, ...values: Array<string | number | null>): Job | null {
   return (db.prepare(sql).get(...values) as Job | undefined) ?? null;
 }
@@ -44,6 +52,26 @@ export function findJobsByIdPrefix(db: DatabaseSync, prefix: string): Job[] {
 
 export function listPendingApprovalJobs(db: DatabaseSync): Job[] {
   return db.prepare("SELECT * FROM jobs WHERE status = 'pending_approval' ORDER BY created_at, id").all() as Job[];
+}
+
+// Keep this to one indexed aggregate query rather than loading jobs and counting
+// in JavaScript. `idx_jobs_status` covers both the WHERE predicate and status.
+export function countQueueJobs(db: DatabaseSync): JobQueueCounts {
+  const rows = db
+    .prepare(
+      `SELECT status, COUNT(*) AS count
+         FROM jobs
+        WHERE status IN ('pending_approval', 'approved', 'running')
+        GROUP BY status`,
+    )
+    .all() as Array<{ status: "pending_approval" | "approved" | "running"; count: number }>;
+  const counts: JobQueueCounts = { pendingApproval: 0, approved: 0, running: 0 };
+  for (const row of rows) {
+    if (row.status === "pending_approval") counts.pendingApproval = Number(row.count);
+    else if (row.status === "approved") counts.approved = Number(row.count);
+    else counts.running = Number(row.count);
+  }
+  return counts;
 }
 
 export function submitJob(db: DatabaseSync, ticket: string, id: string = randomUUID(), lang: Lang | null = null): Job {
@@ -82,6 +110,20 @@ export function approveJob(db: DatabaseSync, id: string): Job | null {
      RETURNING *`,
     now(),
     id,
+  );
+}
+
+// A daemon owns only approvals made after it starts.  Before a new daemon begins
+// claiming work, return any older approvals to the explicit human-approval gate.
+// Keep this as a single guarded UPDATE: concurrent approval is allowed to remain
+// approved for the new daemon, and no other lifecycle state is touched.
+export function requeueApprovedJobs(db: DatabaseSync): number {
+  return Number(
+    db.prepare(
+      `UPDATE jobs
+         SET status = 'pending_approval', approved_at = NULL
+       WHERE status = 'approved'`,
+    ).run().changes,
   );
 }
 

@@ -427,3 +427,18 @@ test("doctor JSON 與人類版共用同一判定，且 JSON 只帶遮罩 key 尾
     assert.doesNotMatch(human, new RegExp(rawKey));
   }
 });
+
+test("doctor：佇列三態同時出現在固定 JSON 契約與中英文字報表", () => {
+  const queue = { pendingApproval: 2, approved: 0, running: 1 };
+  const data = buildDoctorReportData("dowafu", FAKE_PROVIDERS, {}, () => "/home/testuser", noProbe(), "/cwd", undefined, [], undefined, queue);
+  assert.deepEqual(data.queue, queue);
+  assert.deepEqual(Object.keys(data.queue), ["pendingApproval", "approved", "running"]);
+  assert.equal(
+    lineStartingWith(renderDoctorReport("en", "dowafu", data), "  Queue"),
+    "  Queue        pending approval 2; approved 0; running 1",
+  );
+  assert.equal(
+    lineStartingWith(renderDoctorReport("zh", "dowafu", data), "  佇列"),
+    "  佇列        待核准 2；已核准 0；執行中 1",
+  );
+});

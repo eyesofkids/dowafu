@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { test } from "node:test";
 import { openDb } from "./db.js";
-import { approveJob, claimNextJob, countTicketResultRuns, findJobsByIdPrefix, finishJob, listPendingApprovalJobs, reapInterruptedJobs, rejectJob, submitJob } from "./job.js";
+import { approveJob, claimNextJob, countQueueJobs, countTicketResultRuns, findJobsByIdPrefix, finishJob, listPendingApprovalJobs, reapInterruptedJobs, rejectJob, requeueApprovedJobs, submitJob } from "./job.js";
 import { createTicket } from "./ticket-store.js";
 
 function resultCost(db: ReturnType<typeof openDb>, jobId: string): number | null {
@@ -51,6 +51,22 @@ test("job：結果次數聯集 CLI ticket key 與 queue job key，summary 與 sp
   });
 });
 
+test("job：佇列計數只查三個工作中狀態，分開回傳且走 status 索引", () => {
+  withDb((db) => {
+    ticket(db);
+    for (const id of ["pending-1", "pending-2", "running", "completed"]) submitJob(db, "ticket", id);
+    approveJob(db, "running");
+    assert.equal(claimNextJob(db)?.id, "running");
+    db.prepare("UPDATE jobs SET status = 'completed' WHERE id = 'completed'").run();
+
+    assert.deepEqual(countQueueJobs(db), { pendingApproval: 2, approved: 0, running: 1 });
+    const plan = db
+      .prepare("EXPLAIN QUERY PLAN SELECT status, COUNT(*) AS count FROM jobs WHERE status IN ('pending_approval', 'approved', 'running') GROUP BY status")
+      .all() as Array<{ detail: string }>;
+    assert.ok(plan.some((row) => row.detail.includes("idx_jobs_status")), `queue query did not use idx_jobs_status: ${JSON.stringify(plan)}`);
+  });
+});
+
 test("job：claim 是狀態守衛的原子認領，第二次認領拿不到同一張", () => {
   withDb((db) => {
     ticket(db);
@@ -64,6 +80,35 @@ test("job：claim 是狀態守衛的原子認領，第二次認領拿不到同�
 test("job：claim 的 UPDATE 本身帶 approved 狀態守衛，不能只信前置 SELECT", () => {
   const source = readFileSync(new URL("./job.ts", import.meta.url), "utf8");
   assert.match(source, /\) AND status = 'approved'\s+RETURNING \*/);
+});
+
+test("job：requeue 只退回 approved、清 approved_at，且可再次核准", () => {
+  withDb((db) => {
+    ticket(db);
+    for (const id of ["pending", "approved", "running", "completed", "failed", "interrupted", "rejected"]) submitJob(db, "ticket", id);
+    approveJob(db, "running");
+    claimNextJob(db);
+    approveJob(db, "completed");
+    claimNextJob(db);
+    finishJob(db, "completed", { costUsd: null });
+    approveJob(db, "failed");
+    claimNextJob(db);
+    finishJob(db, "failed", { error: "broken", costUsd: null });
+    approveJob(db, "interrupted");
+    claimNextJob(db);
+    db.prepare("UPDATE jobs SET status = 'interrupted' WHERE id = 'interrupted'").run();
+    rejectJob(db, "rejected");
+    approveJob(db, "approved");
+
+    assert.equal(requeueApprovedJobs(db), 1);
+    const rows = db.prepare("SELECT id, status, approved_at FROM jobs ORDER BY id").all() as Array<{ id: string; status: string; approved_at: string | null }>;
+    assert.deepEqual(rows.map(({ id, status }) => [id, status]), [
+      ["approved", "pending_approval"], ["completed", "completed"], ["failed", "failed"], ["interrupted", "interrupted"],
+      ["pending", "pending_approval"], ["rejected", "rejected"], ["running", "running"],
+    ]);
+    assert.equal(rows.find((row) => row.id === "approved")?.approved_at, null);
+    assert.equal(approveJob(db, "approved")?.status, "approved");
+  });
 });
 
 test("job：reject 是終態，之後不能核准或認領", () => {

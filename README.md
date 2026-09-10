@@ -208,7 +208,7 @@ not work: a reviewer's fixed closing line has to match the template the audit ch
 against.
 
 ```bash
-npx degit eyesofkids/dowafu/publish/en#v0.5.0 .claude-pack   # or publish/zh-tw
+npx degit eyesofkids/dowafu/publish/en#v0.6.0 .claude-pack   # or publish/zh-tw
 
 cd .claude-pack
 TARGET=<your project>
@@ -244,8 +244,9 @@ There are two transports, and the difference that matters is who starts what.
 ### Both transports need `dowafu serve`
 
 `dowafu mcp` only answers tool calls — **it never runs a reviewer**. The worker that
-actually spends money lives in `dowafu serve`. Without one running, an approved job sits
-in the queue forever and nothing tells the agent why.
+actually spends money lives in `dowafu serve`. Without one running, an approved job never
+runs — `dispatch_submit`, `dispatch_approve` and `dispatch_status` each print a `⚠` line
+saying so.
 
 ```
 stdio:  your client ──spawn──→ dowafu mcp ──┐
@@ -255,9 +256,11 @@ stdio:  your client ──spawn──→ dowafu mcp ──┐
 HTTP:   your client ──x-api-key──→ dowafu serve  (endpoint and worker, one process)
 ```
 
-So on stdio you keep `dowafu serve` running in a terminal next to the client. The order
-is forgiving there — start it before or after approving, and the daemon picks the job up
-on its next tick.
+So on stdio you keep `dowafu serve` running in a terminal next to the client. **Start it
+before you approve.** A daemon only runs approvals made while it is up: when it starts,
+and again when it stops, any job still waiting in `approved` goes back to pending approval,
+so an approval given before the daemon was running has to be given again. `dowafu serve`
+prints how many it sent back.
 
 ### stdio
 
@@ -352,6 +355,25 @@ Three things that bite:
 With the daemon always up the stdio path needs nothing extra — `dowafu mcp` finds a
 worker already running. Typing `dowafu serve` yourself will then refuse with
 `daemon already running (pid N)`: that is the guard working, not a fault.
+
+### Stopping and restarting
+
+`dowafu serve --stop` stops the daemon; `dowafu serve --restart` stops it and starts a new
+one (or just starts one if none is running). When something would be affected, both ask
+first — separately — about:
+
+- **jobs still running** — stopping the daemon does not stop a reviewer already in flight.
+  It runs to completion, and its results and API cost are still recorded.
+- **jobs approved but not yet started** — they go back to pending approval, so the next
+  daemon cannot run them without a fresh approval.
+
+With no terminal to answer (an agent calling it, a script), a question counts as "no" and
+nothing is stopped; pass `--yes` to go ahead.
+
+If the daemon ignores SIGTERM, `--stop` says so and prints the pid to inspect. Do not reach
+for SIGKILL: a reviewer's worker process can outlive the daemon and still write its results.
+And if the daemon comes straight back after stopping, a service manager (the `KeepAlive` /
+`Restart=always` above) is restarting it — stop it with `launchctl` or `systemctl` instead.
 
 ### Approval is still a separate step
 

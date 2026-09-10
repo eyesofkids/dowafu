@@ -92,6 +92,7 @@ type MessageArgs = {
   jobNotApprovable: [jobId: string, status: string];
   jobApproved: [jobId: string];
   daemonStarted: [];
+  daemonStartApprovedCleaned: [count: number];
   daemonStartFailed: [detail: string];
   daemonWorkerSpawnFailed: [detail: string];
   daemonWorkerExited: [exitCode: number | string];
@@ -99,14 +100,19 @@ type MessageArgs = {
   daemonWorkerTerminated: [signal: string];
   daemonWorkerTerminatedDetail: [signal: string, detail: string];
   stopRequiresServe: [];
+  stopRestartConflict: [];
   daemonStopRunningWarning: [count: number];
   daemonStopConfirmPrompt: [];
+  daemonStopApprovedWarning: [count: number];
+  daemonStopApprovedConfirmPrompt: [];
   daemonStopCancelled: [];
   daemonStopNotRunning: [reason: string];
   daemonStopPidNotDowafu: [pid: number];
   daemonStopSignalFailed: [pid: number];
   daemonStopSucceeded: [pid: number];
   daemonStopRestarted: [pid: number];
+  daemonStopApprovedCleaned: [count: number];
+  daemonRestartStarted: [];
   doctorDaemonLine: [value: string];
   doctorDaemonAlive: [pid: number];
   doctorDaemonMissing: [reason: string];
@@ -377,6 +383,8 @@ type MessageArgs = {
   doctorModelListValue: [enabled: number, total: number, mostExpensive: string];
   doctorModelListLoadFailedValue: [reason: string];
   doctorLensLine: [value: string];
+  doctorQueueLine: [value: string];
+  doctorQueueValue: [pendingApproval: number, approved: number, running: number];
   // 工單 X1 v1.1 §三：三段式（總數／有收尾句清單／無收尾句一段，命中才附加）取代舊版
   // 「只算 hole-finder 開頭」的單段式。
   doctorLensFoundValue: [dirPath: string, total: number, closingCount: number, closingNames: string, noClosingSuffix: string];
@@ -405,7 +413,8 @@ const MESSAGES: Record<Lang, MessageDefs> = {
   ${cmd} token ...         入站 HTTP 憑證的發／列／撤銷
   ${cmd} approve [jobId]   核准佇列中等待的派工
   ${cmd} serve             啟動常駐 daemon（含 MCP 的 HTTP binding）
-  ${cmd} serve --stop [--yes] 停止常駐 daemon；有執行中的 job 時會先確認
+  ${cmd} serve --stop [--yes] 停止常駐 daemon；有執行中的 job 或舊核准 job 時會先確認
+  ${cmd} serve --restart [--yes] 停止後重新啟動 daemon，會走兩端清理
   ${cmd} mcp               以 stdio 提供 MCP server
 
   --lang <en|zh-tw>        CLI 輸出與 spoke prompt 的語言，預設 en
@@ -488,7 +497,8 @@ const MESSAGES: Record<Lang, MessageDefs> = {
     mcpJobPrefixAmbiguous: (prefix, count) => `前綴 ${prefix} 命中 ${count} 個 job，請改用完整 id：`,
     jobNotApprovable: (jobId, status) => `job ${jobId} 目前是 ${status}，不能核准`,
     jobApproved: (jobId) => `已核准 job：${jobId}`,
-    daemonStarted: () => "daemon 已啟動。收到 SIGINT 時會乾淨退出；進行中的 job 下次啟動會被回收。",
+    daemonStarted: () => "daemon 已啟動。收到 SIGINT 時會乾淨退出。",
+    daemonStartApprovedCleaned: (count) => `啟動前已將 ${count} 張舊的已核准 job 退回待核准。`,
     daemonStartFailed: (detail) => `daemon 無法啟動：${detail}`,
     daemonWorkerSpawnFailed: (detail) => `worker 無法啟動：${detail}`,
     daemonWorkerExited: (exitCode) => `worker 以 exit code ${exitCode} 結束`,
@@ -496,18 +506,23 @@ const MESSAGES: Record<Lang, MessageDefs> = {
     daemonWorkerTerminated: (signal) => `worker 被訊號 ${signal} 終止`,
     daemonWorkerTerminatedDetail: (signal, detail) => `worker 被訊號 ${signal} 終止：${detail}`,
     stopRequiresServe: () => "--stop 只能與 serve 一起使用。",
+    stopRestartConflict: () => "--stop 與 --restart 不能同時使用。",
     daemonStopRunningWarning: (count) => `目前有 ${count} 張 job 正在執行；停止 daemon 不會停止正在跑的 spoke，它們會繼續跑完，之後結果與 API 成本仍會被認列。`,
     daemonStopConfirmPrompt: () => "確定要停止 daemon 嗎？[y/N] ",
+    daemonStopApprovedWarning: (count) => `目前有 ${count} 張已核准 job 尚未執行；停止前會退回待核准，避免下一支 daemon 未經本輪核准就執行。`,
+    daemonStopApprovedConfirmPrompt: () => "確定要清理這些已核准 job 嗎？[y/N] ",
     daemonStopCancelled: () => "已取消，daemon 仍在執行。",
     daemonStopNotRunning: (reason) => `daemon 未在執行（${reason}）。`,
     daemonStopPidNotDowafu: (pid) => `pid ${pid} 的行程不是 dowafu，為避免誤殺未送出訊號。`,
-    daemonStopSignalFailed: (pid) => `已向 pid ${pid} 送出停止訊號，但它沒有停止。`,
+    daemonStopSignalFailed: (pid) => `已向 pid ${pid} 送出 SIGTERM，但它沒有停止。請手動檢查：ps -p ${pid} -o pid,ppid,command=；確認後可再送 SIGTERM。不要用 SIGKILL，worker 子行程可能仍會繼續寫入。`,
     daemonStopSucceeded: (pid) => `daemon（pid ${pid}）已停止。`,
     daemonStopRestarted: (pid) => `daemon（原 pid ${pid}）停止後又恢復運行；看起來有 OS 層服務管理在重拉它。要真的停下來請用 launchctl 或 systemctl。`,
+    daemonStopApprovedCleaned: (count) => `已將 ${count} 張已核准 job 退回待核准。`,
+    daemonRestartStarted: () => "daemon 已重新啟動。",
     doctorDaemonLine: (value) => `  daemon      ${value}`,
     doctorDaemonAlive: (pid) => `運行中（pid ${pid}）`,
     doctorDaemonMissing: (reason) => `未運行（${reason}）`,
-    daemonOfflineWarning: (reason) => `⚠ worker daemon 未運行（${reason}）；job 已排入但不會執行。請先執行 dowafu serve。`,
+    daemonOfflineWarning: (reason) => `⚠ worker daemon 未運行（${reason}）；job 已排入但不會執行。請先起 dowafu serve 再核准——daemon 沒在跑時給的核准，會在它啟動時退回待核准。`,
     mcpTicketsEmpty: () => "沒有可派的 DB 工單。",
     mcpTicketsTitle: () => "可派工單：",
     mcpTicketsRow: (ticket, spokeCount) => `- ${ticket}：${spokeCount} 個 spoke`,
@@ -773,6 +788,8 @@ const MESSAGES: Record<Lang, MessageDefs> = {
     doctorModelListValue: (enabled, total, mostExpensive) => `啟用 ${enabled}/${total}；最貴啟用型號 ${mostExpensive}；來源 SQLite DB`,
     doctorModelListLoadFailedValue: (reason) => `無法載入：${reason}`,
     doctorLensLine: (value) => `  lens 定義   ${value}`,
+    doctorQueueLine: (value) => `  佇列        ${value}`,
+    doctorQueueValue: (pendingApproval, approved, running) => `待核准 ${pendingApproval}；已核准 ${approved}；執行中 ${running}`,
     doctorLensFoundValue: (dirPath, total, closingCount, closingNames, noClosingSuffix) =>
       `${dirPath} 找到 ${total} 個定義檔，其中 ${closingCount} 個具備固定收尾句：\n${" ".repeat(14)}${closingNames}${noClosingSuffix}`,
     doctorLensNoClosingSuffix: (count, names) => `\n${" ".repeat(14)}（另有 ${count} 個不是 lens：${names}）`,
@@ -794,7 +811,8 @@ Subcommands (each has its own usage message):
   ${cmd} token ...         Issue, list and revoke inbound HTTP tokens
   ${cmd} approve [jobId]   Approve a dispatch waiting in the queue
   ${cmd} serve             Run the daemon (includes the MCP HTTP binding)
-  ${cmd} serve --stop [--yes] Stop the daemon; asks first if jobs are running
+  ${cmd} serve --stop [--yes] Stop the daemon; asks first about running or old approved jobs
+  ${cmd} serve --restart [--yes] Stop then start the daemon, running both cleanup phases
   ${cmd} mcp               Serve MCP over stdio
 
   --lang <en|zh-tw>        Language for CLI output and spoke prompts, default en
@@ -877,7 +895,8 @@ Subcommands (each has its own usage message):
     mcpJobPrefixAmbiguous: (prefix, count) => `Prefix ${prefix} matches ${count} jobs; use the full id:`,
     jobNotApprovable: (jobId, status) => `Job ${jobId} is ${status} and cannot be approved`,
     jobApproved: (jobId) => `Approved job: ${jobId}`,
-    daemonStarted: () => "Daemon started. SIGINT exits cleanly; running jobs are reaped on the next start.",
+    daemonStarted: () => "Daemon started. SIGINT exits cleanly.",
+    daemonStartApprovedCleaned: (count) => `${count} older approved job(s) returned to pending approval before startup.`,
     daemonStartFailed: (detail) => `Could not start daemon: ${detail}`,
     daemonWorkerSpawnFailed: (detail) => `Could not start worker: ${detail}`,
     daemonWorkerExited: (exitCode) => `worker exited ${exitCode}`,
@@ -885,18 +904,23 @@ Subcommands (each has its own usage message):
     daemonWorkerTerminated: (signal) => `worker terminated by ${signal}`,
     daemonWorkerTerminatedDetail: (signal, detail) => `worker terminated by ${signal}: ${detail}`,
     stopRequiresServe: () => "--stop can only be used with serve.",
+    stopRestartConflict: () => "--stop and --restart cannot be used together.",
     daemonStopRunningWarning: (count) => `${count} job(s) are running; stopping the daemon does not stop their active spokes, which continue to completion and will still have their results and API costs recorded.`,
     daemonStopConfirmPrompt: () => "Stop the daemon? [y/N] ",
+    daemonStopApprovedWarning: (count) => `${count} approved job(s) have not started; stopping returns them to pending approval so the next daemon cannot run them without a new approval.`,
+    daemonStopApprovedConfirmPrompt: () => "Clear these approved jobs? [y/N] ",
     daemonStopCancelled: () => "Cancelled; the daemon is still running.",
     daemonStopNotRunning: (reason) => `Daemon is not running (${reason}).`,
     daemonStopPidNotDowafu: (pid) => `pid ${pid} is not a dowafu process; no signal was sent to avoid killing the wrong process.`,
-    daemonStopSignalFailed: (pid) => `A stop signal was sent to pid ${pid}, but it did not stop.`,
+    daemonStopSignalFailed: (pid) => `SIGTERM was sent to pid ${pid}, but it did not stop. Inspect it manually: ps -p ${pid} -o pid,ppid,command=; after confirming, you can send SIGTERM again. Do not use SIGKILL: worker children may still write results.`,
     daemonStopSucceeded: (pid) => `Daemon (pid ${pid}) stopped.`,
     daemonStopRestarted: (pid) => `Daemon (previous pid ${pid}) came back after stopping; an OS-level service manager appears to be restarting it. Use launchctl or systemctl to stop it permanently.`,
+    daemonStopApprovedCleaned: (count) => `${count} approved job(s) returned to pending approval.`,
+    daemonRestartStarted: () => "Daemon restarted.",
     doctorDaemonLine: (value) => `  Daemon       ${value}`,
     doctorDaemonAlive: (pid) => `running (pid ${pid})`,
     doctorDaemonMissing: (reason) => `not running (${reason})`,
-    daemonOfflineWarning: (reason) => `⚠ The worker daemon is not running (${reason}); the job is queued but will not execute. Start it with dowafu serve.`,
+    daemonOfflineWarning: (reason) => `⚠ The worker daemon is not running (${reason}); the job is queued but will not execute. Start dowafu serve before approving — approvals given while no daemon is running are returned to pending approval when it starts.`,
     mcpTicketsEmpty: () => "No dispatchable DB tickets.",
     mcpTicketsTitle: () => "Dispatchable tickets:",
     mcpTicketsRow: (ticket, spokeCount) => `- ${ticket}: ${spokeCount} spoke(s)`,
@@ -1180,6 +1204,8 @@ Subcommands (each has its own usage message):
     doctorModelListValue: (enabled, total, mostExpensive) => `enabled ${enabled}/${total}; most expensive enabled ${mostExpensive}; source SQLite DB`,
     doctorModelListLoadFailedValue: (reason) => `failed to load: ${reason}`,
     doctorLensLine: (value) => `  Lens defs    ${value}`,
+    doctorQueueLine: (value) => `  Queue        ${value}`,
+    doctorQueueValue: (pendingApproval, approved, running) => `pending approval ${pendingApproval}; approved ${approved}; running ${running}`,
     doctorLensFoundValue: (dirPath, total, closingCount, closingNames, noClosingSuffix) =>
       `${dirPath} holds ${total} definition file(s), ${closingCount} with a fixed closing line:\n${" ".repeat(15)}${closingNames}${noClosingSuffix}`,
     doctorLensNoClosingSuffix: (count, names) => `\n${" ".repeat(15)}(${count} other agent file(s), not lenses: ${names})`,

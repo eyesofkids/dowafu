@@ -37,7 +37,7 @@ import type { SpokeRunResult } from "./types.js";
 import { defaultDbPath, openDb } from "./db.js";
 import { issueToken, listTokens, revokeToken } from "./api-token.js";
 import { addAllow, addSpoke, createTicket, formatTicket, hasResults, importTicketDirectory } from "./ticket-store.js";
-import { approveJob, findJobsByIdPrefix, getJob, listPendingApprovalJobs } from "./job.js";
+import { approveJob, countQueueJobs, findJobsByIdPrefix, getJob, listPendingApprovalJobs, type JobQueueCounts } from "./job.js";
 import { serve, stopDaemon } from "./daemon.js";
 import { daemonAlive, daemonStatePath } from "./liveness.js";
 import { startStdioServer } from "./mcp/stdio.js";
@@ -619,6 +619,9 @@ async function main() {
     // 工單 key-db §B-3 #6：逐 provider 印出實際生效的是哪一層——doctorDb 開不起來時就沒有
     // DB 可查，keyStatusRows 留空陣列（buildApiKeyValue 對空陣列的降級輸出）。
     let keyStatusRows: KeyStatusRow[] = [];
+    // A database failure must leave --doctor usable. Its JSON contract still has
+    // numeric queue fields, so the unavailable DB degrades to zero counts.
+    let queue: JobQueueCounts = { pendingApproval: 0, approved: 0, running: 0 };
     // A（gaps #1）：整份報表——DB、金鑰、型號白名單、daemon——都要來自**這次真的會用到的**
     // 那個 DB。先前這裡寫死 undefined／defaultDbPath()，於是 `--doctor --db <別的>` 印的
     // 全是預設 DB 的狀況，而使用者指定的那個檔連建都不會建。
@@ -628,6 +631,7 @@ async function main() {
       const providers = loadProviders(doctorDb, messageLang);
       providersResult = { ok: true, providers, models: listModels(doctorDb) };
       keyStatusRows = buildKeyStatusRows(doctorDb);
+      queue = countQueueJobs(doctorDb);
     } catch (err) {
       const reason = err instanceof DispatchError ? err.message : maskString(String(err));
       providersResult = { ok: false, reason };
@@ -642,44 +646,53 @@ async function main() {
       daemonAlive(daemonStatePath(doctorDbPath)),
       keyStatusRows,
       doctorDbPath,
+      queue,
     );
     console.log(parsed.options.json ? JSON.stringify(doctorData) : renderDoctorReport(messageLang, getCommandName(), doctorData));
     return;
   }
   if (parsed.mode === "serve") {
-    if (parsed.stop) {
+    if (parsed.stop || parsed.restart) {
       const outcome = await stopDaemon(parsed.options.dbPath, {
         force: parsed.options.yes,
         confirmRunningJobs: async (count) => {
           console.log(m(messageLang, "daemonStopRunningWarning", count));
           return confirm(m(messageLang, "daemonStopConfirmPrompt"), process.stdout);
         },
+        confirmApprovedJobs: async (count) => {
+          console.log(m(messageLang, "daemonStopApprovedWarning", count));
+          return confirm(m(messageLang, "daemonStopApprovedConfirmPrompt"), process.stdout);
+        },
       });
       switch (outcome.status) {
         case "not_running":
           console.log(m(messageLang, "daemonStopNotRunning", outcome.reason));
+          if (parsed.restart) break;
           break;
         case "cancelled":
           console.log(m(messageLang, "daemonStopCancelled"));
-          break;
+          return;
         case "pid_not_dowafu":
           console.log(m(messageLang, "daemonStopPidNotDowafu", outcome.pid));
-          break;
+          return;
         case "signal_failed":
           console.log(m(messageLang, "daemonStopSignalFailed", outcome.pid));
-          break;
+          console.log(m(messageLang, "daemonStopApprovedCleaned", outcome.requeuedApprovedJobs));
+          return;
         case "stopped":
           console.log(m(messageLang, "daemonStopSucceeded", outcome.pid));
+          console.log(m(messageLang, "daemonStopApprovedCleaned", outcome.requeuedApprovedJobs));
           break;
         case "restarted":
           console.log(m(messageLang, "daemonStopRestarted", outcome.pid));
-          break;
+          return;
       }
-      return;
+      if (parsed.stop) return;
     }
     try {
       const daemon = await serve(parsed.options.dbPath, undefined, parsed.options.httpPort, messageLang);
-      console.log(m(messageLang, "daemonStarted"));
+      console.log(m(messageLang, parsed.restart ? "daemonRestartStarted" : "daemonStarted"));
+      console.log(m(messageLang, "daemonStartApprovedCleaned", daemon.requeuedApprovedJobs));
       console.log(m(messageLang, "httpServerStarted", daemon.httpPort));
       // B-1 #6：端點活著但沒發過 token，任何請求都進不來——失敗長得像成功，必須警告。
       if (!daemon.hasActiveToken) console.log(m(messageLang, "httpNoTokensWarning"));

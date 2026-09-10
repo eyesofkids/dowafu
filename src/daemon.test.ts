@@ -7,7 +7,7 @@ import { test } from "node:test";
 import { issueToken } from "./api-token.js";
 import { createDaemon, serve } from "./daemon.js";
 import { openDb } from "./db.js";
-import { approveJob, claimNextJob, submitJob } from "./job.js";
+import { approveJob, claimNextJob, finishJob, rejectJob, submitJob } from "./job.js";
 import { daemonStatePath } from "./liveness.js";
 import { createTicket } from "./ticket-store.js";
 
@@ -203,7 +203,10 @@ test("daemon：重複啟動給 pid 的人類可讀錯誤，不是 stack trace", 
   const root = mkdtempSync(path.join(os.tmpdir(), "dowafu-daemon-duplicate-"));
   try {
     const dbPath = path.join(root, "dowafu.db");
-    openDb(dbPath);
+    const db = openDb(dbPath);
+    createTicket(db, "ticket", "# Under review\ntext\n", "en");
+    submitJob(db, "ticket", "old-approved");
+    approveJob(db, "old-approved");
     const state = daemonStatePath(dbPath);
     writeFileSync(state, JSON.stringify({ pid: process.pid, at: Date.now() }));
     assert.throws(() => serve(dbPath), (err: unknown) => {
@@ -212,6 +215,56 @@ test("daemon：重複啟動給 pid 的人類可讀錯誤，不是 stack trace", 
       assert.doesNotMatch(err.stack ?? "", /EADDRINUSE/);
       return true;
     });
+    assert.equal((db.prepare("SELECT status FROM jobs WHERE id = 'old-approved'").get() as { status: string }).status, "approved");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("daemon：serve 守衛通過後退回舊 approved，保留其他狀態且可重新核准執行", async () => {
+  const root = mkdtempSync(path.join(os.tmpdir(), "dowafu-daemon-start-clean-"));
+  try {
+    const dbPath = path.join(root, "dowafu.db");
+    const db = openDb(dbPath);
+    createTicket(db, "ticket", "# Under review\ntext\n", "en");
+    for (const id of ["pending", "old-approved", "running", "completed", "failed", "interrupted", "rejected"]) submitJob(db, "ticket", id);
+    approveJob(db, "running");
+    claimNextJob(db);
+    approveJob(db, "completed");
+    claimNextJob(db);
+    finishJob(db, "completed", { costUsd: null });
+    approveJob(db, "failed");
+    claimNextJob(db);
+    finishJob(db, "failed", { error: "broken", costUsd: null });
+    approveJob(db, "interrupted");
+    claimNextJob(db);
+    db.prepare("UPDATE jobs SET status = 'interrupted' WHERE id = 'interrupted'").run();
+    rejectJob(db, "rejected");
+    approveJob(db, "old-approved");
+
+    const result = await serve(dbPath, 1, 0);
+    try {
+      assert.equal(result.requeuedApprovedJobs, 1);
+      const rows = db.prepare("SELECT id, status, approved_at FROM jobs ORDER BY id").all() as Array<{ id: string; status: string; approved_at: string | null }>;
+      assert.deepEqual(rows.map(({ id, status }) => [id, status]), [
+        ["completed", "completed"], ["failed", "failed"], ["interrupted", "interrupted"], ["old-approved", "pending_approval"],
+        ["pending", "pending_approval"], ["rejected", "rejected"], ["running", "running"],
+      ]);
+      assert.equal(rows.find((row) => row.id === "old-approved")?.approved_at, null);
+      assert.equal(claimNextJob(db), null, "startup must not execute approvals from before this daemon");
+      assert.equal(approveJob(db, "old-approved")?.status, "approved");
+      const started: string[] = [];
+      const daemon = createDaemon(db, { dbPath, execute: async (job) => { started.push(job.id); return {}; } });
+      try {
+        daemon.tick();
+        await new Promise((resolve) => setImmediate(resolve));
+        assert.deepEqual(started, ["old-approved"]);
+      } finally {
+        daemon.stop();
+      }
+    } finally {
+      result.stop();
+    }
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

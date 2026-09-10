@@ -105,7 +105,19 @@ test("parseArgs：serve --stop 保持在 serve 介面，--yes 可作為明確強
   assert.equal(parsed.mode, "serve");
   if (parsed.mode !== "serve") throw new Error("unreachable");
   assert.equal(parsed.stop, true);
+  assert.equal(parsed.restart, false);
   assert.equal(parsed.options.yes, true);
+});
+
+test("parseArgs：serve --restart 是獨立操作，不能與 --stop 混用或脫離 serve", () => {
+  const parsed = parseArgs(["serve", "--restart", "--yes"], "en");
+  assert.equal(parsed.mode, "serve");
+  if (parsed.mode !== "serve") throw new Error("unreachable");
+  assert.equal(parsed.stop, false);
+  assert.equal(parsed.restart, true);
+  assert.equal(parsed.options.yes, true);
+  assert.throws(() => parseArgs(["serve", "--stop", "--restart"], "en"), DispatchError);
+  assert.throws(() => parseArgs(["--restart"], "en"), DispatchError);
 });
 
 test("parseArgs：--stop 沒有 serve 時 fail closed", () => {

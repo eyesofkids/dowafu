@@ -18,6 +18,7 @@ import type { Lang, ProvidersFile } from "./types.js";
 import type { StoredModel } from "./providers-store.js";
 import type { DaemonLiveness } from "./liveness.js";
 import type { KeyStatusRow } from "./provider-key.js";
+import type { JobQueueCounts } from "./job.js";
 
 export interface DoctorProbe {
   fileExists: (p: string) => boolean;
@@ -63,6 +64,8 @@ export type DoctorReportData = {
     | { ok: true; enabled: number; total: number; mostExpensive: { provider: string; model: string; outputPerM: number } | null }
     | { ok: false; reason: string };
   daemon: DaemonLiveness;
+  // Keep this camelCase shape stable: dowafu-hanma reads it from --doctor --json.
+  queue: JobQueueCounts;
   lenses: { found: true; dirPath: string; withClosing: string[]; withoutClosing: string[] } | { found: false; dirPath: string };
 };
 
@@ -95,6 +98,10 @@ function buildApiKeyValue(lang: Lang, rows: KeyStatusRow[]): string {
 function buildDaemonValue(lang: Lang, daemon: DaemonLiveness | undefined): string {
   if (daemon?.alive) return m(lang, "doctorDaemonAlive", daemon.pid);
   return m(lang, "doctorDaemonMissing", daemon?.reason ?? "heartbeat_missing");
+}
+
+function buildQueueValue(lang: Lang, queue: JobQueueCounts): string {
+  return m(lang, "doctorQueueValue", queue.pendingApproval, queue.approved, queue.running);
 }
 
 function buildConfigDirValue(lang: Lang, configDir: DoctorReportData["configDir"]): string {
@@ -158,6 +165,7 @@ export function buildDoctorReportData(
   daemon?: DaemonLiveness,
   keyStatusRows: KeyStatusRow[] = [],
   dbPath?: string,
+  queue: JobQueueCounts = { pendingApproval: 0, approved: 0, running: 0 },
 ): DoctorReportData {
   const dispatchHome = resolveDispatchHome(env, homedir);
   const configDir =
@@ -191,6 +199,7 @@ export function buildDoctorReportData(
     apiKeys: keyStatusRows.map((row) => ({ ...row })),
     models,
     daemon: daemon ?? { alive: false, reason: "heartbeat_missing" },
+    queue: { ...queue },
     lenses: buildLensData(probe, cwd),
   };
 }
@@ -206,6 +215,7 @@ export function renderDoctorReport(lang: Lang, cmd: string, data: DoctorReportDa
     m(lang, "doctorApiKeyLine", buildApiKeyValue(lang, data.apiKeys)),
     m(lang, "doctorModelListLine", buildModelListValue(lang, data.models)),
     m(lang, "doctorDaemonLine", buildDaemonValue(lang, data.daemon)),
+    m(lang, "doctorQueueLine", buildQueueValue(lang, data.queue)),
     m(lang, "doctorLensLine", buildLensValue(lang, data.lenses)),
     "",
     m(lang, "doctorFooter"),
@@ -224,6 +234,7 @@ export function buildDoctorReport(
   daemon?: DaemonLiveness,
   keyStatusRows: KeyStatusRow[] = [],
   dbPath?: string,
+  queue: JobQueueCounts = { pendingApproval: 0, approved: 0, running: 0 },
 ): string {
-  return renderDoctorReport(lang, cmd, buildDoctorReportData(cmd, providers, env, homedir, probe, cwd, daemon, keyStatusRows, dbPath));
+  return renderDoctorReport(lang, cmd, buildDoctorReportData(cmd, providers, env, homedir, probe, cwd, daemon, keyStatusRows, dbPath, queue));
 }
