@@ -15,10 +15,10 @@ import { loadProviders } from "./providers.js";
 import { loadTicket } from "./ticket.js";
 import { resolveSpokes, type ResolvedSpoke } from "./validate.js";
 import { estimateTokens, estimateAllowlistTokens, estimateSequentialRead, checkGateOne, type SpokeEstimate, type AllowlistEstimate } from "./gate.js";
-import { buildFirstUserText, buildSystemPrompt } from "./prompt.js";
+import { buildSystemPrompt } from "./prompt.js";
 import { buildReport, effectiveCap, effectiveCharsPerToken, type ProvidersSource } from "./report.js";
 import { checkGitignore } from "./gitignore-check.js";
-import { runSpoke, type RunEvent } from "./runner.js";
+import { buildSpokeFirstUserText, runSpoke, type RunEvent } from "./runner.js";
 import { Semaphore } from "./semaphore.js";
 import { createResponsesAdapter } from "./adapters/responses.js";
 import { createGeminiAdapter } from "./adapters/gemini-native.js";
@@ -31,6 +31,7 @@ import { registerSecrets, maskString, maskDeep } from "./mask.js";
 import { buildDoctorReportData, renderDoctorReport, type DoctorProvidersResult } from "./doctor.js";
 import { bundledProvidersPath, getPackageVersion, getCommandName } from "./pkg-info.js";
 import { buildJsonPayload, buildJsonPlan } from "./json-output.js";
+import { CLI_COMMANDS } from "./cli-commands.js";
 import { parseArgs, formatEvent, resolveLang, resolveFallbackLang, buildStdoutSummary } from "./cli-args.js";
 import { m } from "./messages.js";
 import type { SpokeRunResult } from "./types.js";
@@ -506,28 +507,32 @@ async function main() {
   // 時間點還沒被驗證，不查它（v1.3 §二之2 #5／#6：help／version 的語言不受 --lang 影響）。
   const messageLang = resolveFallbackLang(process.env.DISPATCH_LANG);
 
-  if (process.argv[2] === "ticket") {
+  if (process.argv[2] === CLI_COMMANDS.ticket) {
     await ticketCommand(process.argv.slice(3), messageLang);
     return;
   }
 
-  if (process.argv[2] === "providers") {
+  if (process.argv[2] === CLI_COMMANDS.providers) {
     await providersCommand(process.argv.slice(3), messageLang);
     return;
   }
 
-  if (process.argv[2] === "token") {
+  if (process.argv[2] === CLI_COMMANDS.token) {
     await tokenCommand(process.argv.slice(3), messageLang);
     return;
   }
 
-  if (process.argv[2] === "key") {
+  if (process.argv[2] === CLI_COMMANDS.key) {
     await keyCommand(process.argv.slice(3), messageLang);
     return;
   }
 
-  if (process.argv[2] === "result") {
+  if (process.argv[2] === CLI_COMMANDS.result) {
     const args = process.argv.slice(3);
+    if (args[0] === "--help" || args[0] === "-h") {
+      console.log(m(messageLang, "resultHelp", getCommandName()));
+      return;
+    }
     const positional: string[] = [];
     let dbPath: string | undefined;
     for (let i = 0; i < args.length; i++) {
@@ -562,8 +567,12 @@ async function main() {
     return;
   }
 
-  if (process.argv[2] === "approve") {
+  if (process.argv[2] === CLI_COMMANDS.approve) {
     const args = process.argv.slice(3);
+    if (args[0] === "--help" || args[0] === "-h") {
+      console.log(m(messageLang, "approveHelp", getCommandName()));
+      return;
+    }
     const positional: string[] = [];
     let dbPath: string | undefined;
     for (let i = 0; i < args.length; i++) {
@@ -720,6 +729,8 @@ async function main() {
 
   // v1.10 §9：--repo-root 只影響白名單邊界、.claude/agents 位置、_docs/ 拒絕判定；
   // 工單目錄仍相對 cwd 解析，不要求位於 repoRoot 內（見 resolveSpokes 呼叫處）。
+  // （ticket-dir-cwd 補註：0.5.0 起 CLI 只走 DB 工單，ticket.ticketDir 是虛擬的 `ticket/<name>`，
+  // 不再相對 cwd 解析——見 runner.ts 的 buildSpokeFirstUserText。上一行是目錄工單時代的描述。）
   const repoRoot = path.resolve(options.repoRoot ?? process.cwd());
   const ticketId = ticketName;
   const db = openDbSeeded(options.dbPath, lang);
@@ -745,13 +756,8 @@ async function main() {
   // §10 步驟 6／§14 閘門一：呼叫前估算
   const estimates: SpokeEstimate[] = spokes.map((spoke) => {
     const systemPrompt = buildSystemPrompt(spoke.agentBody, spoke.lang);
-    const firstUserText = buildFirstUserText(
-      ticket.ticketDir,
-      spoke.agent,
-      spoke.allowedReadsRelative,
-      repoRoot,
-      spoke.lang,
-    );
+    // ticket-dir-cwd 不變量 3：與 runSpoke 同一個組裝點——估算的就是實跑會送出的那則訊息。
+    const firstUserText = buildSpokeFirstUserText(spoke, ticket.ticketDir, repoRoot);
     const charsPerToken = effectiveCharsPerToken(spoke, options);
     return {
       agent: spoke.agent,

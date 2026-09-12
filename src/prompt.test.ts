@@ -1,5 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import path from "node:path";
 import { buildFinalizeUserText, buildFirstUserText, buildSystemPrompt, REPORT_PLACEHOLDERS } from "./prompt.js";
 import { FIXED_CLOSING_LINE, FIXED_CLOSING_LINE_EN } from "./audit.js";
 
@@ -102,6 +103,18 @@ test("buildFirstUserText：工單目錄在 repoRoot 外時維持絕對路徑，�
 test("buildFirstUserText：repoRoot 為 undefined 時維持絕對路徑（向後相容）", () => {
   const text = buildFirstUserText("/repo/tmp/dispatch/t1", "hole-finder-safety", ["src/a.ts"], undefined, "zh");
   assert.match(text, /read_file\("\/repo\/tmp\/dispatch\/t1\/_shared\.md"\)/);
+});
+
+// ticket-dir-cwd（log_v0_6_0_open.md #31）：相對的 ticketDir（DB 工單的虛擬 `ticket/<name>`）原樣
+// 輸出，不以 cwd 解析。上面三條目錄工單語意的輸入都是絕對路徑，不受影響。repoRoot 取 cwd 的上一層，
+// 正是舊版會算出 `<cwd 目錄名>/ticket/<name>` 的那種組合。
+test("buildFirstUserText：相對的 ticketDir 原樣輸出，不因 cwd 與 repoRoot 的相對位置而改寫", () => {
+  const cwd = process.cwd();
+  for (const repoRoot of [cwd, path.dirname(cwd), "/definitely/elsewhere"]) {
+    const text = buildFirstUserText("ticket/sample", "hole-finder-safety", [], repoRoot, "en");
+    assert.match(text, /read_file\("ticket\/sample\/_shared\.md"\)/, `repoRoot=${repoRoot}`);
+    assert.match(text, /read_file\("ticket\/sample\/hole-finder-safety\.md"\)/, `repoRoot=${repoRoot}`);
+  }
 });
 
 test("buildFirstUserText：步驟 4（依回報模板產出）仍在步驟 3 之後，不因路徑清單長度而錯位", () => {

@@ -217,7 +217,7 @@ dowafu providers list                      # 確認新的 Model 已經進來
 `publish/` 提供兩種語言：`publish/en/` 與 `publish/zh-tw/`。**擇一複製，不可混裝**——審查者的固定收尾句必須與稽核檢查用的範本是同一種語言。
 
 ```bash
-npx degit eyesofkids/dowafu/publish/zh-tw#v0.6.0 .claude-pack   # 或 publish/en
+npx degit eyesofkids/dowafu/publish/zh-tw#v0.7.0 .claude-pack   # 或 publish/en
 
 cd .claude-pack
 TARGET=<your project>

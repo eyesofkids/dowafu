@@ -4,6 +4,7 @@ import path from "node:path";
 import type { DatabaseSync } from "node:sqlite";
 import { DispatchError, type Lang } from "./types.js";
 import { m } from "./messages.js";
+import { isReservedTicketName, reservedTicketNames } from "./cli-commands.js";
 import { now } from "./db.js";
 import { parseAgentTicket, parseDispatchTable } from "./ticket.js";
 import { isModelEnabled, loadProviders } from "./providers-store.js";
@@ -38,6 +39,7 @@ function put(db: DatabaseSync, name: string, doc: StoredTicketDoc): void {
 
 export function createTicket(db: DatabaseSync, name: string, shared: string, lang: Lang): void {
   if (!name || name.includes(path.sep) || name === "." || name === "..") throw new DispatchError(m(lang, "ticketNameInvalid", name), 2);
+  if (isReservedTicketName(name)) throw new DispatchError(m(lang, "ticketNameReserved", name, reservedTicketNames().join(", ")), 2);
   try {
     db.prepare("INSERT INTO tickets (name, doc, created_at) VALUES (?, ?, ?)").run(name, JSON.stringify({ shared, spokes: [] }), now());
   } catch {

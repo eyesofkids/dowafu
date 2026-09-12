@@ -46,7 +46,7 @@ test("CLI：全新安裝直接建得起工單——空表在開 DB 時就播種�
 
     // 預設該開的型號，在全新安裝上就要能用。
     const added = await runCli(
-      ["ticket", "add-spoke", "sample", "hole-finder-cost", "deepseek", "deepseek-v4-flash", body, "--db", dbPath],
+      ["ticket", "add-spoke", "sample", "hole-finder-cost", "deepseek", "deepseek-flash", body, "--db", dbPath],
       env,
     );
     assert.equal(added.code, 0, `加 spoke 應成功；stderr：${added.stderr}`);

@@ -59,7 +59,7 @@ test("D1：從既有目錄匯入 DB 後，cwd ≠ --repo-root 的 dry-run 仍只
         "",
         "| agent | provider | model | effort |",
         "| --- | --- | --- | --- |",
-        "| hole-finder-cost | deepseek | deepseek-v4-flash | |",
+        "| hole-finder-cost | deepseek | deepseek-flash | |",
         "",
       ].join("\n"),
     );

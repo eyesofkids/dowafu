@@ -36,6 +36,10 @@ onwards).
 
 ### Fixed
 
+- **The install command printed inside each language pack's own README pointed at the
+  `v0.4.0` tag** — unchanged through four releases, so anyone following it fetched
+  reviewer definitions three versions old. All four places that carry the tag are now on
+  the released version.
 - **A reviewer could not read its own ticket when the CLI ran with `--repo-root` from a
   different working directory.** The ticket paths in its first message came out absolute
   while the snapshot is keyed by a relative path, so every read of the ticket was refused

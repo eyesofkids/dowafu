@@ -148,6 +148,48 @@ test("D1：DB 快照缺少請求路徑時拒絕，且不掉回讀取同名磁碟
   }
 });
 
+// ticket-dir-cwd（log_v0_6_0_open.md #31）：上面那條 D1 快照測試的假 adapter 讀寫死的路徑，
+// runSpoke 給 spoke 的路徑錯了它照樣綠。這條的假 adapter **只照第一則訊息的 read_file("…") 去讀**。
+// 測試行程的 cwd 固定，改用 repoRoot 造出三種相對關係，不必 chdir；DB 工單不碰磁碟，
+// 「cwd 之外」那個 repoRoot 不需要真的存在。
+test("ticket-dir-cwd：DB 工單的 spoke 照第一則訊息的路徑讀工單檔，cwd 與 repoRoot 任何相對關係下都讀得到", async () => {
+  const cwd = process.cwd();
+  const layouts = [
+    { label: "repoRoot = cwd", repoRoot: cwd },
+    { label: "cwd 是 repoRoot 的子目錄", repoRoot: path.dirname(cwd) },
+    { label: "cwd 在 repoRoot 之外", repoRoot: path.join(os.tmpdir(), "runner-ticket-dir-cwd-elsewhere") },
+  ];
+  for (const layout of layouts) {
+    const spoke: ResolvedSpoke = {
+      ...SPOKE,
+      readableContent: new Map([
+        ["ticket/sample/_shared.md", "shared snapshot"],
+        ["ticket/sample/hole-finder-cost.md", "agent snapshot"],
+      ]),
+    };
+    let seen: Conversation | undefined;
+    const adapter: Adapter = {
+      async send(conversation) {
+        if (seen) return mkResult({ toolCalls: [], text: "final report" });
+        seen = conversation;
+        const first = conversation.turns[0];
+        const text = first.role === "user" ? first.text : "";
+        const paths = [...text.matchAll(/read_file\("([^"]+)"\)/g)].map((match) => match[1]);
+        return mkResult({ toolCalls: paths.map((p, i) => ({ id: `read-${i}`, name: "read_file", args: { path: p } })) });
+      },
+    };
+    const result = await runSpoke(spoke, adapter, "ticket/sample", mkOptions({ repoRoot: layout.repoRoot }));
+    assert.equal(result.toolCalls.length, 2, `${layout.label}：應從第一則訊息抽到兩個工單檔路徑`);
+    assert.deepEqual(
+      result.toolCalls.filter((call) => !call.allowed),
+      [],
+      `${layout.label}：工單檔讀取不得被拒：${JSON.stringify(result.toolCalls)}`,
+    );
+    const toolResults = (seen?.turns ?? []).flatMap((turn) => (turn.role === "tool" ? [turn.result] : []));
+    assert.deepEqual(toolResults, ["shared snapshot", "agent snapshot"], `${layout.label}：spoke 收到的必須是快照內容`);
+  }
+});
+
 test("truncated:tool_limit：超過 --max-tool-calls，經收束呼叫產出，被拒呼叫記入 toolCalls[]", async () => {
   const { adapter } = createScriptedAdapter([
     mkResult({

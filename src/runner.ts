@@ -245,16 +245,26 @@ async function sendWithResilience(
   }
 }
 
+// ticket-dir-cwd（log_v0_6_0_open.md #31）：spoke 第一則訊息的唯一組裝點——實跑（runSpoke）與
+// 乾跑估算（cli.ts）都走這裡，不得各自組裝。原本 runSpoke 先 path.resolve、乾跑不 resolve，
+// cwd ≠ --repo-root 時實跑給出查表查不到的 `<cwd>/ticket/<name>`，乾跑卻一切正常，所以一路看不見。
+// DB 工單（readableContent 存在）的 ticketDir 是快照查表鍵的前綴、不是檔案系統路徑，原樣傳遞——
+// 判別條件與 executeToolCall 相同，「prompt 給的路徑」因此就是「查表用的鍵」。
+// 目錄工單（僅解析器測試）維持原本「相對 cwd 解析」的語意。
+export function buildSpokeFirstUserText(spoke: ResolvedSpoke, ticketDir: string, repoRoot: string): string {
+  return buildFirstUserText(
+    spoke.readableContent ? ticketDir : path.resolve(ticketDir),
+    spoke.agent,
+    spoke.allowedReadsRelative,
+    repoRoot,
+    spoke.lang,
+  );
+}
+
 export async function runSpoke(spoke: ResolvedSpoke, adapter: Adapter, ticketDir: string, options: RunnerOptions): Promise<SpokeRunResult> {
   const startedAt = Date.now();
   const systemPrompt = buildSystemPrompt(spoke.agentBody, spoke.lang);
-  const firstUserText = buildFirstUserText(
-    path.resolve(ticketDir),
-    spoke.agent,
-    spoke.allowedReadsRelative,
-    options.repoRoot,
-    spoke.lang,
-  );
+  const firstUserText = buildSpokeFirstUserText(spoke, ticketDir, options.repoRoot);
   const conv: Conversation = { systemPrompt, turns: [{ role: "user", text: firstUserText }] };
 
   let toolCallCount = 0;

@@ -141,7 +141,7 @@ A spoke's artifacts are the database row keyed by `<ticket-id>` + `<agent>` (rep
 | Spoke | Lens | Provider / model | Artifacts land in |
 | --- | --- | --- | --- |
 | 1 | safety | openai / gpt-5.6-luna | `SQLite results/auth-review-luna/hole-finder-safety.md` |
-| 2 | safety | deepseek / deepseek-v4-flash | `SQLite results/auth-review-ds/hole-finder-safety.md` |
+| 2 | safety | deepseek / deepseek-flash | `SQLite results/auth-review-ds/hole-finder-safety.md` |
 | 3 | feasibility | gemini / gemini-3.6-flash | `SQLite results/auth-review-luna/hole-finder-feasibility.md` |
 
 **Two spokes resolving to the same path means you are one hole short** — and the fix is not a different filename, it is a separate ticket directory: one model per directory, suffix the ticket-id, dispatch each once. Different lenses can share a directory; their agent names already differ.
@@ -162,10 +162,12 @@ Dispatching one is fine; dispatching all three is fine. **Do not rule a lens out
 
 | provider | model |
 | --- | --- |
-| `openai` | `gpt-5.6-luna` / `gpt-5.6-terra` / `gpt-5.6-sol` |
-| `deepseek` | `deepseek-v4-flash` / `deepseek-v4-pro` |
-| `gemini` | `gemini-3.1-flash-lite` / `gemini-3.5-flash-lite` / `gemini-3.6-flash` |
-| `anthropic` | `claude-opus-5` / `claude-sonnet-5` |
+| `openai` | `gpt-5.6-luna` / `gpt-5.6-terra` / `gpt-5.6-sol` / `gpt-6-astra` |
+| `deepseek` | `deepseek-flash` / `deepseek-v4-flash` / `deepseek-v4-pro` |
+| `gemini` | `gemini-3.1-flash-lite` / `gemini-3.5-flash-lite` / `gemini-3.6-flash` / `gemini-3.7-flash` / `gemini-3.8-flash` |
+| `anthropic` | `claude-opus-5` / `claude-sonnet-5` / `claude-haiku-4-5-20251001` |
+
+Most of these start **disabled**: on a fresh install only `gpt-5.6-luna`, `deepseek-flash`, `gemini-3.1-flash-lite`, `gemini-3.5-flash-lite` and `claude-haiku-4-5-20251001` are enabled. Dispatching to a disabled model is refused before any spend, and the message names the `dowafu providers enable` command to run. `deepseek-v4-flash` is kept for existing tickets but is retired upstream — **use `deepseek-flash` for new ones**.
 
 ### When the user has not specified models
 
@@ -220,7 +222,7 @@ The ticket goes into the database under `<ticket-id>`, a topic slug (for example
 | agent | provider | model | effort |
 | --- | --- | --- | --- |
 | hole-finder-safety | openai | gpt-5.6-luna | |
-| hole-finder-cost | deepseek | deepseek-v4-flash | |
+| hole-finder-cost | deepseek | deepseek-flash | |
 | hole-finder-feasibility | gemini | gemini-3.1-flash-lite | |
 ```
 

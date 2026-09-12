@@ -211,6 +211,7 @@ type MessageArgs = {
   ticketNotFound: [name: string];
   ticketCorrupt: [name: string];
   ticketNameInvalid: [name: string];
+  ticketNameReserved: [name: string, reserved: string];
   ticketAlreadyExists: [name: string];
   ticketSpokeNotFound: [name: string, agent: string];
   ticketShowHeader: [name: string];
@@ -403,7 +404,7 @@ const MESSAGES: Record<Lang, MessageDefs> = {
     missingProviders: (path) => `找不到 providers.json：${path}`,
     dryRunNotice: () => "--dry-run：僅解析／驗證／估算／印報表，未呼叫任何 API。",
 
-    helpText: (cmd) => `用法：${cmd} <ticket-id> [options]
+    helpText: (cmd) => `用法：${cmd} --ticket <name> [options]（亦接受位置參數 <ticket-id>）
 
 子指令（各自有自己的 --help／用法訊息）：
   ${cmd} ticket ...        建立、匯入、檢視工單
@@ -417,6 +418,7 @@ const MESSAGES: Record<Lang, MessageDefs> = {
   ${cmd} serve --restart [--yes] 停止後重新啟動 daemon，會走兩端清理
   ${cmd} mcp               以 stdio 提供 MCP server
 
+  --ticket <name>          指定工單名稱，不可與位置參數同時給
   --lang <en|zh-tw>        CLI 輸出與 spoke prompt 的語言，預設 en
   --repo-root <dir>        白名單邊界與 .claude/agents 的根，預設 cwd
   --db <path>              SQLite 工單與產物資料庫，預設 DISPATCH_HOME/dowafu.db
@@ -620,6 +622,7 @@ const MESSAGES: Record<Lang, MessageDefs> = {
     agentFileNotFound: (agentPath, agent) => `找不到 ${agentPath}（_dispatch.md 列了 agent "${agent}"）`,
     ticketNotFound: (name) => `找不到 DB 工單：${name}`,
     ticketCorrupt: (name) => `DB 工單內容損毀：${name}`,
+    ticketNameReserved: (name, reserved) => `工單名稱「${name}」是 CLI 保留字。保留名稱：${reserved}（--* 表示所有 -- 開頭的名稱）`,
     ticketNameInvalid: (name) => `工單名稱無效：${name}`,
     ticketAlreadyExists: (name) => `DB 工單已存在：${name}`,
     ticketSpokeNotFound: (name, agent) => `DB 工單 "${name}" 沒有 agent "${agent}"`,
@@ -801,7 +804,7 @@ const MESSAGES: Record<Lang, MessageDefs> = {
     missingProviders: (path) => `providers.json not found: ${path}`,
     dryRunNotice: () => "--dry-run: parsed, validated, estimated, and reported only; no API calls were made.",
 
-    helpText: (cmd) => `Usage: ${cmd} <ticket-id> [options]
+    helpText: (cmd) => `Usage: ${cmd} --ticket <name> [options] (positional <ticket-id> also accepted)
 
 Subcommands (each has its own usage message):
   ${cmd} ticket ...        Create, import and inspect tickets
@@ -815,6 +818,7 @@ Subcommands (each has its own usage message):
   ${cmd} serve --restart [--yes] Stop then start the daemon, running both cleanup phases
   ${cmd} mcp               Serve MCP over stdio
 
+  --ticket <name>          Select a ticket; cannot be combined with a positional ticket
   --lang <en|zh-tw>        Language for CLI output and spoke prompts, default en
   --repo-root <dir>        Root for the allowlist boundary and .claude/agents, default cwd
   --db <path>              SQLite ticket/result database, default DISPATCH_HOME/dowafu.db
@@ -1023,6 +1027,7 @@ Subcommands (each has its own usage message):
     agentFileNotFound: (agentPath, agent) => `Not found: ${agentPath} (_dispatch.md lists agent "${agent}")`,
     ticketNotFound: (name) => `DB ticket not found: ${name}`,
     ticketCorrupt: (name) => `DB ticket is corrupt: ${name}`,
+    ticketNameReserved: (name, reserved) => `Ticket name "${name}" is reserved by the CLI. Reserved names: ${reserved} (--* means every name starting with --)`,
     ticketNameInvalid: (name) => `Invalid ticket name: ${name}`,
     ticketAlreadyExists: (name) => `DB ticket already exists: ${name}`,
     ticketSpokeNotFound: (name, agent) => `DB ticket "${name}" has no agent "${agent}"`,

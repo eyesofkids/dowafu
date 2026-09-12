@@ -38,8 +38,8 @@ test("CLI：--doctor 的 JSON camelCase 佇列契約與文字版三態來自同�
   try {
     const dbPath = path.join(root, "dowafu.db");
     const db = openDb(dbPath, "en");
-    createTicket(db, "ticket", "# Under review\ntext\n", "en");
-    for (const id of ["pending-1", "pending-2", "running"]) submitJob(db, "ticket", id);
+    createTicket(db, "sample", "# Under review\ntext\n", "en");
+    for (const id of ["pending-1", "pending-2", "running"]) submitJob(db, "sample", id);
     approveJob(db, "running");
     assert.equal(claimNextJob(db)?.id, "running");
     db.close();

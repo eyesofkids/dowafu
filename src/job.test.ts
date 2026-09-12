@@ -21,13 +21,13 @@ function withDb(run: (db: ReturnType<typeof openDb>) => void): void {
 }
 
 function ticket(db: ReturnType<typeof openDb>): void {
-  createTicket(db, "ticket", "# Under review\ntext\n", "en");
+  createTicket(db, "sample", "# Under review\ntext\n", "en");
 }
 
 test("job：submit 預設待核准，只有 approve 後才可被認領", () => {
   withDb((db) => {
     ticket(db);
-    const job = submitJob(db, "ticket", "job-1");
+    const job = submitJob(db, "sample", "job-1");
     assert.equal(job.status, "pending_approval");
     assert.equal(claimNextJob(db), null);
     assert.equal(approveJob(db, job.id)?.status, "approved");
@@ -39,22 +39,22 @@ test("job：結果次數聯集 CLI ticket key 與 queue job key，summary 與 sp
   withDb((db) => {
     ticket(db);
     // CLI direct run: both rows share the ticket-name key.
-    db.prepare("INSERT INTO results (job_id, agent, output) VALUES (?, ?, ?)").run("ticket", "__summary__", "summary");
-    db.prepare("INSERT INTO results (job_id, agent, output) VALUES (?, ?, ?)").run("ticket", "reviewer", "direct result");
+    db.prepare("INSERT INTO results (job_id, agent, output) VALUES (?, ?, ?)").run("sample", "__summary__", "summary");
+    db.prepare("INSERT INTO results (job_id, agent, output) VALUES (?, ?, ?)").run("sample", "reviewer", "direct result");
     // Queue runs: each job-id key has the same summary-plus-spoke shape.
     for (const id of ["queued-1", "queued-2"]) {
-      submitJob(db, "ticket", id);
+      submitJob(db, "sample", id);
       db.prepare("INSERT INTO results (job_id, agent, output) VALUES (?, ?, ?)").run(id, "__summary__", "summary");
       db.prepare("INSERT INTO results (job_id, agent, output) VALUES (?, ?, ?)").run(id, "reviewer", "queued result");
     }
-    assert.equal(countTicketResultRuns(db, "ticket"), 3);
+    assert.equal(countTicketResultRuns(db, "sample"), 3);
   });
 });
 
 test("job：佇列計數只查三個工作中狀態，分開回傳且走 status 索引", () => {
   withDb((db) => {
     ticket(db);
-    for (const id of ["pending-1", "pending-2", "running", "completed"]) submitJob(db, "ticket", id);
+    for (const id of ["pending-1", "pending-2", "running", "completed"]) submitJob(db, "sample", id);
     approveJob(db, "running");
     assert.equal(claimNextJob(db)?.id, "running");
     db.prepare("UPDATE jobs SET status = 'completed' WHERE id = 'completed'").run();
@@ -70,7 +70,7 @@ test("job：佇列計數只查三個工作中狀態，分開回傳且走 status 
 test("job：claim 是狀態守衛的原子認領，第二次認領拿不到同一張", () => {
   withDb((db) => {
     ticket(db);
-    submitJob(db, "ticket", "job-1");
+    submitJob(db, "sample", "job-1");
     approveJob(db, "job-1");
     assert.equal(claimNextJob(db)?.id, "job-1");
     assert.equal(claimNextJob(db), null);
@@ -85,7 +85,7 @@ test("job：claim 的 UPDATE 本身帶 approved 狀態守衛，不能只信前�
 test("job：requeue 只退回 approved、清 approved_at，且可再次核准", () => {
   withDb((db) => {
     ticket(db);
-    for (const id of ["pending", "approved", "running", "completed", "failed", "interrupted", "rejected"]) submitJob(db, "ticket", id);
+    for (const id of ["pending", "approved", "running", "completed", "failed", "interrupted", "rejected"]) submitJob(db, "sample", id);
     approveJob(db, "running");
     claimNextJob(db);
     approveJob(db, "completed");
@@ -114,7 +114,7 @@ test("job：requeue 只退回 approved、清 approved_at，且可再次核准", 
 test("job：reject 是終態，之後不能核准或認領", () => {
   withDb((db) => {
     ticket(db);
-    submitJob(db, "ticket", "job-1");
+    submitJob(db, "sample", "job-1");
     assert.equal(rejectJob(db, "job-1")?.status, "rejected");
     assert.equal(approveJob(db, "job-1"), null);
     assert.equal(claimNextJob(db), null);
@@ -124,7 +124,7 @@ test("job：reject 是終態，之後不能核准或認領", () => {
 test("job：finish 只接受 running，保留 worker 算出的成本", () => {
   withDb((db) => {
     ticket(db);
-    submitJob(db, "ticket", "job-1");
+    submitJob(db, "sample", "job-1");
     approveJob(db, "job-1");
     assert.equal(finishJob(db, "job-1", { costUsd: 4 }), null);
     claimNextJob(db);
@@ -137,7 +137,7 @@ test("job：finish 只接受 running，保留 worker 算出的成本", () => {
 test("job：reap 將過期 running 標 interrupted，絕不把已花 cost_usd 歸零", () => {
   withDb((db) => {
     ticket(db);
-    submitJob(db, "ticket", "job-1");
+    submitJob(db, "sample", "job-1");
     approveJob(db, "job-1");
     claimNextJob(db);
     db.prepare("UPDATE jobs SET heartbeat_at = ?, cost_usd = ? WHERE id = ?").run("2000-01-01T00:00:00.000Z", 3.5, "job-1");
@@ -151,7 +151,7 @@ test("job：reap 將過期 running 標 interrupted，絕不把已花 cost_usd �
 test("job：reap 有非 summary 結果時補 completed 與結果成本，重跑是冪等的", () => {
   withDb((db) => {
     ticket(db);
-    submitJob(db, "ticket", "late-result");
+    submitJob(db, "sample", "late-result");
     approveJob(db, "late-result");
     claimNextJob(db);
     db.prepare("UPDATE jobs SET heartbeat_at = ? WHERE id = ?").run("2000-01-01T00:00:00.000Z", "late-result");
@@ -173,7 +173,7 @@ test("job：reap 有非 summary 結果時補 completed 與結果成本，重跑�
 test("job：reap 沒有任何 spoke 結果時仍標 interrupted，成本保持 NULL", () => {
   withDb((db) => {
     ticket(db);
-    submitJob(db, "ticket", "actually-interrupted");
+    submitJob(db, "sample", "actually-interrupted");
     approveJob(db, "actually-interrupted");
     claimNextJob(db);
     db.prepare("UPDATE jobs SET heartbeat_at = ? WHERE id = ?").run("2000-01-01T00:00:00.000Z", "actually-interrupted");
@@ -189,7 +189,7 @@ test("job：reap 只回看最近的 interrupted，晚到結果會修正、過窗
   withDb((db) => {
     ticket(db);
     for (const id of ["recent-interrupted", "old-interrupted"]) {
-      submitJob(db, "ticket", id);
+      submitJob(db, "sample", id);
       approveJob(db, id);
       claimNextJob(db);
     }
@@ -216,9 +216,9 @@ test("job：submit 拒絕不存在的 DB ticket", () => {
 test("job：id 前綴查詢保留所有狀態的排序命中，pending 清單只取待核准項目", () => {
   withDb((db) => {
     ticket(db);
-    submitJob(db, "ticket", "abc-002");
-    submitJob(db, "ticket", "abc-001");
-    submitJob(db, "ticket", "other-001");
+    submitJob(db, "sample", "abc-002");
+    submitJob(db, "sample", "abc-001");
+    submitJob(db, "sample", "other-001");
     approveJob(db, "abc-002");
     const prefixed = findJobsByIdPrefix(db, "abc-");
     assert.deepEqual(prefixed.map((job) => [job.id, job.status]), [["abc-001", "pending_approval"], ["abc-002", "approved"]]);

@@ -104,11 +104,11 @@ test("CLI：ticket add-spoke 用 - 從 stdin 讀本文，DB 內容與路徑寫�
 
     assert.equal((await runCli(["ticket", "create", "t", sharedPath, "--db", dbPath], env)).code, 0);
 
-    const viaPath = await runCli(["ticket", "add-spoke", "t", "hole-finder-cost", "deepseek", "deepseek-v4-flash", bodyPath, "--db", dbPath], env);
+    const viaPath = await runCli(["ticket", "add-spoke", "t", "hole-finder-cost", "deepseek", "deepseek-flash", bodyPath, "--db", dbPath], env);
     assert.equal(viaPath.code, 0, `路徑寫法應成功；stderr：${viaPath.stderr}`);
 
     const viaStdin = await runCliWithStdin(
-      ["ticket", "add-spoke", "t", "hole-finder-feasibility", "deepseek", "deepseek-v4-flash", "-", "--db", dbPath],
+      ["ticket", "add-spoke", "t", "hole-finder-feasibility", "deepseek", "deepseek-flash", "-", "--db", dbPath],
       env,
       BODY_CONTENT,
     );
@@ -138,14 +138,14 @@ test("CLI：ticket add-spoke 用 stdin 時，[effort] 給與不給都正確解�
     assert.equal((await runCli(["ticket", "create", "t", sharedPath, "--db", dbPath], env)).code, 0);
 
     const withEffort = await runCliWithStdin(
-      ["ticket", "add-spoke", "t", "with-effort", "deepseek", "deepseek-v4-flash", "-", "high", "--db", dbPath],
+      ["ticket", "add-spoke", "t", "with-effort", "deepseek", "deepseek-flash", "-", "high", "--db", dbPath],
       env,
       BODY_CONTENT,
     );
     assert.equal(withEffort.code, 0, `帶 effort 應成功；stderr：${withEffort.stderr}`);
 
     const withoutEffort = await runCliWithStdin(
-      ["ticket", "add-spoke", "t", "without-effort", "deepseek", "deepseek-v4-flash", "-", "--db", dbPath],
+      ["ticket", "add-spoke", "t", "without-effort", "deepseek", "deepseek-flash", "-", "--db", dbPath],
       env,
       BODY_CONTENT,
     );
@@ -174,7 +174,7 @@ test("CLI：同一個工單內混用路徑寫法與 stdin 寫法互不影響", a
     const env = { ...process.env, DISPATCH_HOME: root, DISPATCH_LANG: "en" };
 
     assert.equal((await runCliWithStdin(["ticket", "create", "mixed", "-", "--db", dbPath], env, SHARED_CONTENT)).code, 0);
-    const added = await runCli(["ticket", "add-spoke", "mixed", "hole-finder-cost", "deepseek", "deepseek-v4-flash", bodyPath, "--db", dbPath], env);
+    const added = await runCli(["ticket", "add-spoke", "mixed", "hole-finder-cost", "deepseek", "deepseek-flash", bodyPath, "--db", dbPath], env);
     assert.equal(added.code, 0, `stdin 建的工單，路徑寫法加 spoke 應照常成功；stderr：${added.stderr}`);
   });
 });

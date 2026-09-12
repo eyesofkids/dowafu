@@ -230,7 +230,7 @@ not work: a reviewer's fixed closing line has to match the template the audit ch
 against.
 
 ```bash
-npx degit eyesofkids/dowafu/publish/en#v0.6.0 .claude-pack   # or publish/zh-tw
+npx degit eyesofkids/dowafu/publish/en#v0.7.0 .claude-pack   # or publish/zh-tw
 
 cd .claude-pack
 TARGET=<your project>

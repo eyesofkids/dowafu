@@ -99,6 +99,11 @@ function buildStep3(allowedReadsRelative: string[], lang: Lang): string {
 // 必須與這裡給 spoke 的字串同源，否則豁免會對不上（issue_log_v2.7.md 2026-08-14）。
 function displayTicketDir(ticketDir: string, repoRoot?: string): string {
   if (!repoRoot) return ticketDir;
+  // ticket-dir-cwd：相對路徑一律原樣輸出，不交給 path.relative——後者會先以 cwd 解析它，
+  // cwd 不是 repoRoot 時（含 repoRoot 的子目錄）就變成另一個字串。DB 工單的 ticketDir 是虛擬的
+  // `ticket/<name>`，它就是快照查表鍵的前綴，spoke 必須逐字看到它。目錄工單由呼叫端
+  // （runner.ts 的 buildSpokeFirstUserText）先 resolve 成絕對路徑，不走這條。
+  if (!path.isAbsolute(ticketDir)) return ticketDir;
   const rel = path.relative(repoRoot, ticketDir);
   if (rel === "" || rel.startsWith("..") || path.isAbsolute(rel)) return ticketDir;
   return rel;

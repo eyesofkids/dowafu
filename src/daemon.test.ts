@@ -204,8 +204,8 @@ test("daemon：重複啟動給 pid 的人類可讀錯誤，不是 stack trace", 
   try {
     const dbPath = path.join(root, "dowafu.db");
     const db = openDb(dbPath);
-    createTicket(db, "ticket", "# Under review\ntext\n", "en");
-    submitJob(db, "ticket", "old-approved");
+    createTicket(db, "sample", "# Under review\ntext\n", "en");
+    submitJob(db, "sample", "old-approved");
     approveJob(db, "old-approved");
     const state = daemonStatePath(dbPath);
     writeFileSync(state, JSON.stringify({ pid: process.pid, at: Date.now() }));
@@ -226,8 +226,8 @@ test("daemon：serve 守衛通過後退回舊 approved，保留其他狀態且�
   try {
     const dbPath = path.join(root, "dowafu.db");
     const db = openDb(dbPath);
-    createTicket(db, "ticket", "# Under review\ntext\n", "en");
-    for (const id of ["pending", "old-approved", "running", "completed", "failed", "interrupted", "rejected"]) submitJob(db, "ticket", id);
+    createTicket(db, "sample", "# Under review\ntext\n", "en");
+    for (const id of ["pending", "old-approved", "running", "completed", "failed", "interrupted", "rejected"]) submitJob(db, "sample", id);
     approveJob(db, "running");
     claimNextJob(db);
     approveJob(db, "completed");

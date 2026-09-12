@@ -181,7 +181,7 @@ dowafu --version
 | spoke | lens | provider／model | 產物落點 |
 | --- | --- | --- | --- |
 | 1 | safety | openai／gpt-5.6-luna | `SQLite results/auth-review-luna/hole-finder-safety.md` |
-| 2 | safety | deepseek／deepseek-v4-flash | `SQLite results/auth-review-ds/hole-finder-safety.md` |
+| 2 | safety | deepseek／deepseek-flash | `SQLite results/auth-review-ds/hole-finder-safety.md` |
 | 3 | feasibility | gemini／gemini-3.6-flash | `SQLite results/auth-review-luna/hole-finder-feasibility.md` |
 
 **兩支算出同一個路徑，就是坑不夠**——而且解法不是改個檔名，是**拆工單目錄**：同一個 lens 要跑
@@ -205,10 +205,12 @@ dowafu --version
 
 | provider | model |
 | --- | --- |
-| `openai` | `gpt-5.6-luna`／`gpt-5.6-terra`／`gpt-5.6-sol` |
-| `deepseek` | `deepseek-v4-flash`／`deepseek-v4-pro` |
-| `gemini` | `gemini-3.1-flash-lite`／`gemini-3.5-flash-lite`／`gemini-3.6-flash` |
-| `anthropic` | `claude-opus-5`／`claude-sonnet-5` |
+| `openai` | `gpt-5.6-luna`／`gpt-5.6-terra`／`gpt-5.6-sol`／`gpt-6-astra` |
+| `deepseek` | `deepseek-flash`／`deepseek-v4-flash`／`deepseek-v4-pro` |
+| `gemini` | `gemini-3.1-flash-lite`／`gemini-3.5-flash-lite`／`gemini-3.6-flash`／`gemini-3.7-flash`／`gemini-3.8-flash` |
+| `anthropic` | `claude-opus-5`／`claude-sonnet-5`／`claude-haiku-4-5-20251001` |
+
+這些大多**預設停用**：全新安裝只開 `gpt-5.6-luna`、`deepseek-flash`、`gemini-3.1-flash-lite`、`gemini-3.5-flash-lite`、`claude-haiku-4-5-20251001`。派到停用的型號會在產生任何費用之前被擋下，訊息會指名該跑哪一條 `dowafu providers enable`。`deepseek-v4-flash` 保留是為了既有工單，但它在上游已退役——**新工單一律用 `deepseek-flash`**。
 
 ### 使用者沒指定型號時
 
@@ -268,7 +270,7 @@ EOF
 | agent | provider | model | effort |
 | --- | --- | --- | --- |
 | hole-finder-safety | openai | gpt-5.6-luna | |
-| hole-finder-cost | deepseek | deepseek-v4-flash | |
+| hole-finder-cost | deepseek | deepseek-flash | |
 | hole-finder-feasibility | gemini | gemini-3.1-flash-lite | |
 ```
 

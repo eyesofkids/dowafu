@@ -123,8 +123,8 @@ export function runCliJob(
   // stdout use the same language as the daemon's own failure message.
   const jobLang = job.lang ?? lang;
   const args = sourceMode
-    ? ["--import", "tsx", cliPath, job.ticket, "--yes", "--job-id", job.id, "--db", dbPath, "--lang", jobLang]
-    : [cliPath, job.ticket, "--yes", "--job-id", job.id, "--db", dbPath, "--lang", jobLang];
+    ? ["--import", "tsx", cliPath, "--ticket", job.ticket, "--yes", "--job-id", job.id, "--db", dbPath, "--lang", jobLang]
+    : [cliPath, "--ticket", job.ticket, "--yes", "--job-id", job.id, "--db", dbPath, "--lang", jobLang];
   return new Promise((resolve) => {
     const child: ChildProcess = deps.spawn(process.execPath, args, { stdio: ["inherit", "inherit", "pipe"], env: process.env });
     let stderrTail = Buffer.alloc(0);

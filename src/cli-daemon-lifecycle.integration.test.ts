@@ -40,8 +40,8 @@ test("CLI：serve --restart 先做停止端清理，再啟動並回報兩端張�
   let restarted: CliRun | undefined;
   try {
     const db = openDb(dbPath);
-    createTicket(db, "ticket", "# Under review\ntext\n", "en");
-    submitJob(db, "ticket", "old-approved");
+    createTicket(db, "sample", "# Under review\ntext\n", "en");
+    submitJob(db, "sample", "old-approved");
     approveJob(db, "old-approved");
 
     first = runCli(["serve", "--db", dbPath, "--http-port", "0"]);

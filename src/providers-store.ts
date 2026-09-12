@@ -9,7 +9,10 @@ import { bundledProvidersPath } from "./pkg-info.js";
 
 const DEFAULT_ENABLED = new Set([
   "gpt-5.6-luna",
-  "deepseek-v4-flash",
+  // 2026-09-12：預設改為 deepseek-flash。deepseek-v4-flash 已於 2026-09-10 退役，
+  // 目前只是暫時轉址到 V4.1 Flash 且官方未給截止日——預設開一個隨時會消失的型號，
+  // 壞法會是「新裝的人某天突然跑不動」。deepseek-flash 已 smoke 實跑通過。
+  "deepseek-flash",
   "gemini-3.1-flash-lite",
   "gemini-3.5-flash-lite",
   "claude-haiku-4-5-20251001",

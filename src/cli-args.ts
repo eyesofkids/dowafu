@@ -15,6 +15,8 @@ import type { CliOptions } from "./report.js";
 import type { RunEvent } from "./runner.js";
 import type { Lang, SpokeRunResult } from "./types.js";
 
+import { CLI_COMMANDS, CLI_SHORTCUTS } from "./cli-commands.js";
+
 const DEFAULTS: CliOptions = {
   out: "tmp/spoke",
   concurrency: 2,
@@ -115,8 +117,18 @@ export function parseArgs(argv: string[], lang: Lang): ParsedArgs {
   const helpText = m(lang, "helpText", getCommandName());
 
   // --help／--version 可出現在任何位置，且優先於其他一切解析——不要求先有 ticketDir。
-  if (argv.includes("--help") || argv.includes("-h")) return { mode: "help" };
-  if (argv.includes("--version") || argv.includes("-V")) return { mode: "version" };
+  // A named ticket is opaque, including legacy names such as --help or -V.
+  let ticketValue = false;
+  const controlArgs = argv.filter((arg) => {
+    if (ticketValue) {
+      ticketValue = false;
+      return false;
+    }
+    ticketValue = arg === "--ticket";
+    return true;
+  });
+  if (controlArgs.includes("--help") || controlArgs.includes(CLI_SHORTCUTS.help)) return { mode: "help" };
+  if (controlArgs.includes("--version") || controlArgs.includes(CLI_SHORTCUTS.version)) return { mode: "version" };
 
   const options = { ...DEFAULTS };
   // 熱修補（票 C 驗收）：`DOWAFU_HTTP_PORT` 原本只寫在 `daemon.ts` 的 `serve()` 參數預設值裡，
@@ -143,6 +155,10 @@ export function parseArgs(argv: string[], lang: Lang): ParsedArgs {
   };
 
   const flagHandlers: Record<string, (v: string) => void> = {};
+  flagHandlers["ticket"] = (v) => {
+    if (ticketDir !== undefined) throw new DispatchError(m(lang, "tooManyArgs", v, ticketDir, helpText), 2);
+    ticketDir = v;
+  };
   flagHandlers["out"] = (v) => (options.out = v);
   flagHandlers["repo-root"] = (v) => (options.repoRoot = v);
   flagHandlers["db"] = (v) => (options.dbPath = v);
@@ -179,13 +195,13 @@ export function parseArgs(argv: string[], lang: Lang): ParsedArgs {
       // 故不在頂部用 argv.includes() 直接短路，而是隨主迴圈掃完，迴圈後統一判定
       // （見迴圈後方）——這樣 --doctor 與 --lang 之類的已知旗標仍可同時給、彼此不衝突。
       doctorMode = true;
-    } else if (arg === "serve") {
+    } else if (arg === CLI_COMMANDS.serve) {
       serveMode = true;
     } else if (arg === "--stop") {
       serveStop = true;
     } else if (arg === "--restart") {
       serveRestart = true;
-    } else if (arg === "mcp") {
+    } else if (arg === CLI_COMMANDS.mcp) {
       mcpMode = true;
     } else if (arg.startsWith("--")) {
       const name = arg.slice(2);

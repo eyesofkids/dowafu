@@ -3,7 +3,7 @@ name: find-holes-external
 description: 把規劃書段落派給外部模型（OpenAI／DeepSeek／Gemini／Anthropic）做找漏洞審查，經本地 dowafu CLI 執行，spoke 唯讀且受白名單控管。適用於需要異質視角、或要對照真實原始碼審查規劃書時。用法：/find-holes-external <規劃書檔案路徑> [聚焦章節或問題]
 metadata:
   derived-from: ".claude/skills/find-holes-external/SKILL.md"
-  derived-from-sha256: "18d18a3702e17b3d7cab38f116734fd86e5493d7e634e240acad54858d7adf90"
+  derived-from-sha256: "746ff06b418de01f93c2176a2701de6814e9b85eb1bd8a10e6e32c05a32c17de"
 ---
 
 # find-holes-external — 外派找漏洞
@@ -167,7 +167,7 @@ dowafu --version
 | spoke | lens | provider／model | 產物落點 |
 | --- | --- | --- | --- |
 | 1 | safety | openai／gpt-5.6-luna | `SQLite results/auth-review-luna/hole-finder-safety.md` |
-| 2 | safety | deepseek／deepseek-v4-flash | `SQLite results/auth-review-ds/hole-finder-safety.md` |
+| 2 | safety | deepseek／deepseek-flash | `SQLite results/auth-review-ds/hole-finder-safety.md` |
 | 3 | feasibility | gemini／gemini-3.6-flash | `SQLite results/auth-review-luna/hole-finder-feasibility.md` |
 
 **兩支算出同一個路徑，就是坑不夠**——而且解法不是改個檔名，是**拆工單目錄**：同一個 lens 要跑
@@ -191,10 +191,12 @@ dowafu --version
 
 | provider | model |
 | --- | --- |
-| `openai` | `gpt-5.6-luna`／`gpt-5.6-terra`／`gpt-5.6-sol` |
-| `deepseek` | `deepseek-v4-flash`／`deepseek-v4-pro` |
-| `gemini` | `gemini-3.1-flash-lite`／`gemini-3.5-flash-lite`／`gemini-3.6-flash` |
-| `anthropic` | `claude-opus-5`／`claude-sonnet-5` |
+| `openai` | `gpt-5.6-luna`／`gpt-5.6-terra`／`gpt-5.6-sol`／`gpt-6-astra` |
+| `deepseek` | `deepseek-flash`／`deepseek-v4-flash`／`deepseek-v4-pro` |
+| `gemini` | `gemini-3.1-flash-lite`／`gemini-3.5-flash-lite`／`gemini-3.6-flash`／`gemini-3.7-flash`／`gemini-3.8-flash` |
+| `anthropic` | `claude-opus-5`／`claude-sonnet-5`／`claude-haiku-4-5-20251001` |
+
+這些大多**預設停用**：全新安裝只開 `gpt-5.6-luna`、`deepseek-flash`、`gemini-3.1-flash-lite`、`gemini-3.5-flash-lite`、`claude-haiku-4-5-20251001`。派到停用的型號會在產生任何費用之前被擋下，訊息會指名該跑哪一條 `dowafu providers enable`。`deepseek-v4-flash` 保留是為了既有工單，但它在上游已退役——**新工單一律用 `deepseek-flash`**。
 
 ### 使用者沒指定型號時
 
@@ -254,7 +256,7 @@ EOF
 | agent | provider | model | effort |
 | --- | --- | --- | --- |
 | hole-finder-safety | openai | gpt-5.6-luna | |
-| hole-finder-cost | deepseek | deepseek-v4-flash | |
+| hole-finder-cost | deepseek | deepseek-flash | |
 | hole-finder-feasibility | gemini | gemini-3.1-flash-lite | |
 ```
 
