@@ -117,7 +117,7 @@ dowafu ticket create auth-review - <<'EOF'
 ...
 EOF
 
-dowafu ticket add-spoke auth-review hole-finder-safety deepseek deepseek-v4-flash - <<'EOF'
+dowafu ticket add-spoke auth-review hole-finder-safety deepseek deepseek-flash - <<'EOF'
 # Questions
 1. Does the permission check described here hold under concurrent requests?
 
@@ -177,12 +177,24 @@ response for every call. Read a run back with `dowafu result <id>`.
 
 ## Models
 
-| provider | model |
-| --- | --- |
-| `openai` | `gpt-5.6-luna`, `gpt-5.6-terra`, `gpt-5.6-sol` |
-| `deepseek` | `deepseek-v4-flash` |
-| `gemini` | `gemini-3.1-flash-lite`, `gemini-3.5-flash-lite`, `gemini-3.6-flash` |
-| `anthropic` | `claude-opus-5`, `claude-sonnet-5` |
+| provider | model | on a fresh install |
+| --- | --- | :-: |
+| `openai` | `gpt-5.6-luna` | **enabled** |
+| | `gpt-5.6-terra`, `gpt-5.6-sol`, `gpt-6-astra` | disabled |
+| `deepseek` | `deepseek-flash` | **enabled** |
+| | `deepseek-v4-flash`, `deepseek-v4-pro` | disabled |
+| `gemini` | `gemini-3.1-flash-lite`, `gemini-3.5-flash-lite` | **enabled** |
+| | `gemini-3.6-flash`, `gemini-3.7-flash`, `gemini-3.8-flash` | disabled |
+| `anthropic` | `claude-haiku-4-5-20251001` | **enabled** |
+| | `claude-opus-5`, `claude-sonnet-5` | disabled |
+
+Fifteen models, five of them enabled out of the box — the pricier ones start disabled so
+that a typo cannot quietly dispatch to an expensive model. Dispatching to a disabled model
+is rejected before any spend, and tells you the `providers enable` command to run.
+
+`deepseek-v4-flash` was retired upstream on 2026-09-10 and is currently routed to V4.1
+Flash with no stated end date. It stays on the list so existing tickets keep working;
+**new tickets should use `deepseek-flash`**.
 
 The list ships with the package as `providers.json` and is seeded into the database the
 first time one is opened. From then on **the database is the source of truth**:
@@ -191,6 +203,16 @@ first time one is opened. From then on **the database is the source of truth**:
 dowafu providers list                      # the whitelist, and which models are enabled
 dowafu providers enable|disable <model>    # flip one on or off
 dowafu providers import <path>             # load your own file
+```
+
+**Upgrading the package does not refresh the list.** Seeding happens only when the model
+table is completely empty, so an upgrade never silently changes a price or an enabled flag
+you already have. To pick up models added in a later release, import the shipped file
+yourself:
+
+```bash
+dowafu providers import "$(npm root -g)/dowafu/providers.json"
+dowafu providers list                      # confirm the new models are there
 ```
 
 There is no `--providers` flag — it was removed in 0.5.0, when the whitelist moved into

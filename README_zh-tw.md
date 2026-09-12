@@ -98,7 +98,7 @@ dowafu ticket create auth-review - <<'EOF'
 ...
 EOF
 
-dowafu ticket add-spoke auth-review hole-finder-safety deepseek deepseek-v4-flash - <<'EOF'
+dowafu ticket add-spoke auth-review hole-finder-safety deepseek deepseek-flash - <<'EOF'
 # 具體問題
 1. 這裡描述的權限檢查在併發請求下還成立嗎？
 
@@ -166,12 +166,22 @@ dowafu result <id>
 
 ## Models
 
-| Provider | Model |
-| --- | --- |
-| `openai` | `gpt-5.6-luna`、`gpt-5.6-terra`、`gpt-5.6-sol` |
-| `deepseek` | `deepseek-v4-flash` |
-| `gemini` | `gemini-3.1-flash-lite`、`gemini-3.5-flash-lite`、`gemini-3.6-flash` |
-| `anthropic` | `claude-opus-5`、`claude-sonnet-5` |
+| Provider | Model | 全新安裝時 |
+| --- | --- | :-: |
+| `openai` | `gpt-5.6-luna` | **啟用** |
+| | `gpt-5.6-terra`、`gpt-5.6-sol`、`gpt-6-astra` | 停用 |
+| `deepseek` | `deepseek-flash` | **啟用** |
+| | `deepseek-v4-flash`、`deepseek-v4-pro` | 停用 |
+| `gemini` | `gemini-3.1-flash-lite`、`gemini-3.5-flash-lite` | **啟用** |
+| | `gemini-3.6-flash`、`gemini-3.7-flash`、`gemini-3.8-flash` | 停用 |
+| `anthropic` | `claude-haiku-4-5-20251001` | **啟用** |
+| | `claude-opus-5`、`claude-sonnet-5` | 停用 |
+
+共 15 個 Model，開箱只啟用五個——較貴的預設停用，讓打錯字不會安靜地派到昂貴的 Model 上。
+派到停用的 Model 會在產生任何費用之前被拒絕，並告訴你該跑哪一條 `providers enable`。
+
+`deepseek-v4-flash` 已於 2026-09-10 在上游退役，目前被轉址到 V4.1 Flash，官方未說明何時停止。
+它留在清單上是為了讓既有工單還能運作，**新工單請改用 `deepseek-flash`**。
 
 這份清單會隨套件以 `providers.json` 一起提供，並在第一次開啟資料庫時播種進去。
 之後**資料庫就是唯一來源**：
@@ -180,6 +190,14 @@ dowafu result <id>
 dowafu providers list                      # 白名單，以及哪些 Model 是啟用的
 dowafu providers enable|disable <model>    # 開關其中一個
 dowafu providers import <path>             # 匯入自己的設定檔
+```
+
+**升級套件不會刷新這份清單。** 播種只在 Model 表完全為空時發生，所以升級永遠不會安靜地改掉
+你既有的價格或啟用狀態。要取得後續版本新增的 Model，請自己匯入隨套件出貨的那一份：
+
+```bash
+dowafu providers import "$(npm root -g)/dowafu/providers.json"
+dowafu providers list                      # 確認新的 Model 已經進來
 ```
 
 **沒有 `--providers` 旗標**——0.5.0 把白名單搬進資料庫時已移除，帶了會被當成未知選項拒絕。
