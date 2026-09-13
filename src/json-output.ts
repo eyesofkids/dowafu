@@ -16,6 +16,7 @@ import type { ResolvedSpoke } from "./validate.js";
 import type { AllowlistEstimate, SpokeEstimate } from "./gate.js";
 import type { GitignoreStatus } from "./gitignore-check.js";
 import type { ToolCallAudit } from "./tool-call-audit.js";
+import type { TicketStatus } from "./ticket-store.js";
 
 export type JsonPlanEntry = {
   agent: string;
@@ -81,6 +82,7 @@ export type JsonSpoke = {
 
 export type JsonPayload = {
   ticketId: string;
+  ticketStatus: TicketStatus;
   repoRoot: string;
   outDir: string;
   providersSource: ProvidersSource;
@@ -137,6 +139,7 @@ export function buildJsonSpoke(
 
 export function buildJsonPayload(args: {
   ticketId: string;
+  ticketStatus: TicketStatus;
   repoRoot: string;
   outDir: string;
   providersSource: ProvidersSource;
@@ -150,6 +153,7 @@ export function buildJsonPayload(args: {
 }): JsonPayload {
   return {
     ticketId: args.ticketId,
+    ticketStatus: args.ticketStatus,
     repoRoot: args.repoRoot,
     outDir: args.outDir,
     providersSource: args.providersSource,

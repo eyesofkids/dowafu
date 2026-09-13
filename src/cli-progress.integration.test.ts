@@ -17,7 +17,7 @@ import path from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { openDb } from "./db.js";
-import { addSpoke, createTicket } from "./ticket-store.js";
+import { addSpoke, createTicket, sealTicket } from "./ticket-store.js";
 import { setProviderKey } from "./provider-key.js";
 import { mergeProviders, readProvidersFile, setModelEnabled } from "./providers-store.js";
 import { readProgress } from "./progress.js";
@@ -105,6 +105,8 @@ test("CLI：派工途中每輪都把進度寫進 DB，不是只有跑完才有�
     mergeProviders(db, await readProvidersFile(providersPath, "en"), false);
     setModelEnabled(db, "fake", "fake-model", true, "en");
     setProviderKey(db, "fake", "test-key-abc123xyz");
+    mkdirSync(path.join(root, ".claude", "agents"), { recursive: true });
+    writeFileSync(path.join(root, ".claude", "agents", "hole-finder-cost.md"), "測試用 agent 定義");
     createTicket(db, "sample", "# 待審段落\n內容\n", "zh");
     addSpoke(db, "sample", {
       agent: "hole-finder-cost",
@@ -112,6 +114,7 @@ test("CLI：派工途中每輪都把進度寫進 DB，不是只有跑完才有�
       model: "fake-model",
       body: "# 具體問題\n1. 問題\n\n# 允許讀取\n",
     }, "zh");
+    await sealTicket(db, "sample", root, "zh");
     db.close();
 
     const run = await runCli(

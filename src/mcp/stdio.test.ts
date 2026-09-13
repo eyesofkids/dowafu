@@ -4,6 +4,8 @@ import os from "node:os";
 import path from "node:path";
 import { PassThrough } from "node:stream";
 import { test } from "node:test";
+import { openDb } from "../db.js";
+import { createTicket } from "../ticket-store.js";
 import { SERVER_INFO } from "./protocol.js";
 import { startStdioServer } from "./stdio.js";
 
@@ -60,6 +62,30 @@ test("mcp stdio：server/discover 的 JSON-RPC 錯誤仍是 stdout 上唯一合�
       id: "d",
       error: { code: -32601, message: "server/discover not implemented (legacy server)" },
     });
+    input.end();
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("mcp stdio：dispatch_tickets 經共用 protocol 顯示 draft 狀態與定稿指令", async () => {
+  const root = mkdtempSync(path.join(os.tmpdir(), "dowafu-mcp-stdio-ticket-state-"));
+  try {
+    const dbPath = path.join(root, "dowafu.db");
+    const db = openDb(dbPath, "en");
+    createTicket(db, "draft-ticket", "# Under review\ntext\n", "en");
+    db.close();
+
+    const input = new PassThrough();
+    const output = new PassThrough();
+    const stdout = readChunks(output);
+    startStdioServer({ dbPath, input, output, stderr: new PassThrough(), exit: () => {} });
+    input.write('{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"dispatch_tickets","arguments":{}}}\n');
+    await new Promise((resolve) => setImmediate(resolve));
+
+    const response = JSON.parse(stdout.join("")) as { result: { content: Array<{ text: string }> } };
+    assert.match(response.result.content[0].text, /\[draft\] Draft — cannot be dispatched/);
+    assert.match(response.result.content[0].text, /ticket seal draft-ticket --repo-root <repo root>/);
     input.end();
   } finally {
     rmSync(root, { recursive: true, force: true });

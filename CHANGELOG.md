@@ -5,6 +5,47 @@ release commits and internal records after the fact; from 0.7.0 on they are writ
 release time. Versions before 0.5.0 are not covered here — see the git tags (`v0.3.0`
 onwards).
 
+## 0.8.0 — 2026-09-13
+
+### Added
+
+- **Tickets now have two states: draft and sealed.** `dowafu ticket seal <ticket-id>
+  --repo-root <dir>` freezes a ticket, including each reviewer's lens definition as it stands
+  at that moment. Sealing needs at least one spoke and every lens file to exist; if anything
+  is missing, nothing is sealed. A sealed ticket cannot be edited and cannot be unsealed —
+  `dowafu ticket copy <sealed-ticket> <new-id>` gives you a new draft instead.
+- **`dowafu providers import --bundled`** imports the model list shipped with the package
+  without needing its path, and always applies the shipped defaults to models you don't have
+  yet.
+- `--doctor` prints where the shipped `providers.json` is; `--doctor --json` gains a
+  `bundledProvidersPath` field. No existing field changed.
+
+### Changed
+
+- **A draft cannot be run or queued.** Running one exits with code 5 before any spend;
+  `dispatch_submit` refuses it without creating a job; `dispatch_approve` and
+  `dowafu approve` refuse a job whose ticket is a draft. Dry runs work in both states.
+- `dispatch_tickets` shows each ticket's state as a fixed English `[draft]` or `[sealed]`,
+  and a draft's line carries the exact command to seal it.
+- `ticket show` prints the state on its first line; `--json` output gains `ticketStatus`.
+
+### Fixed
+
+- **A queued job used the lens definitions of whatever directory the daemon was started
+  from.** The worker never received a repository root, so a daemon started in one project
+  silently ran another project's ticket with its own same-named lenses. A sealed ticket now
+  carries its lenses and never reads `.claude/agents/` at run time.
+- **A ticket could still be changed after its job was approved**, so the worker could run
+  content — and a cost — that nobody had approved. Sealed content is frozen.
+
+### Upgrading
+
+- 🔴 **Every existing ticket becomes a draft.** The database is migrated on first use (schema
+  version 5 → 6). Seal a ticket again before dispatching it. A job already in the queue cannot
+  be approved while its ticket is a draft.
+- To pick up the model list shipped with a release, run `dowafu providers import --bundled`.
+  Upgrading still never rewrites your prices or enabled flags on its own.
+
 ## 0.7.0 — 2026-09-12
 
 ### Added

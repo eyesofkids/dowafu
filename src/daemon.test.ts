@@ -11,6 +11,10 @@ import { approveJob, claimNextJob, finishJob, rejectJob, submitJob } from "./job
 import { daemonStatePath } from "./liveness.js";
 import { createTicket } from "./ticket-store.js";
 
+function sealTestTicket(db: ReturnType<typeof openDb>, name: string): void {
+  db.prepare("UPDATE tickets SET status = 'sealed', sealed_at = ? WHERE name = ?").run("2026-09-13T00:00:00.000Z", name);
+}
+
 test("daemon：最多同時跑設定上限，完成後寫 completed", async () => {
   const root = mkdtempSync(path.join(os.tmpdir(), "dowafu-daemon-"));
   try {
@@ -18,6 +22,8 @@ test("daemon：最多同時跑設定上限，完成後寫 completed", async () =
     const db = openDb(dbPath);
     createTicket(db, "one", "# Under review\ntext\n", "en");
     createTicket(db, "two", "# Under review\ntext\n", "en");
+    sealTestTicket(db, "one");
+    sealTestTicket(db, "two");
     submitJob(db, "one", "one");
     submitJob(db, "two", "two");
     approveJob(db, "one");
@@ -54,6 +60,7 @@ test("daemon：啟動時真的 reap 過期 running job，不讓重啟後狀態�
     const dbPath = path.join(root, "dowafu.db");
     const db = openDb(dbPath);
     createTicket(db, "stale", "# Under review\ntext\n", "en");
+    sealTestTicket(db, "stale");
     submitJob(db, "stale", "stale-job");
     approveJob(db, "stale-job");
     claimNextJob(db);
@@ -83,6 +90,7 @@ test("daemon：reap 是週期性的，不是只在啟動時跑一次", () => {
     const dbPath = path.join(root, "dowafu.db");
     const db = openDb(dbPath);
     createTicket(db, "stale", "# Under review\ntext\n", "en");
+    sealTestTicket(db, "stale");
     submitJob(db, "stale", "stale-job");
     approveJob(db, "stale-job");
     claimNextJob(db);
@@ -122,6 +130,7 @@ test("daemon：worker 在 daemon 死後才落結果，下一次 reap 仍會回�
     const dbPath = path.join(root, "dowafu.db");
     const db = openDb(dbPath);
     createTicket(db, "late", "# Under review\ntext\n", "en");
+    sealTestTicket(db, "late");
     submitJob(db, "late", "late-worker-job");
     approveJob(db, "late-worker-job");
     claimNextJob(db);
@@ -183,6 +192,7 @@ test("daemon：worker 失敗會寫 failed 與錯誤", async () => {
     const dbPath = path.join(root, "dowafu.db");
     const db = openDb(dbPath);
     createTicket(db, "broken", "# Under review\ntext\n", "en");
+    sealTestTicket(db, "broken");
     submitJob(db, "broken", "broken-job");
     approveJob(db, "broken-job");
     const daemon = createDaemon(db, { dbPath, execute: async () => ({ error: "worker broke" }) });
@@ -205,6 +215,7 @@ test("daemon：重複啟動給 pid 的人類可讀錯誤，不是 stack trace", 
     const dbPath = path.join(root, "dowafu.db");
     const db = openDb(dbPath);
     createTicket(db, "sample", "# Under review\ntext\n", "en");
+    sealTestTicket(db, "sample");
     submitJob(db, "sample", "old-approved");
     approveJob(db, "old-approved");
     const state = daemonStatePath(dbPath);
@@ -227,6 +238,7 @@ test("daemon：serve 守衛通過後退回舊 approved，保留其他狀態且�
     const dbPath = path.join(root, "dowafu.db");
     const db = openDb(dbPath);
     createTicket(db, "sample", "# Under review\ntext\n", "en");
+    sealTestTicket(db, "sample");
     for (const id of ["pending", "old-approved", "running", "completed", "failed", "interrupted", "rejected"]) submitJob(db, "sample", id);
     approveJob(db, "running");
     claimNextJob(db);

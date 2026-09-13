@@ -103,6 +103,7 @@ A ticket lives in the database, not on disk. Build one with the CLI:
 dowafu ticket create <ticket-id> <shared-file>
 dowafu ticket add-spoke <ticket-id> <agent> <provider> <model> <body-file> [effort]
 dowafu ticket add-allow <ticket-id> <agent> <repo-relative-path> --repo-root .
+dowafu ticket seal <ticket-id> --repo-root .
 ```
 
 The body argument of `create` and `add-spoke` takes a path — or `-`, which reads it from
@@ -131,6 +132,15 @@ EOF
 content as it stands at that moment — dispatch never re-reads it, so what a reviewer sees
 is that snapshot. `dowafu ticket show <ticket-id>` prints the models, the allowlists and
 the estimates.
+
+**A ticket must be sealed before it can run.** What you build above is a **draft**: you can
+keep editing it and dry-run it, but `--yes` and `dispatch_submit` both refuse it.
+`dowafu ticket seal <ticket-id> --repo-root .` freezes it — including each reviewer's lens
+definition, read from `.claude/agents/` at that moment — so a sealed ticket runs the same way
+no matter which directory the command or the daemon was started from. A sealed ticket cannot be
+edited; `dowafu ticket copy <ticket-id> <new-id>` gives you a new draft to change, and the
+original keeps matching the results it produced. `ticket show` prints `[draft]` or `[sealed]`
+on its first line.
 
 ### Section headings
 
@@ -211,7 +221,7 @@ you already have. To pick up models added in a later release, import the shipped
 yourself:
 
 ```bash
-dowafu providers import "$(npm root -g)/dowafu/providers.json"
+dowafu providers import --bundled
 dowafu providers list                      # confirm the new models are there
 ```
 
@@ -230,7 +240,7 @@ not work: a reviewer's fixed closing line has to match the template the audit ch
 against.
 
 ```bash
-npx degit eyesofkids/dowafu/publish/en#v0.7.0 .claude-pack   # or publish/zh-tw
+npx degit eyesofkids/dowafu/publish/en#v0.8.0 .claude-pack   # or publish/zh-tw
 
 cd .claude-pack
 TARGET=<your project>
@@ -252,7 +262,8 @@ in its own language.
 
 An agent can drive `dowafu` over MCP instead of through the shell. Five tools are
 exposed: `dispatch_tickets`, `dispatch_submit`, `dispatch_status`, `dispatch_result`
-and `dispatch_approve`.
+and `dispatch_approve`. `dispatch_submit` accepts sealed tickets only, and sealing is done
+from the CLI — there is no MCP tool for it.
 
 There are two transports, and the difference that matters is who starts what.
 

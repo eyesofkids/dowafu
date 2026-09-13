@@ -127,8 +127,8 @@ test("worker named args rescue stored serve job through fake spawn and retain al
   const db = openDb(":memory:");
   try {
     // Simulate a ticket created before name validation existed; never relax createTicket.
-    db.prepare("INSERT INTO tickets (name, doc, created_at) VALUES (?, ?, ?)")
-      .run("serve", JSON.stringify({ shared: "legacy marker", spokes: [] }), "2026-09-12");
+    db.prepare("INSERT INTO tickets (name, doc, status, sealed_at, created_at) VALUES (?, ?, ?, ?, ?)")
+      .run("serve", JSON.stringify({ shared: "legacy marker", spokes: [] }), "sealed", "2026-09-12T00:00:00.000Z", "2026-09-12");
     submitJob(db, "serve", "legacy-job", "zh");
     approveJob(db, "legacy-job");
     const job = claimNextJob(db);

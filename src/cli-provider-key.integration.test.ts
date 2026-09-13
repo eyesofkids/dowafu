@@ -17,7 +17,7 @@ import path from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { openDb } from "./db.js";
-import { addSpoke, createTicket } from "./ticket-store.js";
+import { addSpoke, createTicket, sealTicket } from "./ticket-store.js";
 import { m } from "./messages.js";
 import { setProviderKey } from "./provider-key.js";
 import { mergeProviders, readProvidersFile, setModelEnabled } from "./providers-store.js";
@@ -70,6 +70,7 @@ async function makeRoot(prefix: string, withKey: boolean): Promise<string> {
     model: "fake-model",
     body: "# 具體問題\n1. 問題\n\n# 允許讀取\n",
   }, "zh");
+  if (withKey) await sealTicket(db, "sample", root, "zh");
   db.close();
   return root;
 }

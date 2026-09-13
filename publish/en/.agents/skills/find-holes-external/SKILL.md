@@ -3,7 +3,7 @@ name: find-holes-external
 description: Dispatch sections of a plan document to external models (OpenAI / DeepSeek / Gemini / Anthropic) for hole-finding review, executed through the local dowafu CLI, where spokes are read-only and governed by an allowlist. Use when you need a heterogeneous perspective, or when the plan has to be reviewed against the real source code. Usage: /find-holes-external <path to plan> [section or question to focus on]
 metadata:
   derived-from: ".claude/skills/find-holes-external/SKILL.md"
-  derived-from-sha256: "798f17ccd101d73972de5430d16bc74fb36498ee5b60ff2071ff5e2537822a57"
+  derived-from-sha256: "be7c97cc7e6b49debd5b3a5357cb22169856a12b61d138070349edd1be3a7d68"
 ---
 
 # find-holes-external — external hole-finding
@@ -172,6 +172,7 @@ Tickets never touch disk — write straight into SQLite through the CLI. The bod
 dowafu ticket create <ticket-id> <shared-file>
 dowafu ticket add-spoke <ticket-id> <agent> <provider> <model> <spoke-body-file> [effort]
 dowafu ticket add-allow <ticket-id> <agent> <repo-relative-path> --repo-root .
+dowafu ticket seal <ticket-id> --repo-root .
 ```
 
 With `-`, a heredoc is the most direct way to feed the whole body in one shot, nothing staged first:
@@ -197,6 +198,20 @@ EOF
 `-` only occupies the body's own positional slot, so `add-spoke`'s `[effort]` still follows it (`- low`) and parses correctly whether given or not. Stdin must be piped or redirected — an interactive terminal gets a clear error, not a hang waiting for input. `add-allow`'s path argument was never a body in the first place, so it is unaffected and still takes a path.
 
 `add-allow` validates the path immediately, rejects `_docs/`, and stores its current content in SQLite; dispatch never re-reads it. Migrate an old directory once with `dowafu ticket import <dir> [ticket-id] --repo-root .`. Use `dowafu ticket show <ticket-id>` to inspect models, allowlists, and estimates.
+
+**A ticket has two states, and a new one must be sealed before it can be dispatched.** What
+`create` gives you is a **draft**: you can keep adding spokes and allowlist entries, and you can
+dry-run it, but it **cannot be dispatched and cannot be queued**.
+`dowafu ticket seal <ticket-id> --repo-root .` turns it into a **sealed** ticket — that step also
+freezes each lens into the ticket, so a sealed ticket runs against the lenses as they were when it
+was sealed, whatever `.claude/agents/` holds at run time. Sealing requires at least one spoke and
+every spoke's lens file to exist; if any is missing nothing is sealed and the state is unchanged.
+
+Once sealed the content is frozen: `add-spoke` and `add-allow` are refused. To change something,
+`dowafu ticket copy <sealed-ticket> <new-id>` gives you a fresh draft, and the original keeps
+matching the results it produced. **There is no command to unseal.**
+
+`dowafu ticket show <ticket-id>` prints `[draft]` or `[sealed]` on its first line.
 
 The ticket goes into the database under `<ticket-id>`, a topic slug (for example `auth-review`) — that id is what you pass later to dispatch, to read the report, and to read the results.
 

@@ -37,7 +37,7 @@ import { m } from "./messages.js";
 import type { SpokeRunResult } from "./types.js";
 import { defaultDbPath, openDb } from "./db.js";
 import { issueToken, listTokens, revokeToken } from "./api-token.js";
-import { addAllow, addSpoke, createTicket, formatTicket, hasResults, importTicketDirectory } from "./ticket-store.js";
+import { addAllow, addSpoke, copyTicket, createTicket, formatTicket, getStoredTicket, hasResults, importTicketDirectory, sealTicket } from "./ticket-store.js";
 import { approveJob, countQueueJobs, findJobsByIdPrefix, getJob, listPendingApprovalJobs, type JobQueueCounts } from "./job.js";
 import { serve, stopDaemon } from "./daemon.js";
 import { daemonAlive, daemonStatePath } from "./liveness.js";
@@ -193,6 +193,18 @@ async function ticketCommand(argv: string[], lang: "en" | "zh"): Promise<void> {
       await importTicketDirectory(db, dir, suppliedName ?? path.basename(path.resolve(dir)), repoRoot, lang);
       return;
     }
+    case "seal": {
+      const [name] = rest;
+      if (!name) throw new DispatchError(m(lang, "ticketHelp", command), 2);
+      await sealTicket(db, name, repoRoot, lang);
+      return;
+    }
+    case "copy": {
+      const [sourceName, newName] = rest;
+      if (!sourceName || !newName) throw new DispatchError(m(lang, "ticketHelp", command), 2);
+      copyTicket(db, sourceName, newName, lang);
+      return;
+    }
     case "show": {
       const [name] = rest;
       if (!name) throw new DispatchError(m(lang, "ticketHelp", command), 2);
@@ -221,9 +233,23 @@ async function providersCommand(argv: string[], lang: "en" | "zh"): Promise<void
     return;
   }
   if (action === "import") {
+    const bundled = rest.includes("--bundled");
+    if (bundled) {
+      // `--bundled` is an explicit source choice, not a spelling of the path.
+      // In particular, do not infer this from a path comparison: callers who ask
+      // for the shipped file must get the bundled DEFAULT_ENABLED policy.
+      if (rest.length !== 1) throw new DispatchError(m(lang, "providersHelp", command), 2);
+      const filePath = bundledProvidersPath();
+      mergeProviders(db, await readProvidersFile(filePath, lang), true);
+      console.log(m(lang, "providersImported", filePath));
+      return;
+    }
     const [filePath] = rest;
     if (!filePath) throw new DispatchError(m(lang, "providersHelp", command), 2);
-    mergeProviders(db, await readProvidersFile(path.resolve(filePath), lang), path.resolve(filePath) === bundledProvidersPath());
+    const resolvedPath = path.resolve(filePath);
+    // Keep the legacy path form's bundled recognition intact for callers that
+    // already pass the exact installed providers.json path.
+    mergeProviders(db, await readProvidersFile(resolvedPath, lang), resolvedPath === bundledProvidersPath());
     console.log(m(lang, "providersImported", filePath));
     return;
   }
@@ -599,6 +625,8 @@ async function main() {
     }
     const before = pending[0];
     if (!before) throw new DispatchError(m(messageLang, "jobNotFound", prefix ?? ""), 2);
+    const ticket = getStoredTicket(db, before.ticket, messageLang);
+    if (ticket.status !== "sealed") throw new DispatchError(m(messageLang, "ticketDraftRunBlocked", ticket.name, getCommandName()), 5);
     // Render the complete paid-work summary before changing the gate state.
     // A corrupted job therefore stays pending instead of becoming approved with
     // no information shown to the human operator.
@@ -656,6 +684,7 @@ async function main() {
       keyStatusRows,
       doctorDbPath,
       queue,
+      bundledProvidersPath(),
     );
     console.log(parsed.options.json ? JSON.stringify(doctorData) : renderDoctorReport(messageLang, getCommandName(), doctorData));
     return;
@@ -751,6 +780,7 @@ async function main() {
     lang,
     (provider, model) => isModelEnabled(db, provider, model),
     (provider) => getProviderKey(db, provider) !== undefined,
+    ticket.agentContent,
   );
 
   // §10 步驟 6／§14 閘門一：呼叫前估算
@@ -798,6 +828,7 @@ async function main() {
   ) =>
     buildJsonPayload({
       ticketId,
+      ticketStatus: ticket.status!,
       repoRoot,
       outDir,
       providersSource,
@@ -840,6 +871,10 @@ async function main() {
       console.log(JSON.stringify(maskDeep(buildPayload("dry-run", [], new Map(), new Map(), 0))));
     }
     return;
+  }
+
+  if (ticket.status !== "sealed") {
+    throw new DispatchError(m(lang, "ticketDraftRunBlocked", ticketName, getCommandName()), 5);
   }
 
   // 擋在 confirm 之前：不要先問「要不要花錢」再中止。exitCode 5 是「派工前被守則擋下、

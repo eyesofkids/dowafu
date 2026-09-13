@@ -66,22 +66,22 @@ test("resolveSpokes：中文標記的工單配注入 lang=\"en\"，ResolvedSpoke
     shared: { premises: [], reviewText: "待審段落", strayHeadings: [] },
     perAgent: new Map([["hole-finder-cost", agentTicket]]),
   };
-  const spokesEn = await resolveSpokes(ticket, mkProviders(), process.cwd(), "en", () => true, () => true);
+  const spokesEn = await resolveSpokes(ticket, mkProviders(), process.cwd(), "en", () => true, () => true, undefined);
   assert.equal(spokesEn[0].lang, "en");
   // 對照組：同一份工單換注入 "zh"，證明真的是注入值在決定，不是巧合。
-  const spokesZh = await resolveSpokes(ticket, mkProviders(), process.cwd(), "zh", () => true, () => true);
+  const spokesZh = await resolveSpokes(ticket, mkProviders(), process.cwd(), "zh", () => true, () => true, undefined);
   assert.equal(spokesZh[0].lang, "zh");
 });
 
 test("resolveSpokes：effort 留白 → 解析為 providers.json 的 reasoning.default（§5，不再是「不送參數」）", async () => {
   const ticket = mkTicket("hole-finder-cost", undefined);
-  const spokes = await resolveSpokes(ticket, mkProviders(), process.cwd(), "zh", () => true, () => true);
+  const spokes = await resolveSpokes(ticket, mkProviders(), process.cwd(), "zh", () => true, () => true, undefined);
   assert.equal(spokes[0].effort, "low", "provider 的 reasoning.default 是 low");
 });
 
 test("resolveSpokes：effort 明填時仍依原規則驗證，且優先於 default", async () => {
   const ticket = mkTicket("hole-finder-cost", "high");
-  const spokes = await resolveSpokes(ticket, mkProviders(), process.cwd(), "zh", () => true, () => true);
+  const spokes = await resolveSpokes(ticket, mkProviders(), process.cwd(), "zh", () => true, () => true, undefined);
   assert.equal(spokes[0].effort, "high");
 });
 
@@ -91,7 +91,7 @@ test("resolveSpokes：effort 留白但 provider 的 allowed 為空（default 不
   const ticket = mkTicket("hole-finder-cost", undefined);
   const providers = mkProviders({ reasoning: { style: "openai", allowed: [] } });
   await assert.rejects(
-    resolveSpokes(ticket, providers, process.cwd(), "zh", () => true, () => true),
+    resolveSpokes(ticket, providers, process.cwd(), "zh", () => true, () => true, undefined),
     (err: unknown) => {
       assert.ok(err instanceof DispatchError);
       assert.equal(
@@ -102,7 +102,7 @@ test("resolveSpokes：effort 留白但 provider 的 allowed 為空（default 不
     },
   );
   await assert.rejects(
-    resolveSpokes(ticket, providers, process.cwd(), "en", () => true, () => true),
+    resolveSpokes(ticket, providers, process.cwd(), "en", () => true, () => true, undefined),
     (err: unknown) => {
       assert.ok(err instanceof DispatchError);
       assert.equal(
@@ -118,7 +118,7 @@ test("resolveSpokes：effort 留白但 provider 的 allowed 為空（default 不
 test("resolveSpokes：effort 明填但不在 provider 的允許值域內 → 中止，訊息依 lang（zh／en，手寫字面量）", async () => {
   const ticket = mkTicket("hole-finder-cost", "medium");
   await assert.rejects(
-    resolveSpokes(ticket, mkProviders(), process.cwd(), "zh", () => true, () => true),
+    resolveSpokes(ticket, mkProviders(), process.cwd(), "zh", () => true, () => true, undefined),
     (err: unknown) => {
       assert.ok(err instanceof DispatchError);
       assert.equal(
@@ -129,7 +129,7 @@ test("resolveSpokes：effort 明填但不在 provider 的允許值域內 → 中
     },
   );
   await assert.rejects(
-    resolveSpokes(ticket, mkProviders(), process.cwd(), "en", () => true, () => true),
+    resolveSpokes(ticket, mkProviders(), process.cwd(), "en", () => true, () => true, undefined),
     (err: unknown) => {
       assert.ok(err instanceof DispatchError);
       assert.equal(
@@ -147,7 +147,7 @@ test("resolveSpokes：effort 明填但 provider 的 allowed 為空陣列 → lis
   const ticket = mkTicket("hole-finder-cost", "low");
   const providers = mkProviders({ reasoning: { style: "openai", allowed: [] } });
   await assert.rejects(
-    resolveSpokes(ticket, providers, process.cwd(), "zh", () => true, () => true),
+    resolveSpokes(ticket, providers, process.cwd(), "zh", () => true, () => true, undefined),
     (err: unknown) => {
       assert.equal(
         (err as DispatchError).message,
@@ -165,7 +165,7 @@ test("resolveSpokes：models 白名單非空且 model 不在其中 → 中止，
   const ticket = mkTicket("hole-finder-cost", "low", "not-whitelisted-model");
   const providers = mkProviders({ models: ["model-a", "model-b"] });
   await assert.rejects(
-    resolveSpokes(ticket, providers, process.cwd(), "zh", () => true, () => true),
+    resolveSpokes(ticket, providers, process.cwd(), "zh", () => true, () => true, undefined),
     (err: unknown) => {
       assert.ok(err instanceof DispatchError);
       assert.equal(
@@ -176,7 +176,7 @@ test("resolveSpokes：models 白名單非空且 model 不在其中 → 中止，
     },
   );
   await assert.rejects(
-    resolveSpokes(ticket, providers, process.cwd(), "en", () => true, () => true),
+    resolveSpokes(ticket, providers, process.cwd(), "en", () => true, () => true, undefined),
     (err: unknown) => {
       assert.ok(err instanceof DispatchError);
       assert.equal(
@@ -193,7 +193,7 @@ test("resolveSpokes：provider 未定義於 providers.json → 中止，訊息�
   const ticket = mkTicket("hole-finder-cost", "low");
   ticket.rows[0].provider = "unknown-provider";
   await assert.rejects(
-    resolveSpokes(ticket, mkProviders(), process.cwd(), "zh", () => true, () => true),
+    resolveSpokes(ticket, mkProviders(), process.cwd(), "zh", () => true, () => true, undefined),
     (err: unknown) => {
       assert.ok(err instanceof DispatchError);
       assert.equal(
@@ -204,7 +204,7 @@ test("resolveSpokes：provider 未定義於 providers.json → 中止，訊息�
     },
   );
   await assert.rejects(
-    resolveSpokes(ticket, mkProviders(), process.cwd(), "en", () => true, () => true),
+    resolveSpokes(ticket, mkProviders(), process.cwd(), "en", () => true, () => true, undefined),
     (err: unknown) => {
       assert.equal(
         (err as DispatchError).message,
@@ -224,7 +224,7 @@ test("resolveSpokes：provider 沒有 API key → 中止，訊息依 lang（zh�
   const ticket = mkTicket("hole-finder-cost", "low");
   const providers = mkProviders();
   await assert.rejects(
-    resolveSpokes(ticket, providers, process.cwd(), "zh", () => true, () => false),
+    resolveSpokes(ticket, providers, process.cwd(), "zh", () => true, () => false, undefined),
     (err: unknown) => {
       assert.ok(err instanceof DispatchError);
       assert.equal(
@@ -236,7 +236,7 @@ test("resolveSpokes：provider 沒有 API key → 中止，訊息依 lang（zh�
     },
   );
   await assert.rejects(
-    resolveSpokes(ticket, providers, process.cwd(), "en", () => true, () => false),
+    resolveSpokes(ticket, providers, process.cwd(), "en", () => true, () => false, undefined),
     (err: unknown) => {
       assert.equal(
         (err as DispatchError).message,
@@ -258,7 +258,7 @@ test("resolveSpokes：內部錯誤——rows 引用的 agent 不在 perAgent 內
     perAgent: new Map(),
   };
   await assert.rejects(
-    resolveSpokes(ticket, mkProviders(), process.cwd(), "zh", () => true, () => true),
+    resolveSpokes(ticket, mkProviders(), process.cwd(), "zh", () => true, () => true, undefined),
     (err: unknown) => {
       assert.ok(err instanceof DispatchError);
       assert.equal(err.message, m("zh", "internalErrorTicketContentMissing", "hole-finder-cost"));
@@ -266,7 +266,7 @@ test("resolveSpokes：內部錯誤——rows 引用的 agent 不在 perAgent 內
     },
   );
   await assert.rejects(
-    resolveSpokes(ticket, mkProviders(), process.cwd(), "en", () => true, () => true),
+    resolveSpokes(ticket, mkProviders(), process.cwd(), "en", () => true, () => true, undefined),
     (err: unknown) => {
       assert.equal((err as DispatchError).message, m("en", "internalErrorTicketContentMissing", "hole-finder-cost"));
       return true;
@@ -285,7 +285,7 @@ test("resolveSpokes：agent 定義檔不存在 → 中止，訊息依 lang（zh�
     const ticket = mkTicket("hole-finder-cost", "low");
     const agentDefPath = path.join(repoRoot, ".claude", "agents", "hole-finder-cost.md");
     await assert.rejects(
-      resolveSpokes(ticket, mkProviders(), repoRoot, "zh", () => true, () => true),
+      resolveSpokes(ticket, mkProviders(), repoRoot, "zh", () => true, () => true, undefined),
       (err: unknown) => {
         assert.ok(err instanceof DispatchError);
         assert.equal(err.message, `找不到 agent 定義檔 ${agentDefPath}（_dispatch.md 列了 "hole-finder-cost"）`);
@@ -293,7 +293,7 @@ test("resolveSpokes：agent 定義檔不存在 → 中止，訊息依 lang（zh�
       },
     );
     await assert.rejects(
-      resolveSpokes(ticket, mkProviders(), repoRoot, "en", () => true, () => true),
+      resolveSpokes(ticket, mkProviders(), repoRoot, "en", () => true, () => true, undefined),
       (err: unknown) => {
         assert.equal(
           (err as DispatchError).message,
@@ -310,13 +310,13 @@ test("resolveSpokes：agent 定義檔不存在 → 中止，訊息依 lang（zh�
 test("resolveSpokes：models 白名單非空且 model 在其中 → 通過", async () => {
   const ticket = mkTicket("hole-finder-cost", "low", "model-b");
   const providers = mkProviders({ models: ["model-a", "model-b"] });
-  const spokes = await resolveSpokes(ticket, providers, process.cwd(), "zh", () => true, () => true);
+  const spokes = await resolveSpokes(ticket, providers, process.cwd(), "zh", () => true, () => true, undefined);
   assert.equal(spokes[0].model, "model-b");
 });
 
 test("resolveSpokes：disabled model 在派工時被擋，exit code 與找不到型號不同", async () => {
   const ticket = mkTicket("hole-finder-cost", "low", "model-a");
-  await assert.rejects(resolveSpokes(ticket, mkProviders(), process.cwd(), "zh", () => false, () => true), (err: unknown) => {
+  await assert.rejects(resolveSpokes(ticket, mkProviders(), process.cwd(), "zh", () => false, () => true, undefined), (err: unknown) => {
     assert.ok(err instanceof DispatchError);
     assert.equal(err.exitCode, 6);
     assert.match(err.message, /providers enable model-a/);
@@ -345,7 +345,7 @@ test("resolveSpokes：--repo-root 決定 .claude/agents 的讀取位置，不是
   const repoRoot = mkFakeRepoRoot();
   try {
     const ticket = mkTicket("hole-finder-cost", "low");
-    const spokes = await resolveSpokes(ticket, mkProviders(), repoRoot, "zh", () => true, () => true);
+    const spokes = await resolveSpokes(ticket, mkProviders(), repoRoot, "zh", () => true, () => true, undefined);
     assert.match(spokes[0].agentBody, /這個假 repoRoot 專屬的 agent body/);
   } finally {
     rmSync(repoRoot, { recursive: true, force: true });
@@ -361,9 +361,34 @@ test("resolveSpokes：允許讀取清單相對 --repo-root 解析，repoRoot 下
       shared: { premises: [], reviewText: "待審段落", strayHeadings: [] },
       perAgent: new Map([["hole-finder-cost", { questions: "具體問題", allowedReads: ["allowed.txt"] }]]),
     };
-    const spokes = await resolveSpokes(ticket, mkProviders(), repoRoot, "zh", () => true, () => true);
+    const spokes = await resolveSpokes(ticket, mkProviders(), repoRoot, "zh", () => true, () => true, undefined);
     assert.equal(spokes[0].allowedReadsResolved.length, 1);
     assert.match(spokes[0].allowedReadsResolved[0], /allowed\.txt$/);
+  } finally {
+    rmSync(repoRoot, { recursive: true, force: true });
+  }
+});
+
+test("D1：DB 工單快照缺少允許檔時即使磁碟同名檔存在仍中止，不得回退讀磁碟", async () => {
+  const repoRoot = mkFakeRepoRoot();
+  try {
+    const ticket: Ticket = {
+      ticketDir: "ticket/snapshot-only",
+      ticketName: "snapshot-only",
+      rows: [{ agent: "hole-finder-cost", provider: "testprovider", model: "model-a", effort: "low" }],
+      shared: { premises: [], reviewText: "待審段落", strayHeadings: [] },
+      perAgent: new Map([["hole-finder-cost", { questions: "具體問題", allowedReads: ["allowed.txt"] }]]),
+      // Deliberately omit allowed.txt while retaining the ticket documents. The file exists
+      // on disk from mkFakeRepoRoot, so a fallback would turn this test green incorrectly.
+      allowedContent: new Map([
+        ["ticket/snapshot-only/_shared.md", "shared snapshot"],
+        ["ticket/snapshot-only/hole-finder-cost.md", "agent ticket snapshot"],
+      ]),
+    };
+    await assert.rejects(
+      resolveSpokes(ticket, mkProviders(), repoRoot, "en", () => true, () => true, undefined),
+      (err: unknown) => err instanceof DispatchError && err.message === m("en", "allowedReadsPathNotFound", "hole-finder-cost", "allowed.txt"),
+    );
   } finally {
     rmSync(repoRoot, { recursive: true, force: true });
   }
@@ -380,7 +405,7 @@ test("resolveSpokes：_docs/ 拒絕判定相對 --repo-root，不是相對 proce
       perAgent: new Map([["hole-finder-cost", { questions: "具體問題", allowedReads: ["_docs/secret.md"] }]]),
     };
     await assert.rejects(
-      resolveSpokes(ticket, mkProviders(), repoRoot, "zh", () => true, () => true),
+      resolveSpokes(ticket, mkProviders(), repoRoot, "zh", () => true, () => true, undefined),
       (err: unknown) => {
         assert.ok(err instanceof DispatchError);
         assert.equal(err.message, '"hole-finder-cost" 的允許讀取清單指向 _docs/（spoke 禁區）：_docs/secret.md');
@@ -388,7 +413,7 @@ test("resolveSpokes：_docs/ 拒絕判定相對 --repo-root，不是相對 proce
       },
     );
     await assert.rejects(
-      resolveSpokes(ticket, mkProviders(), repoRoot, "en", () => true, () => true),
+      resolveSpokes(ticket, mkProviders(), repoRoot, "en", () => true, () => true, undefined),
       (err: unknown) => {
         assert.equal(
           (err as DispatchError).message,
@@ -413,7 +438,7 @@ test("resolveSpokes：允許讀取清單指向不存在的路徑 → 中止，�
       perAgent: new Map([["hole-finder-cost", { questions: "具體問題", allowedReads: ["does-not-exist.txt"] }]]),
     };
     await assert.rejects(
-      resolveSpokes(ticket, mkProviders(), repoRoot, "zh", () => true, () => true),
+      resolveSpokes(ticket, mkProviders(), repoRoot, "zh", () => true, () => true, undefined),
       (err: unknown) => {
         assert.ok(err instanceof DispatchError);
         assert.equal(err.message, '"hole-finder-cost" 的允許讀取清單指向不存在的路徑：does-not-exist.txt');
@@ -421,7 +446,7 @@ test("resolveSpokes：允許讀取清單指向不存在的路徑 → 中止，�
       },
     );
     await assert.rejects(
-      resolveSpokes(ticket, mkProviders(), repoRoot, "en", () => true, () => true),
+      resolveSpokes(ticket, mkProviders(), repoRoot, "en", () => true, () => true, undefined),
       (err: unknown) => {
         assert.equal(
           (err as DispatchError).message,

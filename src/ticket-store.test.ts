@@ -11,14 +11,18 @@ import { loadTicket } from "./ticket.js";
 import {
   addAllow,
   addSpoke,
+  copyTicket,
   createTicket,
   formatTicket,
   getTicketDoc,
   getTicketHardCapUsd,
+  getStoredTicket,
   hasResults,
   importTicketDirectory,
+  sealTicket,
 } from "./ticket-store.js";
 import { DispatchError } from "./types.js";
+import { setProviderKey } from "./provider-key.js";
 
 const SHARED = "# 前提（不受審）\n- none\n\n# 待審段落\nreview body\n";
 const BODY = "# 具體問題\n1. 能否驗證？\n\n# 允許讀取\n- source.txt\n";
@@ -60,6 +64,79 @@ test("ticket-store：createTicket 建立後不可重名，addSpoke 的同 agent 
       () => addSpoke(db, "sample", { agent: "hole-finder-cost", provider: "deepseek", model: "deepseek-v4-flash", body: BODY }, "zh"),
       DispatchError,
     );
+  });
+});
+
+test("ticket-states：seal 全有或全無、封存後拒絕寫入，copy 產生不帶 lens 的新草稿", async () => {
+  await withTempDb(async (dbPath, root) => {
+    writeFileSync(path.join(root, "source.txt"), "allowed snapshot");
+    const db = addSampleSpoke(dbPath);
+    await addAllow(db, "sample", "hole-finder-cost", "source.txt", root, "zh");
+    addSpoke(db, "sample", { agent: "second-agent", provider: "deepseek", model: "deepseek-v4-flash", body: BODY }, "zh");
+    const originalDoc = JSON.stringify(getTicketDoc(db, "sample", "en"));
+
+    mkdirSync(path.join(root, ".claude", "agents"), { recursive: true });
+    writeFileSync(path.join(root, ".claude", "agents", "hole-finder-cost.md"), "first sealed lens");
+    await assert.rejects(sealTicket(db, "sample", root, "en"), DispatchError);
+    assert.equal(getStoredTicket(db, "sample", "en").status, "draft");
+    assert.equal(JSON.stringify(getTicketDoc(db, "sample", "en")), originalDoc, "缺一支 lens 時不得存任何快照");
+
+    writeFileSync(path.join(root, ".claude", "agents", "second-agent.md"), "second sealed lens");
+    await sealTicket(db, "sample", root, "en");
+    const sealed = getStoredTicket(db, "sample", "en");
+    assert.equal(sealed.status, "sealed");
+    assert.ok(sealed.sealedAt);
+    assert.equal(sealed.doc.sealedRepoRoot, root);
+    assert.deepEqual(sealed.doc.agentContent, { "hole-finder-cost": "first sealed lens", "second-agent": "second sealed lens" });
+    assert.match(formatTicket(db, "sample", "en").split("\n")[0], /\[sealed\].*frozen/);
+
+    assert.throws(() => addSpoke(db, "sample", { agent: "third-agent", provider: "deepseek", model: "deepseek-v4-flash", body: BODY }, "en"), DispatchError);
+    await assert.rejects(addAllow(db, "sample", "hole-finder-cost", "source.txt", root, "en"), DispatchError);
+
+    copyTicket(db, "sample", "sample-copy", "en");
+    const copied = getStoredTicket(db, "sample-copy", "en");
+    assert.equal(copied.status, "draft");
+    assert.equal(copied.sealedAt, null);
+    assert.equal(copied.doc.agentContent, undefined);
+    assert.equal(copied.doc.sealedRepoRoot, undefined);
+    assert.deepEqual(copied.doc.spokes, sealed.doc.spokes, "copy 保留 shared／spokes／允許檔快照");
+    assert.match(formatTicket(db, "sample-copy", "en").split("\n")[0], /\[draft\].*cannot be dispatched/);
+    assert.throws(() => copyTicket(db, "sample-copy", "another-copy", "en"), DispatchError);
+  });
+});
+
+test("ticket-states：CLI 的 seal／copy 與草稿實跑守衛，乾跑 JSON 帶狀態", async () => {
+  await withTempDb(async (dbPath, root) => {
+    writeFileSync(path.join(root, "source.txt"), "snapshot");
+    mkdirSync(path.join(root, ".claude", "agents"), { recursive: true });
+    writeFileSync(path.join(root, ".claude", "agents", "hole-finder-cost.md"), "lens to seal");
+    const db = addSampleSpoke(dbPath);
+    // If the draft guard regresses, this deliberately unreachable loopback endpoint
+    // fails locally; the mutation test never risks a provider request.
+    db.prepare("UPDATE providers SET base_url = ? WHERE name = ?").run("http://127.0.0.1:9/v1", "deepseek");
+    await addAllow(db, "sample", "hole-finder-cost", "source.txt", root, "en");
+    setProviderKey(db, "deepseek", "local-test-key-not-used");
+    db.close();
+    const env = { ...process.env, DISPATCH_HOME: root, DISPATCH_LANG: "en" };
+
+    const draftRun = await runCli(["sample", "--db", dbPath, "--repo-root", root, "--yes", "--json"], env);
+    assert.equal(draftRun.code, 5, draftRun.stderr);
+    assert.match(draftRun.stderr, /is a draft/);
+    const dryRun = await runCli(["sample", "--db", dbPath, "--repo-root", root, "--dry-run", "--json"], env);
+    assert.equal(dryRun.code, 0, dryRun.stderr);
+    assert.equal((JSON.parse(dryRun.stdout) as { ticketStatus: string }).ticketStatus, "draft");
+
+    const sealed = await runCli(["ticket", "seal", "sample", "--repo-root", root, "--db", dbPath], env);
+    assert.equal(sealed.code, 0, sealed.stderr);
+    const copied = await runCli(["ticket", "copy", "sample", "copy-from-cli", "--db", dbPath], env);
+    assert.equal(copied.code, 0, copied.stderr);
+    const check = openDb(dbPath, "en");
+    try {
+      assert.equal(getStoredTicket(check, "sample", "en").status, "sealed");
+      assert.equal(getStoredTicket(check, "copy-from-cli", "en").status, "draft");
+    } finally {
+      check.close();
+    }
   });
 });
 
@@ -168,7 +245,8 @@ test("CLI approve：空 DB 的 seeded 接線、免參數、短 id 與歧義前�
       spokes: [{ agent: "reviewer", provider: "deepseek", model: "deepseek-v4-flash", body: "# Questions\n1. Check\n", allow: [{ path: "source.txt", content: "abcdefgh" }] }],
     });
     for (const name of ["single", "many", "prefix", "ambiguous"]) {
-      db.prepare("INSERT INTO tickets (name, doc, created_at) VALUES (?, ?, ?)").run(name, doc, "2026-09-02T00:00:00.000Z");
+      db.prepare("INSERT INTO tickets (name, doc, status, sealed_at, created_at) VALUES (?, ?, ?, ?, ?)")
+        .run(name, doc, "sealed", "2026-09-02T00:00:00.000Z", "2026-09-02T00:00:00.000Z");
     }
     submitJob(db, "single", "11111111-0000-0000-0000-000000000001");
     db.close();

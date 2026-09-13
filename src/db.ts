@@ -206,6 +206,24 @@ const MIGRATIONS: Migration[] = [
       if (!columns.has("lang")) db.exec("ALTER TABLE jobs ADD COLUMN lang TEXT");
     },
   },
+  // ticket-states-T1: old tickets were created before content had a freeze point.
+  // A v5 database therefore has no sealed content, so every existing ticket starts as
+  // draft and must be sealed explicitly before it can be dispatched.
+  {
+    version: 6,
+    up: (db) => {
+      const columns = new Set(
+        (db.prepare("PRAGMA table_info(tickets)").all() as Array<{ name: string }>).map((column) => column.name),
+      );
+      if (!columns.has("status")) db.exec("ALTER TABLE tickets ADD COLUMN status TEXT");
+      if (!columns.has("sealed_at")) db.exec("ALTER TABLE tickets ADD COLUMN sealed_at TEXT");
+      // 驗收熱修補：本行原本無條件覆寫，於是對「user_version 被退回 5、但資料已有定稿工單」
+      // 的降版 fixture 重跑時，會把 sealed 洗成 draft、sealed_at 洗成 NULL（實測確認）。
+      // 真實升級路徑上兩者等價——欄位是這一步才加的，全部是 NULL；加了條件之後重跑是 no-op。
+      // v5 的形狀本來就是「加欄位、資料不動」，這裡只是補回同一個紀律。
+      db.exec("UPDATE tickets SET status = 'draft', sealed_at = NULL WHERE status IS NULL");
+    },
+  },
 ];
 
 const LATEST_SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1].version;

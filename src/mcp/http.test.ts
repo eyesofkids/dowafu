@@ -7,6 +7,7 @@ import path from "node:path";
 import { test } from "node:test";
 import { issueToken } from "../api-token.js";
 import { openDb } from "../db.js";
+import { createTicket } from "../ticket-store.js";
 import { createHttpServer, createRequestHandler, rateLimitBucketKey, DEFAULT_HTTP_PORT } from "./http.js";
 
 // 不倚賴真的 socket：req 只需要 handler 實際用到的四樣東西（method/url/headers/on/destroy），
@@ -304,6 +305,22 @@ test("http（真連線）：帶正確 token 走完整 SSE 往返", async () => {
     const text = await res.text();
     assert.match(text, /^event: message\ndata: /);
     assert.deepEqual(JSON.parse(text.replace(/^event: message\ndata: /, "").trim()), { jsonrpc: "2.0", id: 1, result: {} });
+  });
+});
+
+test("http（真連線）：dispatch_tickets 經共用 protocol 顯示 draft 狀態與定稿指令", async () => {
+  await withRealServer(async (baseUrl, db) => {
+    const { plaintext } = issueToken(db, "laptop");
+    createTicket(db, "draft-ticket", "# Under review\ntext\n", "en");
+    const res = await fetch(`${baseUrl}/mcp`, {
+      method: "POST",
+      headers: { accept: ACCEPT_BOTH, "content-type": "application/json", "x-api-key": plaintext },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "dispatch_tickets", arguments: {} } }),
+    });
+    assert.equal(res.status, 200);
+    const payload = JSON.parse((await res.text()).replace(/^event: message\ndata: /, "").trim()) as { result: { content: Array<{ text: string }> } };
+    assert.match(payload.result.content[0].text, /\[draft\] Draft — cannot be dispatched/);
+    assert.match(payload.result.content[0].text, /ticket seal draft-ticket --repo-root <repo root>/);
   });
 });
 

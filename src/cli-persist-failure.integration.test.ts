@@ -7,7 +7,7 @@ import path from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { openDb } from "./db.js";
-import { addSpoke, createTicket } from "./ticket-store.js";
+import { addSpoke, createTicket, sealTicket } from "./ticket-store.js";
 import { m } from "./messages.js";
 import { mergeProviders, readProvidersFile, setModelEnabled } from "./providers-store.js";
 import { setProviderKey } from "./provider-key.js";
@@ -85,6 +85,7 @@ test("CLI：首度 DB 落檔失敗後重試，保留已付費 result 的 usage �
       effort: "low",
       body: "# 具體問題\n1. test\n\n# 允許讀取\n",
     }, "zh");
+    await sealTicket(db, "sample", root, "zh");
     db.exec("CREATE TABLE persist_fail_once (remaining INTEGER NOT NULL)");
     db.exec("INSERT INTO persist_fail_once VALUES (1)");
     db.exec(`CREATE TRIGGER fail_result_insert_once

@@ -84,6 +84,7 @@ dowafu --help                  # 查看所有旗標
 dowafu ticket create <ticket-id> <shared-file>
 dowafu ticket add-spoke <ticket-id> <agent> <provider> <model> <body-file> [effort]
 dowafu ticket add-allow <ticket-id> <agent> <repo-relative-path> --repo-root .
+dowafu ticket seal <ticket-id> --repo-root .
 ```
 
 `create` 與 `add-spoke` 的本文參數可以是路徑，也可以是 `-`（從 stdin 讀）——所以用 heredoc
@@ -110,6 +111,13 @@ EOF
 
 `add-allow` 會立刻驗證路徑、拒絕 `_docs/`，並把該檔案**當下的內容**存起來——派工時不會再讀一次，
 所以審查者看到的是那一刻的快照。用 `dowafu ticket show <ticket-id>` 檢視 Model、允許清單與估算。
+
+**工單要先定稿才能執行。** 上面建出來的是**草稿**：可以繼續修改、可以乾跑，但 `--yes` 與
+`dispatch_submit` 都會拒絕它。`dowafu ticket seal <ticket-id> --repo-root .` 把它凍結——
+連同每位審查者的 lens 定義（在那一刻從 `.claude/agents/` 讀進來）——所以定稿之後，不論指令或
+daemon 從哪個目錄啟動，執行結果都一樣。定稿的工單不能再改；要改就用
+`dowafu ticket copy <ticket-id> <new-id>` 複製出一張新草稿，原本那張與它產出的結果維持對應。
+`ticket show` 的第一行會印出 `[draft]` 或 `[sealed]`。
 
 ### 段落標題
 
@@ -196,7 +204,7 @@ dowafu providers import <path>             # 匯入自己的設定檔
 你既有的價格或啟用狀態。要取得後續版本新增的 Model，請自己匯入隨套件出貨的那一份：
 
 ```bash
-dowafu providers import "$(npm root -g)/dowafu/providers.json"
+dowafu providers import --bundled
 dowafu providers list                      # 確認新的 Model 已經進來
 ```
 
@@ -217,7 +225,7 @@ dowafu providers list                      # 確認新的 Model 已經進來
 `publish/` 提供兩種語言：`publish/en/` 與 `publish/zh-tw/`。**擇一複製，不可混裝**——審查者的固定收尾句必須與稽核檢查用的範本是同一種語言。
 
 ```bash
-npx degit eyesofkids/dowafu/publish/zh-tw#v0.7.0 .claude-pack   # 或 publish/en
+npx degit eyesofkids/dowafu/publish/zh-tw#v0.8.0 .claude-pack   # 或 publish/en
 
 cd .claude-pack
 TARGET=<your project>
@@ -242,7 +250,7 @@ publish/zh-tw/README.md   （或 publish/en/README.md）
 ## 接成 MCP server
 
 Agent 可以不走 shell，改用 MCP 驅動 `dowafu`。露出五個 tool：`dispatch_tickets`、
-`dispatch_submit`、`dispatch_status`、`dispatch_result`、`dispatch_approve`。
+`dispatch_submit`、`dispatch_status`、`dispatch_result`、`dispatch_approve`。`dispatch_submit` 只接受已定稿的工單；定稿只能從 CLI 做，沒有對應的 MCP tool。
 
 有兩條路，差別在**誰啟動誰**。
 

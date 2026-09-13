@@ -18,7 +18,7 @@ import path from "node:path";
 import { after, before, describe, test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { openDb } from "./db.js";
-import { addAllow, addSpoke, createTicket } from "./ticket-store.js";
+import { addAllow, addSpoke, createTicket, sealTicket } from "./ticket-store.js";
 import { setProviderKey } from "./provider-key.js";
 import { mergeProviders, readProvidersFile, setModelEnabled } from "./providers-store.js";
 
@@ -32,6 +32,7 @@ const ALLOWED_REL = "src/allowed.ts";
 const SHARED = "# 待審段落\nshared-marker-7f3a：待審內容\n";
 const BODY = `# 具體問題\n1. body-marker-91c2 問題\n\n# 允許讀取\n- ${ALLOWED_REL}\n`;
 const ALLOWED = "export const allowedMarker = 'allowed-marker-2b8d';\n";
+const SEALED_AGENT_BODY = "sealed-agent-marker-72d9";
 
 // 假的 Responses API。每個請求原樣記進 capture 檔（「provider 實際收到什麼」以它為準，不靠 CLI
 // 自己落 DB 的那份）。還沒有 function_call_output 的請求 → 從第一則使用者訊息抽路徑、回 tool call；
@@ -152,7 +153,7 @@ function makeLayout(): Layout {
   for (const dir of [layout.elsewhere, layout.subdir, layout.home, path.join(layout.repoRoot, ".claude", "agents"), path.join(layout.repoRoot, "src")]) {
     mkdirSync(dir, { recursive: true });
   }
-  writeFileSync(path.join(layout.repoRoot, ".claude", "agents", `${AGENT}.md`), "測試用 agent 定義");
+  writeFileSync(path.join(layout.repoRoot, ".claude", "agents", `${AGENT}.md`), SEALED_AGENT_BODY);
   writeFileSync(path.join(layout.repoRoot, ALLOWED_REL), ALLOWED);
   return layout;
 }
@@ -171,6 +172,10 @@ async function dispatchFrom(layout: Layout, cwd: string): Promise<Outcome> {
       createTicket(db, TICKET, SHARED, "zh");
       addSpoke(db, TICKET, { agent: AGENT, provider: "fake", model: "fake-model", body: BODY }, "zh");
       await addAllow(db, TICKET, AGENT, ALLOWED_REL, layout.repoRoot, "zh");
+      await sealTicket(db, TICKET, layout.repoRoot, "zh");
+      // A sealed ticket must not observe this replacement, even when execution starts
+      // from elsewhere (the first CASE is cwd !== repoRoot).
+      writeFileSync(path.join(layout.repoRoot, ".claude", "agents", `${AGENT}.md`), "disk-replacement-must-not-appear");
     } finally {
       db.close();
     }
@@ -245,6 +250,8 @@ for (const c of CASES) {
       assert.deepEqual(rejected, [], `不得有任何讀取被拒——被拒正是 #31 的症狀：${JSON.stringify(outcome.result.toolCalls)}`);
 
       assert.equal(outcome.requests.length, 2, `provider 應收到兩個請求（讀檔、交卷）\n${describeRun(outcome)}`);
+      assert.match(outcome.requests[0].instructions, new RegExp(SEALED_AGENT_BODY));
+      assert.doesNotMatch(outcome.requests[0].instructions, /disk-replacement-must-not-appear/);
       const outputs = outcome.requests[1].input
         .filter((item) => item.type === "function_call_output")
         .map((item) => item.output ?? "");

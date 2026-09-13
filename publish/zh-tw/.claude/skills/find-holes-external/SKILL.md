@@ -230,6 +230,7 @@ dowafu --version
 dowafu ticket create <ticket-id> <shared-file>
 dowafu ticket add-spoke <ticket-id> <agent> <provider> <model> <spoke-body-file> [effort]
 dowafu ticket add-allow <ticket-id> <agent> <repo-relative-path> --repo-root .
+dowafu ticket seal <ticket-id> --repo-root .
 ```
 
 用 `-` 時最直接的做法是 heredoc，一次把整段內容餵給指令，不必先落地：
@@ -257,6 +258,19 @@ EOF
 等輸入。`add-allow` 的路徑參數本來就不是本文，不受這條影響，仍是舊寫法。
 
 `add-allow` 會立刻驗證路徑、拒絕 `_docs/`，並把當下內容存進 DB；執行時不再讀這些檔案。既有目錄只可用一次性 `dowafu ticket import <dir> [ticket-id] --repo-root .` 匯入。用 `dowafu ticket show <ticket-id>` 檢視 model、允許清單與估算。
+
+**工單有兩種狀態，建好之後要定稿才能派。** `create` 出來的是**草稿**（`draft`）：可以繼續
+`add-spoke`／`add-allow`，可以乾跑，但**不能實跑、也不能送進佇列**。
+`dowafu ticket seal <ticket-id> --repo-root .` 把它變成**定稿**（`sealed`）——這一步會把每支
+lens 的內容一併凍結存進工單，所以定稿之後執行，用的是定稿那一刻的 lens，與執行時
+`.claude/agents/` 底下是什麼無關。定稿要求至少有一支 spoke，而且每支的 lens 檔都存在；
+少任何一個就整個不定稿，狀態不變。
+
+定稿之後內容就改不動了：`add-spoke`／`add-allow` 會被拒絕。要改就
+`dowafu ticket copy <定稿工單> <新 id>` 複製出一張新草稿，原來那張與它產出的結果維持對應。
+**定稿沒有退回草稿的指令。**
+
+`dowafu ticket show <ticket-id>` 第一行會印 `[draft]` 或 `[sealed]`，拿不準就先看它。
 
 工單存進資料庫，`<ticket-id>` 用主題 slug（例如 `auth-review`）——之後派工、看報表、
 讀結果都是拿這個 id。

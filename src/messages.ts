@@ -120,6 +120,8 @@ type MessageArgs = {
   mcpTicketsEmpty: [];
   mcpTicketsTitle: [];
   mcpTicketsRow: [ticket: string, spokeCount: number];
+  mcpTicketStatusDraft: [ticket: string, cmd: string];
+  mcpTicketStatusSealed: [sealedAt: string];
   mcpTicketsSpoke: [agent: string, provider: string, model: string, allowCount: number];
   mcpKeysTitle: [];
   mcpKeysRow: [provider: string, status: string];
@@ -214,6 +216,14 @@ type MessageArgs = {
   ticketNameReserved: [name: string, reserved: string];
   ticketAlreadyExists: [name: string];
   ticketSpokeNotFound: [name: string, agent: string];
+  ticketStatusInvalid: [name: string];
+  ticketSealedWriteRejected: [name: string];
+  ticketSealNeedsSpoke: [name: string];
+  ticketCopyNeedsSealed: [name: string];
+  ticketSealedLensMissing: [name: string, agent: string];
+  ticketDraftRunBlocked: [name: string, cmd: string];
+  ticketStatusDraft: [];
+  ticketStatusSealed: [sealedAt: string, repoRoot: string];
   ticketShowHeader: [name: string];
   ticketEstimateTokens: [tokens: number];
   ticketCompletedRuns: [runs: number, total: string, last: string];
@@ -371,6 +381,7 @@ type MessageArgs = {
   // A（gaps #1／#2）：doctor 現在也印 DB 檔在哪——金鑰／工單／結果全在那個檔裡，
   // 而先前整份報表從頭到尾沒印過它。
   doctorDbLine: [path: string];
+  doctorBundledProvidersLine: [path: string];
   doctorEnvLine: [value: string];
   doctorEnvPresentValue: [];
   // 工單 key-db §B-3 #6：doctor 逐 provider 印出實際生效的是哪一層（DB／env／未設定），
@@ -528,6 +539,8 @@ const MESSAGES: Record<Lang, MessageDefs> = {
     mcpTicketsEmpty: () => "沒有可派的 DB 工單。",
     mcpTicketsTitle: () => "可派工單：",
     mcpTicketsRow: (ticket, spokeCount) => `- ${ticket}：${spokeCount} 個 spoke`,
+    mcpTicketStatusDraft: (ticket, cmd) => `[draft] 草稿 — 尚不能送出；定稿請在 CLI 執行：${cmd} ticket seal ${ticket} --repo-root <repo 根>`,
+    mcpTicketStatusSealed: (sealedAt) => `[sealed] 定稿 ${sealedAt} — 內容與 lens 已凍結，可送出。`,
     mcpTicketsSpoke: (agent, provider, model, allowCount) =>
       `  ${agent}：${provider}/${model}；允許清單檔 ${allowCount} 個`,
     mcpKeysTitle: () => "API key 狀態：",
@@ -626,11 +639,19 @@ const MESSAGES: Record<Lang, MessageDefs> = {
     ticketNameInvalid: (name) => `工單名稱無效：${name}`,
     ticketAlreadyExists: (name) => `DB 工單已存在：${name}`,
     ticketSpokeNotFound: (name, agent) => `DB 工單 "${name}" 沒有 agent "${agent}"`,
+    ticketStatusInvalid: (name) => `DB 工單 "${name}" 的狀態無效或損毀。`,
+    ticketSealedWriteRejected: (name) => `DB 工單 "${name}" 已定稿、內容已凍結；要修改請用 dowafu ticket copy ${name} <新名稱>。`,
+    ticketSealNeedsSpoke: (name) => `DB 工單 "${name}" 至少要有一支 spoke 才能定稿。`,
+    ticketCopyNeedsSealed: (name) => `DB 工單 "${name}" 仍是草稿；只有已定稿工單可以複製。`,
+    ticketSealedLensMissing: (name, agent) => `DB 工單 "${name}" 已定稿但缺少 agent "${agent}" 的 lens 快照，已中止，未讀取磁碟 lens。`,
+    ticketDraftRunBlocked: (name, cmd) => `DB 工單 "${name}" 目前是草稿，lens 尚未凍結；未派工、未呼叫 API。請先執行：${cmd} ticket seal ${name} --repo-root .`,
+    ticketStatusDraft: () => `[draft] 草稿 — 可編輯；尚不能送出。`,
+    ticketStatusSealed: (sealedAt, repoRoot) => `[sealed] 定稿 ${sealedAt}（${repoRoot}）— 內容與 lens 已凍結，可送出。`,
     ticketShowHeader: (name) => `DB 工單 ${name}:`,
     ticketEstimateTokens: (tokens) => `估算 ${tokens} tokens`,
     ticketCompletedRuns: (runs, total, last) => `已完成 ${runs} 次；累計 $${total}；最近一次 ${last}`,
     ticketCompletedRunsNoPricing: (runs, last) => `已完成 ${runs} 次；累計無價目資料；最近一次 ${last}`,
-    ticketHelp: (cmd) => `${cmd} ticket create <name> <shared-file>\n${cmd} ticket add-spoke <name> <agent> <provider> <model> <body-file> [effort]\n${cmd} ticket add-allow <name> <agent> <repo-relative-path> [--repo-root <dir>]\n${cmd} ticket import <existing-ticket-dir> [name] [--repo-root <dir>]\n${cmd} ticket show <name>\n  <shared-file>／<body-file> 可用 - 代表從 stdin 讀取本文（stdin 須為管道／重導向，不得是互動式終端機）`,
+    ticketHelp: (cmd) => `${cmd} ticket create <name> <shared-file>\n${cmd} ticket add-spoke <name> <agent> <provider> <model> <body-file> [effort]\n${cmd} ticket add-allow <name> <agent> <repo-relative-path> [--repo-root <dir>]\n${cmd} ticket import <existing-ticket-dir> [name] [--repo-root <dir>]\n${cmd} ticket seal <name> --repo-root <dir>\n${cmd} ticket copy <sealed-ticket> <new-name>\n${cmd} ticket show <name>\n  draft：可編輯、不能送出；sealed：內容（含 lens）已凍結，可送出且可多次執行。\n  <shared-file>／<body-file> 可用 - 代表從 stdin 讀取本文（stdin 須為管道／重導向，不得是互動式終端機）`,
     ticketStdinRequiresPipe: () =>
       `此指令用 - 讀取 stdin 本文，但目前 stdin 是互動式終端機，沒有東西被導進來。` +
       `請改用管道／重導向提供內容（例如 echo "..." | dowafu ticket create <name> -），或改用一般檔案路徑。`,
@@ -675,7 +696,7 @@ const MESSAGES: Record<Lang, MessageDefs> = {
     modelDisabled: (model, cmd) => `型號 "${model}" 已停用；請先執行 ${cmd} providers enable ${model}`,
     providerModelNotFound: (model) => `找不到型號：${model}`,
     providerModelAmbiguous: (model, providers) => `型號 "${model}" 同時存在於：${providers}。請用 ${"dowafu"} providers enable <provider> ${model} 指定目標；可先看 providers list。`,
-    providersHelp: (cmd) => `${cmd} providers list [--db <path>]\n${cmd} providers enable <model> [--db <path>]\n${cmd} providers enable <provider> <model> [--db <path>]\n${cmd} providers disable <model> [--db <path>]\n${cmd} providers disable <provider> <model> [--db <path>]\n${cmd} providers import <path> [--db <path>]`,
+    providersHelp: (cmd) => `${cmd} providers list [--db <path>]\n${cmd} providers enable <model> [--db <path>]\n${cmd} providers enable <provider> <model> [--db <path>]\n${cmd} providers disable <model> [--db <path>]\n${cmd} providers disable <provider> <model> [--db <path>]\n${cmd} providers import <path> [--db <path>]\n${cmd} providers import --bundled [--db <path>]`,
     providersListEmpty: () => "providers DB 尚無型號；請明確執行 providers import。",
     providersListRow: (provider, model, input, output, enabled) => `${provider}\t${model}\tinput $${input}/M\toutput $${output}/M\t${enabled ? "enabled" : "disabled"}`,
     providersImported: (path) => `已合流匯入 providers：${path}`,
@@ -780,6 +801,7 @@ const MESSAGES: Record<Lang, MessageDefs> = {
     doctorConfigDirSourceDefault: (dir) => `${dir}（來源：預設；DISPATCH_HOME 與 XDG_CONFIG_HOME 都沒設）`,
     doctorConfigDirUnresolved: () => "無法解析（沒有 HOME）",
     doctorDbLine: (dbPath) => `  資料庫      ${dbPath}`,
+    doctorBundledProvidersLine: (filePath) => `  出貨型號檔  ${filePath}`,
     doctorEnvLine: (value) => `  .env        ${value}`,
     doctorEnvPresentValue: () => "有，但本版不讀取（API key 請用 `dowafu key` 設定進 DB）",
     doctorApiKeyLine: (value) => `  API key     ${value}`,
@@ -928,6 +950,8 @@ Subcommands (each has its own usage message):
     mcpTicketsEmpty: () => "No dispatchable DB tickets.",
     mcpTicketsTitle: () => "Dispatchable tickets:",
     mcpTicketsRow: (ticket, spokeCount) => `- ${ticket}: ${spokeCount} spoke(s)`,
+    mcpTicketStatusDraft: (ticket, cmd) => `[draft] Draft — cannot be dispatched; seal it in the CLI: ${cmd} ticket seal ${ticket} --repo-root <repo root>`,
+    mcpTicketStatusSealed: (sealedAt) => `[sealed] Sealed ${sealedAt} — content and lenses are frozen; ready to dispatch.`,
     mcpTicketsSpoke: (agent, provider, model, allowCount) =>
       `  ${agent}: ${provider}/${model}; allowlist files=${allowCount}`,
     mcpKeysTitle: () => "API key status:",
@@ -1031,11 +1055,19 @@ Subcommands (each has its own usage message):
     ticketNameInvalid: (name) => `Invalid ticket name: ${name}`,
     ticketAlreadyExists: (name) => `DB ticket already exists: ${name}`,
     ticketSpokeNotFound: (name, agent) => `DB ticket "${name}" has no agent "${agent}"`,
+    ticketStatusInvalid: (name) => `DB ticket "${name}" has an invalid or corrupt status.`,
+    ticketSealedWriteRejected: (name) => `DB ticket "${name}" is sealed and its content is frozen; to modify it, run dowafu ticket copy ${name} <new-name>.`,
+    ticketSealNeedsSpoke: (name) => `DB ticket "${name}" needs at least one spoke before it can be sealed.`,
+    ticketCopyNeedsSealed: (name) => `DB ticket "${name}" is still a draft; only a sealed ticket can be copied.`,
+    ticketSealedLensMissing: (name, agent) => `DB ticket "${name}" is sealed but lacks a lens snapshot for agent "${agent}"; aborted without reading a lens from disk.`,
+    ticketDraftRunBlocked: (name, cmd) => `DB ticket "${name}" is a draft and its lenses are not frozen; nothing was dispatched and no API was called. First run: ${cmd} ticket seal ${name} --repo-root .`,
+    ticketStatusDraft: () => `[draft] Draft — editable; cannot be dispatched yet.`,
+    ticketStatusSealed: (sealedAt, repoRoot) => `[sealed] Sealed ${sealedAt} (${repoRoot}) — content and lenses are frozen; ready to dispatch.`,
     ticketShowHeader: (name) => `DB ticket ${name}:`,
     ticketEstimateTokens: (tokens) => `est. ${tokens} tokens`,
     ticketCompletedRuns: (runs, total, last) => `Completed ${runs} times; total $${total}; last ${last}`,
     ticketCompletedRunsNoPricing: (runs, last) => `Completed ${runs} times; total No pricing data; last ${last}`,
-    ticketHelp: (cmd) => `${cmd} ticket create <name> <shared-file>\n${cmd} ticket add-spoke <name> <agent> <provider> <model> <body-file> [effort]\n${cmd} ticket add-allow <name> <agent> <repo-relative-path> [--repo-root <dir>]\n${cmd} ticket import <existing-ticket-dir> [name] [--repo-root <dir>]\n${cmd} ticket show <name>\n  <shared-file>/<body-file> may be - to read the body from stdin (stdin must be piped/redirected, not an interactive terminal)`,
+    ticketHelp: (cmd) => `${cmd} ticket create <name> <shared-file>\n${cmd} ticket add-spoke <name> <agent> <provider> <model> <body-file> [effort]\n${cmd} ticket add-allow <name> <agent> <repo-relative-path> [--repo-root <dir>]\n${cmd} ticket import <existing-ticket-dir> [name] [--repo-root <dir>]\n${cmd} ticket seal <name> --repo-root <dir>\n${cmd} ticket copy <sealed-ticket> <new-name>\n${cmd} ticket show <name>\n  draft: editable, cannot dispatch; sealed: content (including lenses) is frozen, can dispatch and run repeatedly.\n  <shared-file>/<body-file> may be - to read the body from stdin (stdin must be piped/redirected, not an interactive terminal)`,
     ticketStdinRequiresPipe: () =>
       "This command reads the body from stdin via -, but stdin is an interactive terminal right now; nothing is being piped in. " +
       'Pipe or redirect content instead (for example, echo "..." | dowafu ticket create <name> -), or use a regular file path.',
@@ -1086,7 +1118,7 @@ Subcommands (each has its own usage message):
     modelDisabled: (model, cmd) => `Model "${model}" is disabled; first run ${cmd} providers enable ${model}`,
     providerModelNotFound: (model) => `Model not found: ${model}`,
     providerModelAmbiguous: (model, providers) => `Model "${model}" exists in: ${providers}. Use dowafu providers enable <provider> ${model}; see providers list.`,
-    providersHelp: (cmd) => `${cmd} providers list [--db <path>]\n${cmd} providers enable <model> [--db <path>]\n${cmd} providers enable <provider> <model> [--db <path>]\n${cmd} providers disable <model> [--db <path>]\n${cmd} providers disable <provider> <model> [--db <path>]\n${cmd} providers import <path> [--db <path>]`,
+    providersHelp: (cmd) => `${cmd} providers list [--db <path>]\n${cmd} providers enable <model> [--db <path>]\n${cmd} providers enable <provider> <model> [--db <path>]\n${cmd} providers disable <model> [--db <path>]\n${cmd} providers disable <provider> <model> [--db <path>]\n${cmd} providers import <path> [--db <path>]\n${cmd} providers import --bundled [--db <path>]`,
     providersListEmpty: () => "The providers DB has no models; explicitly run providers import.",
     providersListRow: (provider, model, input, output, enabled) => `${provider}\t${model}\tinput $${input}/M\toutput $${output}/M\t${enabled ? "enabled" : "disabled"}`,
     providersImported: (path) => `Providers merged from: ${path}`,
@@ -1198,6 +1230,7 @@ Subcommands (each has its own usage message):
       `${dir} (source: default; neither DISPATCH_HOME nor XDG_CONFIG_HOME is set)`,
     doctorConfigDirUnresolved: () => "could not resolve (no HOME)",
     doctorDbLine: (dbPath) => `  Database     ${dbPath}`,
+    doctorBundledProvidersLine: (filePath) => `  Bundled providers.json  ${filePath}`,
     doctorEnvLine: (value) => `  .env         ${value}`,
     doctorEnvPresentValue: () => "present, but this version does not read it (set API keys with `dowafu key`)",
     doctorApiKeyLine: (value) => `  API keys     ${value}`,

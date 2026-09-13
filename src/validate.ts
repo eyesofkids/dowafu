@@ -62,6 +62,9 @@ export async function resolveSpokes(
   // 原本這裡直接讀 `process.env[`${PROVIDER}_API_KEY`]`，key 搬進 DB 之後那段就成了
   // 一道「更早的、只認環境變數」的閘門，會在 createAdapterFor 之前先攔下所有派工。
   hasApiKey: (provider: string) => boolean,
+  // Required on purpose: a caller that forgets to forward sealed lens snapshots must
+  // fail typechecking, never silently default to disk.
+  agentContent: Map<string, string> | undefined,
   agentsDir: string = path.join(repoRoot, ".claude", "agents"),
 ): Promise<ResolvedSpoke[]> {
   const resolved: ResolvedSpoke[] = [];
@@ -149,7 +152,13 @@ export async function resolveSpokes(
       }
     }
 
-    const agentBody = await readAgentBody(agentsDir, row.agent, lang);
+    const sealedAgent = agentContent?.get(row.agent);
+    if (ticket.status === "sealed" && sealedAgent === undefined) {
+      throw new DispatchError(m(lang, "ticketSealedLensMissing", ticket.ticketName ?? ticket.ticketDir, row.agent), 2);
+    }
+    const agentBody = sealedAgent === undefined
+      ? await readAgentBody(agentsDir, row.agent, lang)
+      : stripFrontmatter(sealedAgent);
 
     const sharedPath = path.join(ticket.ticketDir, "_shared.md");
     const ownAgentPath = path.join(ticket.ticketDir, `${row.agent}.md`);

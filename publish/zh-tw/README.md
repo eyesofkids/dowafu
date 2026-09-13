@@ -17,7 +17,7 @@
 先用 degit 把這個語言包抓下來——抓下來就正好站在這個目錄裡，下面的指令照跑即可：
 
 ```bash
-npx degit eyesofkids/dowafu/publish/zh-tw#v0.7.0 .claude-pack
+npx degit eyesofkids/dowafu/publish/zh-tw#v0.8.0 .claude-pack
 cd .claude-pack
 
 TARGET=<目標專案路徑>

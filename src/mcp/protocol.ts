@@ -8,8 +8,8 @@ import { m } from "../messages.js";
 import { readResultOutcomes, readResults } from "../output.js";
 import { listModels } from "../providers-store.js";
 import { buildKeyStatusRows, type KeyStatusRow } from "../provider-key.js";
-import { getPackageVersion } from "../pkg-info.js";
-import { formatTicket, getTicketDoc, getTicketHardCapUsd } from "../ticket-store.js";
+import { getCommandName, getPackageVersion } from "../pkg-info.js";
+import { formatTicket, getStoredTicket, getTicketHardCapUsd } from "../ticket-store.js";
 import type { Lang } from "../types.js";
 
 export type McpTool = {
@@ -21,12 +21,12 @@ export type McpTool = {
 export const TOOLS: McpTool[] = [
   {
     name: "dispatch_tickets",
-    description: "List DB tickets that can be submitted, including their spokes and allowlist file counts.",
+    description: "List DB tickets and their status: draft tickets are editable but cannot be submitted; sealed tickets have frozen content and lenses, can be submitted repeatedly, and can only be sealed from the CLI.",
     inputSchema: { type: "object", properties: {} },
   },
   {
     name: "dispatch_submit",
-    description: "Queue a DB ticket by name. It remains pending human terminal approval and is not executed by this tool.",
+    description: "Queue a sealed DB ticket by name. Draft tickets are rejected without creating a job; sealing is only available from the CLI. A queued job remains pending human terminal approval and is not executed by this tool.",
     inputSchema: {
       type: "object",
       properties: {
@@ -167,8 +167,12 @@ export function createProtocol(options: ProtocolOptions) {
         const names = options.db.prepare("SELECT name FROM tickets ORDER BY name").all() as Array<{ name: string }>;
         const lines = names.length === 0 ? [m(options.lang, "mcpTicketsEmpty")] : [m(options.lang, "mcpTicketsTitle")];
         for (const { name: ticket } of names) {
-          const doc = getTicketDoc(options.db, ticket, options.lang);
+          const stored = getStoredTicket(options.db, ticket, options.lang);
+          const doc = stored.doc;
           lines.push(m(options.lang, "mcpTicketsRow", ticket, doc.spokes.length));
+          lines.push(`  ${stored.status === "sealed"
+            ? m(options.lang, "mcpTicketStatusSealed", stored.sealedAt ?? "")
+            : m(options.lang, "mcpTicketStatusDraft", ticket, getCommandName())}`);
           const priorRuns = countTicketResultRuns(options.db, ticket);
           if (priorRuns > 0) lines.push(`  ${m(options.lang, "mcpPriorResultsReminder", priorRuns)}`);
           for (const spoke of doc.spokes) {
@@ -285,6 +289,8 @@ export function createProtocol(options: ProtocolOptions) {
             ...found.ambiguous.map((candidate) => `  ${candidate.id}  ${candidate.ticket}  ${candidate.status}`)].join("\n"), true);
         }
         const job = found.job;
+        const ticket = getStoredTicket(options.db, job.ticket, options.lang);
+        if (ticket.status !== "sealed") return text(m(options.lang, "ticketDraftRunBlocked", ticket.name, getCommandName()), true);
         // 工單 §A-1 之二：與 formatTicket 共用同一份算法（getTicketHardCapUsd），不得在這裡
         // 另算一份——變異 #5 鎖這件事。
         const expected = getTicketHardCapUsd(options.db, job.ticket, options.lang);

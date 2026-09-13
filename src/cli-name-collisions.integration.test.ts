@@ -98,8 +98,8 @@ test("CLI named legacy ticket and positional -foo reach the same stored-ticket v
     const dbPath = path.join(root, "db");
     const db = openDb(dbPath);
     try {
-      for (const name of ["ticket", "-foo"]) db.prepare("INSERT INTO tickets (name, doc, created_at) VALUES (?, ?, ?)")
-        .run(name, JSON.stringify({ shared: "intentionally invalid shared body", spokes: [] }), "2026-09-12");
+      for (const name of ["ticket", "-foo"]) db.prepare("INSERT INTO tickets (name, doc, status, sealed_at, created_at) VALUES (?, ?, ?, ?, ?)")
+        .run(name, JSON.stringify({ shared: "intentionally invalid shared body", spokes: [] }), "draft", null, "2026-09-12");
     } finally { db.close(); }
     const common = ["--db", dbPath, "--repo-root", root, "--dry-run"];
     const named = await runCli(["--ticket", "ticket", ...common], root, "en");

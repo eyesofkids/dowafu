@@ -150,6 +150,7 @@ test("buildJsonPayload：整體結構，多個 spoke 各自映射，原文不進
   ]);
   const payload = buildJsonPayload({
     ticketId: "t1",
+    ticketStatus: "sealed",
     repoRoot: "/repo",
     outDir: "tmp/spoke/t1",
     providersSource: { kind: "database" },
@@ -162,6 +163,7 @@ test("buildJsonPayload：整體結構，多個 spoke 各自映射，原文不進
     exitCode: 0,
   });
   assert.equal(payload.spokes.length, 2);
+  assert.equal(payload.ticketStatus, "sealed");
   assert.equal(payload.spokes[0].audit.observationCount, null);
   assert.equal(payload.spokes[1].audit.observationCount, 5);
   assert.ok(!("finalText" in payload.spokes[0]), "原文不得進入 JSON 契約");
@@ -170,6 +172,7 @@ test("buildJsonPayload：整體結構，多個 spoke 各自映射，原文不進
 test("buildJsonPayload：mode／gitignoreStatus 原樣帶出", () => {
   const payload = buildJsonPayload({
     ticketId: "t1",
+    ticketStatus: "sealed",
     repoRoot: "/repo",
     outDir: "tmp/spoke/t1",
     providersSource: { kind: "database" },
@@ -203,6 +206,7 @@ test("buildJsonPayload：dry-run／cancelled 下 spokes 維持空陣列語意，
   for (const mode of ["dry-run", "cancelled"] as const) {
     const payload = buildJsonPayload({
       ticketId: "t1",
+    ticketStatus: "sealed",
       repoRoot: "/repo",
       outDir: "tmp/spoke/t1",
       providersSource: { kind: "database" },

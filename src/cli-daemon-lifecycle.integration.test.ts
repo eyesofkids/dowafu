@@ -41,6 +41,7 @@ test("CLI：serve --restart 先做停止端清理，再啟動並回報兩端張�
   try {
     const db = openDb(dbPath);
     createTicket(db, "sample", "# Under review\ntext\n", "en");
+    db.prepare("UPDATE tickets SET status = 'sealed', sealed_at = ? WHERE name = ?").run("2026-09-13T00:00:00.000Z", "sample");
     submitJob(db, "sample", "old-approved");
     approveJob(db, "old-approved");
 

@@ -1,6 +1,10 @@
 import { randomUUID } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
 import { now } from "./db.js";
+import { m } from "./messages.js";
+import { getCommandName } from "./pkg-info.js";
+import { getStoredTicket } from "./ticket-store.js";
+import { DispatchError } from "./types.js";
 import type { Lang } from "./types.js";
 
 export const JOB_STATUSES = [
@@ -75,7 +79,9 @@ export function countQueueJobs(db: DatabaseSync): JobQueueCounts {
 }
 
 export function submitJob(db: DatabaseSync, ticket: string, id: string = randomUUID(), lang: Lang | null = null): Job {
-  if (!db.prepare("SELECT 1 FROM tickets WHERE name = ?").get(ticket)) throw new Error(`ticket does not exist: ${ticket}`);
+  const messageLang = lang ?? "en";
+  const stored = getStoredTicket(db, ticket, messageLang);
+  if (stored.status !== "sealed") throw new DispatchError(m(messageLang, "ticketDraftRunBlocked", ticket, getCommandName()), 5);
   const createdAt = now();
   db.prepare("INSERT INTO jobs (id, ticket, lang, status, created_at) VALUES (?, ?, ?, 'pending_approval', ?)").run(id, ticket, lang, createdAt);
   return getJob(db, id)!;

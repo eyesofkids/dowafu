@@ -66,6 +66,7 @@ export type DoctorReportData = {
   daemon: DaemonLiveness;
   // Keep this camelCase shape stable: dowafu-hanma reads it from --doctor --json.
   queue: JobQueueCounts;
+  bundledProvidersPath?: string;
   lenses: { found: true; dirPath: string; withClosing: string[]; withoutClosing: string[] } | { found: false; dirPath: string };
 };
 
@@ -166,6 +167,7 @@ export function buildDoctorReportData(
   keyStatusRows: KeyStatusRow[] = [],
   dbPath?: string,
   queue: JobQueueCounts = { pendingApproval: 0, approved: 0, running: 0 },
+  bundledProvidersPath?: string,
 ): DoctorReportData {
   const dispatchHome = resolveDispatchHome(env, homedir);
   const configDir =
@@ -200,6 +202,7 @@ export function buildDoctorReportData(
     models,
     daemon: daemon ?? { alive: false, reason: "heartbeat_missing" },
     queue: { ...queue },
+    ...(bundledProvidersPath ? { bundledProvidersPath } : {}),
     lenses: buildLensData(probe, cwd),
   };
 }
@@ -212,6 +215,7 @@ export function renderDoctorReport(lang: Lang, cmd: string, data: DoctorReportDa
     // 先前 doctor 寫死走預設 DB，於是 `--doctor --db <別的>` 會對著另一個資料庫回答你。
     ...(data.dbPath ? [m(lang, "doctorDbLine", data.dbPath)] : []),
     ...(data.envFilePresent ? [m(lang, "doctorEnvLine", m(lang, "doctorEnvPresentValue"))] : []),
+    ...(data.bundledProvidersPath ? [m(lang, "doctorBundledProvidersLine", data.bundledProvidersPath)] : []),
     m(lang, "doctorApiKeyLine", buildApiKeyValue(lang, data.apiKeys)),
     m(lang, "doctorModelListLine", buildModelListValue(lang, data.models)),
     m(lang, "doctorDaemonLine", buildDaemonValue(lang, data.daemon)),
@@ -235,6 +239,7 @@ export function buildDoctorReport(
   keyStatusRows: KeyStatusRow[] = [],
   dbPath?: string,
   queue: JobQueueCounts = { pendingApproval: 0, approved: 0, running: 0 },
+  bundledProvidersPath?: string,
 ): string {
-  return renderDoctorReport(lang, cmd, buildDoctorReportData(cmd, providers, env, homedir, probe, cwd, daemon, keyStatusRows, dbPath, queue));
+  return renderDoctorReport(lang, cmd, buildDoctorReportData(cmd, providers, env, homedir, probe, cwd, daemon, keyStatusRows, dbPath, queue, bundledProvidersPath));
 }

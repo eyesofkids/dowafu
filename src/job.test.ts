@@ -22,6 +22,7 @@ function withDb(run: (db: ReturnType<typeof openDb>) => void): void {
 
 function ticket(db: ReturnType<typeof openDb>): void {
   createTicket(db, "sample", "# Under review\ntext\n", "en");
+  db.prepare("UPDATE tickets SET status = 'sealed', sealed_at = ? WHERE name = ?").run("2026-09-13T00:00:00.000Z", "sample");
 }
 
 test("job：submit 預設待核准，只有 approve 後才可被認領", () => {
@@ -210,7 +211,17 @@ test("job：reap 只回看最近的 interrupted，晚到結果會修正、過窗
 });
 
 test("job：submit 拒絕不存在的 DB ticket", () => {
-  withDb((db) => assert.throws(() => submitJob(db, "missing", "job-1"), /ticket does not exist/));
+  withDb((db) => assert.throws(() => submitJob(db, "missing", "job-1"), /DB ticket not found: missing/));
+});
+
+test("job：submit 的第一道防線拒絕 draft，且 jobs 筆數不變", () => {
+  withDb((db) => {
+    createTicket(db, "draft", "# Under review\ntext\n", "en");
+    const before = Number((db.prepare("SELECT COUNT(*) AS count FROM jobs").get() as { count: number }).count);
+    assert.throws(() => submitJob(db, "draft", "draft-job"), /draft and its lenses are not frozen/);
+    const after = Number((db.prepare("SELECT COUNT(*) AS count FROM jobs").get() as { count: number }).count);
+    assert.equal(after, before);
+  });
 });
 
 test("job：id 前綴查詢保留所有狀態的排序命中，pending 清單只取待核准項目", () => {

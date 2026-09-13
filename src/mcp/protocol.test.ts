@@ -19,6 +19,7 @@ function withProtocol(run: (protocol: ReturnType<typeof createProtocol>, db: Ret
     db.prepare("INSERT INTO models (provider, model, input_per_m, output_per_m, enabled, updated_at) VALUES (?, ?, ?, ?, ?, ?)").run("openai", "gpt-5", 1, 2, 1, "2026-09-02T00:00:00.000Z");
     createTicket(db, "ticket-a", "# Under review\ntext\n", "en");
     addSpoke(db, "ticket-a", { agent: "reviewer", provider: "openai", model: "gpt-5", body: "# Questions\n1. Check it\n" }, "en");
+    db.prepare("UPDATE tickets SET status = 'sealed', sealed_at = ? WHERE name = ?").run("2026-09-13T00:00:00.000Z", "ticket-a");
     const protocol = createProtocol({ db, dbPath, lang: "en", liveness: () => ({ alive: false, reason: "heartbeat_missing" }) });
     run(protocol, db);
   } finally {
@@ -73,11 +74,35 @@ test("mcp protocol：server/discover 固定回 -32601，notifications 不回應"
   });
 });
 
-test("mcp protocol：列工單顯示每個 spoke 的 model 與 allowlist 檔數", () => {
-  withProtocol((protocol) => {
+test("mcp protocol：列工單顯示每個 spoke 的 model、allowlist 檔數與固定英文狀態", () => {
+  withProtocol((protocol, db) => {
+    createTicket(db, "ticket-draft", "# Under review\ntext\n", "en");
     const output = content(protocol.handleRpc({ id: 1, method: "tools/call", params: { name: "dispatch_tickets", arguments: {} } }));
     assert.match(output, /ticket-a: 1 spoke/);
     assert.match(output, /reviewer: openai\/gpt-5; allowlist files=0/);
+    assert.match(output, /\[sealed\] Sealed 2026-09-13T00:00:00.000Z/);
+    assert.match(output, /\[draft\] Draft — cannot be dispatched; seal it in the CLI: .* ticket seal ticket-draft --repo-root <repo root>/);
+  });
+});
+
+test("mcp protocol：兩個狀態相關 description 維持英文契約", () => {
+  const tickets = TOOLS.find((tool) => tool.name === "dispatch_tickets")?.description ?? "";
+  const submit = TOOLS.find((tool) => tool.name === "dispatch_submit")?.description ?? "";
+  assert.match(tickets, /draft tickets are editable but cannot be submitted/);
+  assert.match(tickets, /sealed tickets have frozen content and lenses/);
+  assert.match(tickets, /only be sealed from the CLI/);
+  assert.match(submit, /sealed DB ticket/);
+  assert.match(submit, /rejected without creating a job/);
+});
+
+test("mcp protocol：submit draft 回定稿指令且不建立 job", () => {
+  withProtocol((protocol, db) => {
+    createTicket(db, "ticket-draft", "# Under review\ntext\n", "en");
+    const result = toolResult(protocol.handleRpc({ id: 19, method: "tools/call", params: { name: "dispatch_submit", arguments: { ticket: "ticket-draft" } } }));
+    assert.equal(result.isError, true);
+    assert.match(result.content[0].text, /draft and its lenses are not frozen/);
+    assert.match(result.content[0].text, /ticket seal ticket-draft --repo-root \./);
+    assert.equal((db.prepare("SELECT COUNT(*) AS count FROM jobs").get() as { count: number }).count, 0);
   });
 });
 
@@ -226,6 +251,19 @@ test("mcp protocol：approve 金額不符時拒絕核准，approved_at 維持 nu
   });
 });
 
+test("mcp protocol：遷移前的 draft job 即使金額參數正確也不能核准", () => {
+  withProtocol((protocol, db) => {
+    const job = submitJob(db, "ticket-a", "legacy-draft-job");
+    db.prepare("UPDATE tickets SET status = 'draft', sealed_at = NULL WHERE name = ?").run("ticket-a");
+    const rejected = toolResult(
+      protocol.handleRpc({ id: 161, method: "tools/call", params: { name: "dispatch_approve", arguments: { jobId: job.id, hardCapUsd: "1" } } }),
+    );
+    assert.equal(rejected.isError, true);
+    assert.match(rejected.content[0].text, /draft and its lenses are not frozen/);
+    assert.equal((db.prepare("SELECT status FROM jobs WHERE id = ?").get(job.id) as { status: string }).status, "pending_approval");
+  });
+});
+
 // A-2 #5：找不到的 job id 講人話，不是丟例外。
 test("mcp protocol：approve 對不存在的 job 講人話，不丟例外", () => {
   withProtocol((protocol) => {
@@ -246,6 +284,7 @@ test("mcp protocol：approve 對不存在的 job 講人話，不丟例外", () =
 test("mcp protocol：status／result 接受 job id 前綴，歧義時列候選不猜", () => {
   const db = openDb(":memory:", "en");
   createTicket(db, "t", "# 待審段落\n內容\n", "en");
+  db.prepare("UPDATE tickets SET status = 'sealed', sealed_at = ? WHERE name = ?").run("2026-09-13T00:00:00.000Z", "t");
   submitJob(db, "t", "aaaa1111-0000-4000-8000-000000000001");
   submitJob(db, "t", "bbbb2222-0000-4000-8000-000000000002");
   submitJob(db, "t", "bbbb2222-0000-4000-8000-000000000003");

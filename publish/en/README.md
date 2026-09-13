@@ -18,7 +18,7 @@ Three kinds, each landing in a different place:
 First, fetch this language pack with degit — it lands you exactly in this directory, so the commands below can run as-is:
 
 ```bash
-npx degit eyesofkids/dowafu/publish/en#v0.7.0 .claude-pack
+npx degit eyesofkids/dowafu/publish/en#v0.8.0 .claude-pack
 cd .claude-pack
 
 TARGET=<path to the target project>

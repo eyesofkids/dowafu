@@ -15,7 +15,19 @@ import type { ModelPricing } from "./types.js";
 
 export type StoredAllow = { path: string; content: string };
 export type StoredSpoke = { agent: string; provider: string; model: string; effort?: string; body: string; allow: StoredAllow[] };
-export type StoredTicketDoc = { shared: string; spokes: StoredSpoke[] };
+export type TicketStatus = (typeof TICKET_STATUSES)[number];
+export const TICKET_STATUSES = ["draft", "sealed"] as const;
+
+export type StoredTicketDoc = {
+  shared: string;
+  spokes: StoredSpoke[];
+  // Present only after sealing. They are raw lens files so runtime can preserve the
+  // existing frontmatter stripping behavior without returning to the filesystem.
+  agentContent?: Record<string, string>;
+  sealedRepoRoot?: string;
+};
+
+export type StoredTicket = { name: string; doc: StoredTicketDoc; status: TicketStatus; sealedAt: string | null };
 
 function parseDoc(raw: string, name: string, lang: Lang): StoredTicketDoc {
   try {
@@ -28,12 +40,36 @@ function parseDoc(raw: string, name: string, lang: Lang): StoredTicketDoc {
 }
 
 export function getTicketDoc(db: DatabaseSync, name: string, lang: Lang): StoredTicketDoc {
-  const row = db.prepare("SELECT doc FROM tickets WHERE name = ?").get(name) as { doc?: string } | undefined;
-  if (!row?.doc) throw new DispatchError(m(lang, "ticketNotFound", name), 2);
-  return parseDoc(row.doc, name, lang);
+  return getStoredTicket(db, name, lang).doc;
 }
 
-function put(db: DatabaseSync, name: string, doc: StoredTicketDoc): void {
+function isTicketStatus(value: unknown): value is TicketStatus {
+  return typeof value === "string" && (TICKET_STATUSES as readonly string[]).includes(value);
+}
+
+export function getStoredTicket(db: DatabaseSync, name: string, lang: Lang): StoredTicket {
+  const row = db.prepare("SELECT name, doc, status, sealed_at FROM tickets WHERE name = ?").get(name) as {
+    name?: string;
+    doc?: string;
+    status?: unknown;
+    sealed_at?: unknown;
+  } | undefined;
+  if (!row?.doc || !row.name) throw new DispatchError(m(lang, "ticketNotFound", name), 2);
+  if (!isTicketStatus(row.status)) throw new DispatchError(m(lang, "ticketStatusInvalid", name), 2);
+  return {
+    name: row.name,
+    doc: parseDoc(row.doc, name, lang),
+    status: row.status,
+    sealedAt: typeof row.sealed_at === "string" ? row.sealed_at : null,
+  };
+}
+
+function assertDraft(ticket: StoredTicket, lang: Lang): void {
+  if (ticket.status !== "draft") throw new DispatchError(m(lang, "ticketSealedWriteRejected", ticket.name), 2);
+}
+
+function put(db: DatabaseSync, name: string, doc: StoredTicketDoc, lang: Lang): void {
+  assertDraft(getStoredTicket(db, name, lang), lang);
   db.prepare("UPDATE tickets SET doc = ? WHERE name = ?").run(JSON.stringify(doc), name);
 }
 
@@ -41,7 +77,8 @@ export function createTicket(db: DatabaseSync, name: string, shared: string, lan
   if (!name || name.includes(path.sep) || name === "." || name === "..") throw new DispatchError(m(lang, "ticketNameInvalid", name), 2);
   if (isReservedTicketName(name)) throw new DispatchError(m(lang, "ticketNameReserved", name, reservedTicketNames().join(", ")), 2);
   try {
-    db.prepare("INSERT INTO tickets (name, doc, created_at) VALUES (?, ?, ?)").run(name, JSON.stringify({ shared, spokes: [] }), now());
+    db.prepare("INSERT INTO tickets (name, doc, status, sealed_at, created_at) VALUES (?, ?, ?, ?, ?)")
+      .run(name, JSON.stringify({ shared, spokes: [] }), "draft", null, now());
   } catch {
     throw new DispatchError(m(lang, "ticketAlreadyExists", name), 2);
   }
@@ -63,7 +100,7 @@ export function addSpoke(db: DatabaseSync, name: string, spoke: Omit<StoredSpoke
   }
   if (!isModelEnabled(db, spoke.provider, spoke.model)) throw new DispatchError(m(lang, "modelDisabled", spoke.model, getCommandName()), 6);
   doc.spokes.push({ ...spoke, allow: [] });
-  put(db, name, doc);
+  put(db, name, doc, lang);
 }
 
 function isUnderDocs(repoRoot: string, target: string): boolean {
@@ -86,7 +123,47 @@ export async function addAllow(db: DatabaseSync, name: string, agent: string, re
   const i = spoke.allow.findIndex((item) => item.path === rel);
   if (i >= 0) spoke.allow[i] = { path: rel, content };
   else spoke.allow.push({ path: rel, content });
-  put(db, name, doc);
+  put(db, name, doc, lang);
+}
+
+export async function sealTicket(db: DatabaseSync, name: string, repoRoot: string, lang: Lang): Promise<void> {
+  const ticket = getStoredTicket(db, name, lang);
+  assertDraft(ticket, lang);
+  if (ticket.doc.spokes.length === 0) throw new DispatchError(m(lang, "ticketSealNeedsSpoke", name), 2);
+
+  const resolvedRepoRoot = path.resolve(repoRoot);
+  const agentContent: Record<string, string> = {};
+  // Read every file before writing anything. A missing lens must leave both the status
+  // and JSON document untouched.
+  for (const spoke of ticket.doc.spokes) {
+    const agentPath = path.join(resolvedRepoRoot, ".claude", "agents", `${spoke.agent}.md`);
+    try {
+      agentContent[spoke.agent] = await readFile(agentPath, "utf8");
+    } catch {
+      throw new DispatchError(m(lang, "agentDefNotFound", agentPath, spoke.agent), 2);
+    }
+  }
+
+  const sealedAt = now();
+  const sealedDoc: StoredTicketDoc = { ...ticket.doc, agentContent, sealedRepoRoot: resolvedRepoRoot };
+  db.exec("BEGIN");
+  try {
+    db.prepare("UPDATE tickets SET doc = ?, status = ?, sealed_at = ? WHERE name = ?")
+      .run(JSON.stringify(sealedDoc), "sealed", sealedAt, name);
+    db.exec("COMMIT");
+  } catch (err) {
+    db.exec("ROLLBACK");
+    throw err;
+  }
+}
+
+export function copyTicket(db: DatabaseSync, sourceName: string, newName: string, lang: Lang): void {
+  const source = getStoredTicket(db, sourceName, lang);
+  if (source.status !== "sealed") throw new DispatchError(m(lang, "ticketCopyNeedsSealed", sourceName), 2);
+  createTicket(db, newName, source.doc.shared, lang);
+  // A new draft deliberately retains shared/spokes/allowlist snapshots but never lens
+  // snapshots or the old sealing root; it has to seal against its chosen repo again.
+  put(db, newName, { shared: source.doc.shared, spokes: source.doc.spokes }, lang);
 }
 
 export async function importTicketDirectory(db: DatabaseSync, dir: string, name: string, repoRoot: string, lang: Lang): Promise<void> {
@@ -162,8 +239,14 @@ export function getTicketHardCapUsd(db: DatabaseSync, name: string, lang: Lang, 
 }
 
 export function formatTicket(db: DatabaseSync, name: string, lang: Lang, maxToolCalls: number = DEFAULT_MAX_TOOL_CALLS): string {
-  const doc = getTicketDoc(db, name, lang);
-  const lines = [m(lang, "ticketShowHeader", name)];
+  const ticket = getStoredTicket(db, name, lang);
+  const doc = ticket.doc;
+  const statusLine = ticket.status === "sealed"
+    ? m(lang, "ticketStatusSealed", ticket.sealedAt ?? "—", doc.sealedRepoRoot ?? "—")
+    : m(lang, "ticketStatusDraft");
+  // Status is deliberately first: this is the human's decision point before any cost
+  // estimate or content detail.
+  const lines = [`${m(lang, "ticketShowHeader", name)} ${statusLine}`];
   for (const spoke of doc.spokes) {
     const chars = spoke.allow.reduce((sum, item) => sum + item.content.length, 0);
     const details = getTicketPricing(db, spoke.provider, spoke.model);

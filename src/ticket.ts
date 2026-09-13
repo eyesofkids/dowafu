@@ -6,7 +6,7 @@ import path from "node:path";
 import type { DatabaseSync } from "node:sqlite";
 import { DispatchError, type Lang } from "./types.js";
 import { m } from "./messages.js";
-import { getTicketDoc } from "./ticket-store.js";
+import { getStoredTicket, type TicketStatus } from "./ticket-store.js";
 
 export type DispatchRow = {
   agent: string;
@@ -47,6 +47,12 @@ export type Ticket = {
   // D1: present only for DB tickets. Values are frozen when the allowlist is added,
   // so runtime never returns to the filesystem for ticket material.
   allowedContent?: Map<string, string>;
+  // Present only for sealed DB tickets. The caller must pass this explicitly to
+  // resolveSpokes so a missing CLI connection is a type error rather than a disk fallback.
+  agentContent?: Map<string, string>;
+  status?: TicketStatus;
+  sealedAt?: string | null;
+  sealedRepoRoot?: string;
 };
 
 const FORMAT_MARKER = "<!-- format: v1 -->";
@@ -285,11 +291,13 @@ export async function loadTicket(
   if (typeof source === "string") return loadTicketDirectory(source, nameOrLang as Lang);
   const name = nameOrLang as string;
   const lang = maybeLang!;
-  const doc = getTicketDoc(source, name, lang);
+  const stored = getStoredTicket(source, name, lang);
+  const doc = stored.doc;
   const shared = parseSharedDoc(doc.shared, lang);
   const rows: DispatchRow[] = doc.spokes.map(({ agent, provider, model, effort }) => ({ agent, provider, model, effort }));
   const perAgent = new Map<string, AgentTicket>();
   const allowedContent = new Map<string, string>();
+  const agentContent = doc.agentContent ? new Map(Object.entries(doc.agentContent)) : undefined;
   const ticketDir = `ticket/${name}`;
   allowedContent.set(`${ticketDir}/_shared.md`, doc.shared);
   for (const spoke of doc.spokes) {
@@ -297,5 +305,16 @@ export async function loadTicket(
     allowedContent.set(`${ticketDir}/${spoke.agent}.md`, spoke.body);
     for (const allowed of spoke.allow) allowedContent.set(allowed.path, allowed.content);
   }
-  return { ticketDir, ticketName: name, rows, shared, perAgent, allowedContent };
+  return {
+    ticketDir,
+    ticketName: name,
+    rows,
+    shared,
+    perAgent,
+    allowedContent,
+    agentContent,
+    status: stored.status,
+    sealedAt: stored.sealedAt,
+    sealedRepoRoot: doc.sealedRepoRoot,
+  };
 }

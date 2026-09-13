@@ -107,6 +107,27 @@ test("T0：重複開啟同一個 DB 是冪等的", async () => {
   });
 });
 
+test("ticket-states：v5 既有工單遷移為 draft，連開三次仍停在 schema 6", async () => {
+  await withTempDb(async (dbPath) => {
+    const { DatabaseSync } = await import("node:sqlite");
+    const legacy = new DatabaseSync(dbPath);
+    legacy.exec("CREATE TABLE tickets (name TEXT PRIMARY KEY, doc TEXT NOT NULL, created_at TEXT NOT NULL)");
+    legacy.prepare("INSERT INTO tickets (name, doc, created_at) VALUES (?, ?, ?)")
+      .run("old-ticket", JSON.stringify({ shared: "old", spokes: [] }), "2026-09-12T00:00:00.000Z");
+    legacy.exec("PRAGMA user_version = 5");
+    legacy.close();
+
+    for (let i = 0; i < 3; i++) {
+      const db = openDb(dbPath, "en");
+      assert.equal(schemaVersion(db), 6);
+      const row = db.prepare("SELECT status, sealed_at FROM tickets WHERE name = ?").get("old-ticket") as { status: string; sealed_at: string | null };
+      assert.equal(row.status, "draft");
+      assert.equal(row.sealed_at, null);
+      db.close();
+    }
+  });
+});
+
 // 這是遷移機制存在的理由：T0 之前建立的 DB 已經有 D1 那三張表，而 user_version 還是 0。
 // 沒有這個機制，新表對它永遠不會出現，症狀只在「升級過的使用者」身上發生。
 test("T0：T0 之前建立的舊 DB 再開啟時補上新表，既有資料不動", async () => {
@@ -207,7 +228,7 @@ test("queue-lang-rerun：v5 補 jobs.lang、保留舊 job，且欄位已在時�
     seeded.close();
 
     const migrated = openDb(dbPath);
-    assert.equal(schemaVersion(migrated), 5);
+    assert.equal(schemaVersion(migrated), LATEST_SCHEMA_VERSION);
     assert.deepEqual(
       { ...(migrated.prepare("SELECT id, ticket, lang FROM jobs WHERE id = ?").get("old-job") as { id: string; ticket: string; lang: string | null }) },
       { id: "old-job", ticket: "kept", lang: null },
@@ -216,7 +237,7 @@ test("queue-lang-rerun：v5 補 jobs.lang、保留舊 job，且欄位已在時�
     migrated.exec("PRAGMA user_version = 4");
     migrated.close();
     const rerun = openDb(dbPath);
-    assert.equal(schemaVersion(rerun), 5);
+    assert.equal(schemaVersion(rerun), LATEST_SCHEMA_VERSION);
     assert.equal((rerun.prepare("SELECT lang FROM jobs WHERE id = ?").get("old-job") as { lang: string | null }).lang, null);
   });
 });
