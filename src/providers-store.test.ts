@@ -30,14 +30,14 @@ function normalize(value: unknown): unknown {
   return parsed;
 }
 
-test("providers store：bundled 匯入無損，五開十五關", async () => {
+test("providers store：bundled 匯入無損，四開十六關", async () => {
   await withDb(async (dbPath) => {
     const db = openDb(dbPath);
     const source = await readProvidersFile(bundledProvidersPath(), "en");
     mergeProviders(db, source, true);
     assert.deepEqual(normalize(loadProviders(db, "en")), normalize(source.providers));
     const enabled = listModels(db).filter((model) => model.enabled).map((model) => model.model).sort();
-    assert.deepEqual(enabled, ["claude-haiku-5-5", "deepseek-flash", "gemini-3.1-flash-lite", "gemini-3.5-flash-lite", "gpt-6-luna"]);
+    assert.deepEqual(enabled, ["claude-haiku-5-5", "deepseek-flash", "gemini-3.5-flash-lite", "gpt-6-luna"]);
   });
 });
 
@@ -86,7 +86,7 @@ test("providers store：壞 models 或 pricing key 在寫入前拒絕，DB 不�
 
 // --- 熱修補（票 A 驗收缺口二、三） ---
 
-test("熱修補：空表 seedIfEmpty 播種出貨檔，且只開 DEFAULT_ENABLED 那五個", async () => {
+test("熱修補：空表 seedIfEmpty 播種出貨檔，且只開 DEFAULT_ENABLED 那四個", async () => {
   await withDb(async (dbPath) => {
     const db = openDb(dbPath, "en");
     assert.equal(listModels(db).length, 0);
@@ -97,13 +97,12 @@ test("熱修補：空表 seedIfEmpty 播種出貨檔，且只開 DEFAULT_ENABLED
     assert.deepEqual(on, [
       "claude-haiku-5-5",
       "deepseek-flash",
-      "gemini-3.1-flash-lite",
       "gemini-3.5-flash-lite",
       "gpt-6-luna",
     ]);
     // 出貨檔的 bundled 旗標必須生效——這是「複製一份自己 import 會 12 個全關」那個
     // 缺口的反面，seedIfEmpty 一律當作 bundled。
-    assert.equal(models.filter((model) => model.enabled).length, 5);
+    assert.equal(models.filter((model) => model.enabled).length, 4);
   });
 });
 

@@ -3,7 +3,7 @@ name: find-holes-external
 description: 把規劃書段落派給外部模型（OpenAI／DeepSeek／Gemini／Anthropic）做找漏洞審查，經本地 dowafu CLI 執行，spoke 唯讀且受白名單控管。適用於需要異質視角、或要對照真實原始碼審查規劃書時。用法：/find-holes-external <規劃書檔案路徑> [聚焦章節或問題]
 metadata:
   derived-from: ".claude/skills/find-holes-external/SKILL.md"
-  derived-from-sha256: "6526927a904b629a2e84ea62444ed84d33de25d76dcb9e86cb6f71a1ca0e44c1"
+  derived-from-sha256: "a07fb2d8cce83a8d21907a78779f99653072c8e53c5629aae17e7f49257bc111"
 ---
 
 # find-holes-external — 外派找漏洞
@@ -166,9 +166,9 @@ dowafu --version
 
 | spoke | lens | provider／model | 產物落點 |
 | --- | --- | --- | --- |
-| 1 | safety | openai／gpt-5.6-luna | `SQLite results/auth-review-luna/hole-finder-safety.md` |
+| 1 | safety | openai／gpt-6-luna | `SQLite results/auth-review-luna/hole-finder-safety.md` |
 | 2 | safety | deepseek／deepseek-flash | `SQLite results/auth-review-ds/hole-finder-safety.md` |
-| 3 | feasibility | gemini／gemini-3.6-flash | `SQLite results/auth-review-luna/hole-finder-feasibility.md` |
+| 3 | feasibility | gemini／gemini-3.5-flash-lite | `SQLite results/auth-review-luna/hole-finder-feasibility.md` |
 
 **兩支算出同一個路徑，就是坑不夠**——而且解法不是改個檔名，是**拆工單目錄**：同一個 lens 要跑
 多個型號時，一個型號一個目錄（ticket-id 加後綴），各派一次。
@@ -196,7 +196,7 @@ dowafu --version
 | `gemini` | `gemini-3.1-flash-lite`／`gemini-3.5-flash-lite`／`gemini-3.6-flash`／`gemini-3.8-flash`／`gemini-4-argon` |
 | `anthropic` | `claude-haiku-5-5`／`claude-sonnet-5-5`／`claude-opus-5-5`／`claude-fable-5-1`／`claude-sonnet-5`／`claude-opus-5` |
 
-這些大多**預設停用**：全新安裝只開 `gpt-6-luna`、`deepseek-flash`、`gemini-3.1-flash-lite`、`gemini-3.5-flash-lite`、`claude-haiku-5-5`。派到停用的型號會在產生任何費用之前被擋下，訊息會指名該跑哪一條 `dowafu providers enable`。上游已退役或轉址的型號已從清單移除（`deepseek-v4-flash`、`gemini-3.7-flash`），`claude-haiku-4-5-20251001` 也已移除（它不收 dowafu 一定會送的推理參數）——**既有工單若指定了它們，改用上表的型號**。
+這些大多**預設停用**：全新安裝只開 `gpt-6-luna`、`deepseek-flash`、`gemini-3.5-flash-lite`、`claude-haiku-5-5`，也就是每家最新一代裡最便宜的那一級。派到停用的型號會在產生任何費用之前被擋下，訊息會指名該跑哪一條 `dowafu providers enable`——**要不要開由使用者決定，見下方「要用的型號是停用的」**。上游已退役或轉址的型號已從清單移除（`deepseek-v4-flash`、`gemini-3.7-flash`），`claude-haiku-4-5-20251001` 也已移除（它不收 dowafu 一定會送的推理參數）——**既有工單若指定了它們，改用上表的型號**。
 
 ### 使用者沒指定型號時
 
@@ -204,6 +204,22 @@ dowafu --version
 **等他確認**。不要自己決定就派；他改過之後也不要因為「另一個好像比較好」就換回來。
 
 型號怎麼取捨是使用者的專案決定，這份文件不替他決定。
+
+### 要用的型號是停用的
+
+型號的開關**只能用 CLI**，MCP 和其他介面都沒有這個功能：
+
+```bash
+dowafu providers list              # 列出每個型號的單價與開關狀態
+dowafu providers enable <model>    # 兩家 provider 有同名型號時寫成 <provider> <model>
+dowafu providers disable <model>
+```
+
+這幾條指令你可以執行，但**開關是使用者的決定，不是你的**。較貴的型號預設關閉，就是為了不讓派工在沒有人確認的情況下花到錢：
+
+1. **開之前先問。** 告訴使用者要開哪個型號、`providers list` 印出的單價，以及它是預設型號的幾倍。他明確同意之後才執行 `enable`。派工被擋下時，錯誤訊息會印出這條指令，**那是寫給使用者看的，不是要你照著執行**。
+2. **開了不代表可以直接實跑。** 開啟之後，一樣要走第 4 節乾跑、第 5 節實跑的確認。派到的是預設停用的型號時，說明硬上限要**講明是哪個較貴的型號**，取得同意後才加 `--yes` 或呼叫 `dispatch_approve`。
+3. **用完要不要關回去，也要問使用者。**
 
 ---
 
@@ -269,9 +285,9 @@ lens 的內容一併凍結存進工單，所以定稿之後執行，用的是定
 
 | agent | provider | model | effort |
 | --- | --- | --- | --- |
-| hole-finder-safety | openai | gpt-5.6-luna | |
+| hole-finder-safety | openai | gpt-6-luna | |
 | hole-finder-cost | deepseek | deepseek-flash | |
-| hole-finder-feasibility | gemini | gemini-3.1-flash-lite | |
+| hole-finder-feasibility | gemini | gemini-3.5-flash-lite | |
 ```
 
 首行 `<!-- format: v1 -->` **必須有**；`model` 必填；只列你要派的那幾個。`effort` 留白

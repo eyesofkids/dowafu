@@ -3,7 +3,7 @@ name: find-holes-external
 description: Dispatch sections of a plan document to external models (OpenAI / DeepSeek / Gemini / Anthropic) for hole-finding review, executed through the local dowafu CLI, where spokes are read-only and governed by an allowlist. Use when you need a heterogeneous perspective, or when the plan has to be reviewed against the real source code. Usage: /find-holes-external <path to plan> [section or question to focus on]
 metadata:
   derived-from: ".claude/skills/find-holes-external/SKILL.md"
-  derived-from-sha256: "05631ca8be6b55ab1152b7f1c8250511a48b2d71f52759d6ec1fcdd702f2d729"
+  derived-from-sha256: "e8cb019ac67847b1d7da14a72cbd3f0448354c046d9469b9badbbbb3e26c1354"
 ---
 
 # find-holes-external — external hole-finding
@@ -127,9 +127,9 @@ A spoke's artifacts are the database row keyed by `<ticket-id>` + `<agent>` (rep
 
 | Spoke | Lens | Provider / model | Artifacts land in |
 | --- | --- | --- | --- |
-| 1 | safety | openai / gpt-5.6-luna | `SQLite results/auth-review-luna/hole-finder-safety.md` |
+| 1 | safety | openai / gpt-6-luna | `SQLite results/auth-review-luna/hole-finder-safety.md` |
 | 2 | safety | deepseek / deepseek-flash | `SQLite results/auth-review-ds/hole-finder-safety.md` |
-| 3 | feasibility | gemini / gemini-3.6-flash | `SQLite results/auth-review-luna/hole-finder-feasibility.md` |
+| 3 | feasibility | gemini / gemini-3.5-flash-lite | `SQLite results/auth-review-luna/hole-finder-feasibility.md` |
 
 **Two spokes resolving to the same path means you are one hole short** — and the fix is not a different filename, it is a separate ticket directory: one model per directory, suffix the ticket-id, dispatch each once. Different lenses can share a directory; their agent names already differ.
 
@@ -154,13 +154,29 @@ Dispatching one is fine; dispatching all three is fine. **Do not rule a lens out
 | `gemini` | `gemini-3.1-flash-lite` / `gemini-3.5-flash-lite` / `gemini-3.6-flash` / `gemini-3.8-flash` / `gemini-4-argon` |
 | `anthropic` | `claude-haiku-5-5` / `claude-sonnet-5-5` / `claude-opus-5-5` / `claude-fable-5-1` / `claude-sonnet-5` / `claude-opus-5` |
 
-Most of these start **disabled**: on a fresh install only `gpt-6-luna`, `deepseek-flash`, `gemini-3.1-flash-lite`, `gemini-3.5-flash-lite` and `claude-haiku-5-5` are enabled. Dispatching to a disabled model is refused before any spend, and the message names the `dowafu providers enable` command to run. Models that upstream has retired or redirected are removed from this list (`deepseek-v4-flash`, `gemini-3.7-flash`), as is `claude-haiku-4-5-20251001`, which rejects the reasoning parameters dowafu always sends — **if an existing ticket names one of them, switch it to a model above**.
+Most of these start **disabled**: on a fresh install only `gpt-6-luna`, `deepseek-flash`, `gemini-3.5-flash-lite` and `claude-haiku-5-5` are enabled — for each provider, the cheapest tier of the newest generation. Dispatching to a disabled model is refused before any spend, and the message names the `dowafu providers enable` command — **whether to run it is the user's decision; see "When the model you need is disabled" below**. Models that upstream has retired or redirected are removed from this list (`deepseek-v4-flash`, `gemini-3.7-flash`), as is `claude-haiku-4-5-20251001`, which rejects the reasoning parameters dowafu always sends — **if an existing ticket names one of them, switch it to a model above**.
 
 ### When the user has not specified models
 
 **Propose a set and explain what you based it on** (cost magnitude, size of the material, whether this lens needs deep reasoning), then **wait for confirmation**. Do not decide and dispatch on your own; and once they have changed it, do not switch back because "the other one seems better".
 
 How to trade models off is the user's project decision, and this document does not make it for them.
+
+### When the model you need is disabled
+
+Models can be turned on or off **only through the CLI** — MCP and the other interfaces have no such tool:
+
+```bash
+dowafu providers list              # each model's price and whether it is enabled
+dowafu providers enable <model>    # use <provider> <model> if two providers share the name
+dowafu providers disable <model>
+```
+
+You can run these commands, but **turning a model on or off is the user's decision, not yours** — the pricier models start disabled precisely so that a dispatch cannot spend on them without someone confirming:
+
+1. **Ask before enabling.** Tell the user which model, its price from `providers list`, and how many times the default model's price that is; run `enable` only after they explicitly agree. When a dispatch is refused, the error message prints this command — **it is addressed to the user, not an instruction for you to follow.**
+2. **Enabled does not mean cleared to run.** After enabling, the dry run in section 4 and the confirmation in section 5 still apply. When a spoke uses a model that is disabled by default, **name that pricier model** when you state the hard cap, and add `--yes` or call `dispatch_approve` only after the user agrees.
+3. **Whether to turn it back off afterwards is also the user's call.**
 
 ---
 
@@ -223,9 +239,9 @@ The ticket goes into the database under `<ticket-id>`, a topic slug (for example
 
 | agent | provider | model | effort |
 | --- | --- | --- | --- |
-| hole-finder-safety | openai | gpt-5.6-luna | |
+| hole-finder-safety | openai | gpt-6-luna | |
 | hole-finder-cost | deepseek | deepseek-flash | |
-| hole-finder-feasibility | gemini | gemini-3.1-flash-lite | |
+| hole-finder-feasibility | gemini | gemini-3.5-flash-lite | |
 ```
 
 The first line `<!-- format: v1 -->` is **required**; `model` is required; list only the spokes you are dispatching. `effort` may be left blank, meaning **`high`** — all four providers currently default `reasoning.default` to `high`. To change it, check `providers.json`'s `reasoning.allowed`: **each provider's range differs** (for example `deepseek` has no `medium`); a value outside that range is rejected with the list of allowed values shown, never silently downgraded.

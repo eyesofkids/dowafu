@@ -193,14 +193,15 @@ response for every call. Read a run back with `dowafu result <id>`.
 | | `gpt-5.6-luna`, `gpt-5.6-terra`, `gpt-5.6-sol`, `gpt-6-sol`, `gpt-6.1-sol`, `gpt-6-astra` | disabled |
 | `deepseek` | `deepseek-flash` | **enabled** |
 | | `deepseek-v4-pro` | disabled |
-| `gemini` | `gemini-3.1-flash-lite`, `gemini-3.5-flash-lite` | **enabled** |
-| | `gemini-3.6-flash`, `gemini-3.8-flash`, `gemini-4-argon` | disabled |
+| `gemini` | `gemini-3.5-flash-lite` | **enabled** |
+| | `gemini-3.1-flash-lite`, `gemini-3.6-flash`, `gemini-3.8-flash`, `gemini-4-argon` | disabled |
 | `anthropic` | `claude-haiku-5-5` | **enabled** |
 | | `claude-sonnet-5`, `claude-sonnet-5-5`, `claude-opus-5`, `claude-opus-5-5`, `claude-fable-5-1` | disabled |
 
-Twenty models, five of them enabled out of the box — the pricier ones start disabled so
-that a typo cannot quietly dispatch to an expensive model. Dispatching to a disabled model
-is rejected before any spend, and tells you the `providers enable` command to run.
+Twenty models, four of them enabled out of the box: for each provider, the cheapest tier of
+the newest generation. The pricier ones start disabled so that a typo cannot quietly
+dispatch to an expensive model. Dispatching to a disabled model is rejected before any
+spend, and tells you the `providers enable` command to run.
 
 Models that upstream has retired or redirected to another model are removed from the list;
 models that are only marked deprecated stay until their retirement date. 0.9.0 removed
@@ -243,7 +244,7 @@ not work: a reviewer's fixed closing line has to match the template the audit ch
 against.
 
 ```bash
-npx degit eyesofkids/dowafu/publish/en#v0.8.0 .claude-pack   # or publish/zh-tw
+npx degit eyesofkids/dowafu/publish/en#v0.9.0 .claude-pack   # or publish/zh-tw
 
 cd .claude-pack
 TARGET=<your project>

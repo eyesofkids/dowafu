@@ -9,13 +9,14 @@ import { bundledProvidersPath } from "./pkg-info.js";
 
 // 2026-10-16（v0_9_0 #41）：gpt-5.6-luna → gpt-6-luna、claude-haiku-4-5-20251001 → claude-haiku-5-5。
 // 新的兩個更便宜且 verify:providers 實跑通過；haiku-4-5 不收 effort／adaptive thinking，在 dowafu 從來派不出去。
+// 判準（v0_9_0 裁示 13）：每家只開「最新一代、最便宜那一級」的一個型號，新一代出來就換掉同級的舊一代；
+// 較貴的級別一律預設關閉。gemini-3.1-flash-lite 因此拿掉，只留同級較新的 gemini-3.5-flash-lite。
 const DEFAULT_ENABLED = new Set([
   "gpt-6-luna",
   // 2026-09-12：預設改為 deepseek-flash。deepseek-v4-flash 已於 2026-09-10 退役，
   // 目前只是暫時轉址到 V4.1 Flash 且官方未給截止日——預設開一個隨時會消失的型號，
   // 壞法會是「新裝的人某天突然跑不動」。deepseek-flash 已 smoke 實跑通過。
   "deepseek-flash",
-  "gemini-3.1-flash-lite",
   "gemini-3.5-flash-lite",
   "claude-haiku-5-5",
 ]);
@@ -84,7 +85,7 @@ export function seedIfEmpty(db: DatabaseSync, lang: Lang): boolean {
   } catch {
     throw new DispatchError(m(lang, "missingProviders", filePath), 2);
   }
-  // bundled = true：出貨檔才套用 DEFAULT_ENABLED 那五個。
+  // bundled = true：出貨檔才套用 DEFAULT_ENABLED 那四個。
   mergeProviders(db, parseSourceText(text, lang), true);
   return true;
 }

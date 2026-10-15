@@ -180,12 +180,12 @@ dowafu result <id>
 | | `gpt-5.6-luna`、`gpt-5.6-terra`、`gpt-5.6-sol`、`gpt-6-sol`、`gpt-6.1-sol`、`gpt-6-astra` | 停用 |
 | `deepseek` | `deepseek-flash` | **啟用** |
 | | `deepseek-v4-pro` | 停用 |
-| `gemini` | `gemini-3.1-flash-lite`、`gemini-3.5-flash-lite` | **啟用** |
-| | `gemini-3.6-flash`、`gemini-3.8-flash`、`gemini-4-argon` | 停用 |
+| `gemini` | `gemini-3.5-flash-lite` | **啟用** |
+| | `gemini-3.1-flash-lite`、`gemini-3.6-flash`、`gemini-3.8-flash`、`gemini-4-argon` | 停用 |
 | `anthropic` | `claude-haiku-5-5` | **啟用** |
 | | `claude-sonnet-5`、`claude-sonnet-5-5`、`claude-opus-5`、`claude-opus-5-5`、`claude-fable-5-1` | 停用 |
 
-共 20 個 Model，開箱只啟用五個——較貴的預設停用，讓打錯字不會安靜地派到昂貴的 Model 上。
+共 20 個 Model，開箱只啟用四個：每家 provider 最新一代裡最便宜的那一級。較貴的預設停用，讓打錯字不會安靜地派到昂貴的 Model 上。
 派到停用的 Model 會在產生任何費用之前被拒絕，並告訴你該跑哪一條 `providers enable`。
 
 上游已退役、或已轉址到別的 Model 的，會從清單移除；只標示 deprecated 的會留到退役日。
@@ -227,7 +227,7 @@ dowafu providers list                      # 確認新的 Model 已經進來
 `publish/` 提供兩種語言：`publish/en/` 與 `publish/zh-tw/`。**擇一複製，不可混裝**——審查者的固定收尾句必須與稽核檢查用的範本是同一種語言。
 
 ```bash
-npx degit eyesofkids/dowafu/publish/zh-tw#v0.8.0 .claude-pack   # 或 publish/en
+npx degit eyesofkids/dowafu/publish/zh-tw#v0.9.0 .claude-pack   # 或 publish/en
 
 cd .claude-pack
 TARGET=<your project>
