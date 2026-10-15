@@ -176,20 +176,22 @@ dowafu result <id>
 
 | Provider | Model | 全新安裝時 |
 | --- | --- | :-: |
-| `openai` | `gpt-5.6-luna` | **啟用** |
-| | `gpt-5.6-terra`、`gpt-5.6-sol`、`gpt-6-astra` | 停用 |
+| `openai` | `gpt-6-luna` | **啟用** |
+| | `gpt-5.6-luna`、`gpt-5.6-terra`、`gpt-5.6-sol`、`gpt-6-sol`、`gpt-6.1-sol`、`gpt-6-astra` | 停用 |
 | `deepseek` | `deepseek-flash` | **啟用** |
-| | `deepseek-v4-flash`、`deepseek-v4-pro` | 停用 |
+| | `deepseek-v4-pro` | 停用 |
 | `gemini` | `gemini-3.1-flash-lite`、`gemini-3.5-flash-lite` | **啟用** |
-| | `gemini-3.6-flash`、`gemini-3.7-flash`、`gemini-3.8-flash` | 停用 |
-| `anthropic` | `claude-haiku-4-5-20251001` | **啟用** |
-| | `claude-opus-5`、`claude-sonnet-5` | 停用 |
+| | `gemini-3.6-flash`、`gemini-3.8-flash`、`gemini-4-argon` | 停用 |
+| `anthropic` | `claude-haiku-5-5` | **啟用** |
+| | `claude-sonnet-5`、`claude-sonnet-5-5`、`claude-opus-5`、`claude-opus-5-5`、`claude-fable-5-1` | 停用 |
 
-共 15 個 Model，開箱只啟用五個——較貴的預設停用，讓打錯字不會安靜地派到昂貴的 Model 上。
+共 20 個 Model，開箱只啟用五個——較貴的預設停用，讓打錯字不會安靜地派到昂貴的 Model 上。
 派到停用的 Model 會在產生任何費用之前被拒絕，並告訴你該跑哪一條 `providers enable`。
 
-`deepseek-v4-flash` 已於 2026-09-10 在上游退役，目前被轉址到 V4.1 Flash，官方未說明何時停止。
-它留在清單上是為了讓既有工單還能運作，**新工單請改用 `deepseek-flash`**。
+上游已退役、或已轉址到別的 Model 的，會從清單移除；只標示 deprecated 的會留到退役日。
+0.9.0 移除了 `deepseek-v4-flash`、`gemini-3.7-flash`（兩者都已轉址到較新的 Model）與
+`claude-haiku-4-5-20251001`（它不收 dowafu 一定會送的推理參數）。
+**升級不會把它們從既有的資料庫拿掉**——還留著的請逐一跑 `dowafu providers disable <model>`。
 
 這份清單會隨套件以 `providers.json` 一起提供，並在第一次開啟資料庫時播種進去。
 之後**資料庫就是唯一來源**：

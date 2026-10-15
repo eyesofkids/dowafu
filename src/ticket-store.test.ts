@@ -242,7 +242,7 @@ test("CLI approve：空 DB 的 seeded 接線、免參數、短 id 與歧義前�
     const db = openDb(dbPath, "en");
     const doc = JSON.stringify({
       shared: "# Under review\ntext\n",
-      spokes: [{ agent: "reviewer", provider: "deepseek", model: "deepseek-v4-flash", body: "# Questions\n1. Check\n", allow: [{ path: "source.txt", content: "abcdefgh" }] }],
+      spokes: [{ agent: "reviewer", provider: "deepseek", model: "deepseek-flash", body: "# Questions\n1. Check\n", allow: [{ path: "source.txt", content: "abcdefgh" }] }],
     });
     for (const name of ["single", "many", "prefix", "ambiguous"]) {
       db.prepare("INSERT INTO tickets (name, doc, status, sealed_at, created_at) VALUES (?, ?, ?, ?, ?)")

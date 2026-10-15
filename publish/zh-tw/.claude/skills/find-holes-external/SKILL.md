@@ -205,12 +205,12 @@ dowafu --version
 
 | provider | model |
 | --- | --- |
-| `openai` | `gpt-5.6-luna`／`gpt-5.6-terra`／`gpt-5.6-sol`／`gpt-6-astra` |
-| `deepseek` | `deepseek-flash`／`deepseek-v4-flash`／`deepseek-v4-pro` |
-| `gemini` | `gemini-3.1-flash-lite`／`gemini-3.5-flash-lite`／`gemini-3.6-flash`／`gemini-3.7-flash`／`gemini-3.8-flash` |
-| `anthropic` | `claude-opus-5`／`claude-sonnet-5`／`claude-haiku-4-5-20251001` |
+| `openai` | `gpt-6-luna`／`gpt-6-sol`／`gpt-6.1-sol`／`gpt-6-astra`／`gpt-5.6-luna`／`gpt-5.6-terra`／`gpt-5.6-sol` |
+| `deepseek` | `deepseek-flash`／`deepseek-v4-pro` |
+| `gemini` | `gemini-3.1-flash-lite`／`gemini-3.5-flash-lite`／`gemini-3.6-flash`／`gemini-3.8-flash`／`gemini-4-argon` |
+| `anthropic` | `claude-haiku-5-5`／`claude-sonnet-5-5`／`claude-opus-5-5`／`claude-fable-5-1`／`claude-sonnet-5`／`claude-opus-5` |
 
-這些大多**預設停用**：全新安裝只開 `gpt-5.6-luna`、`deepseek-flash`、`gemini-3.1-flash-lite`、`gemini-3.5-flash-lite`、`claude-haiku-4-5-20251001`。派到停用的型號會在產生任何費用之前被擋下，訊息會指名該跑哪一條 `dowafu providers enable`。`deepseek-v4-flash` 保留是為了既有工單，但它在上游已退役——**新工單一律用 `deepseek-flash`**。
+這些大多**預設停用**：全新安裝只開 `gpt-6-luna`、`deepseek-flash`、`gemini-3.1-flash-lite`、`gemini-3.5-flash-lite`、`claude-haiku-5-5`。派到停用的型號會在產生任何費用之前被擋下，訊息會指名該跑哪一條 `dowafu providers enable`。上游已退役或轉址的型號已從清單移除（`deepseek-v4-flash`、`gemini-3.7-flash`），`claude-haiku-4-5-20251001` 也已移除（它不收 dowafu 一定會送的推理參數）——**既有工單若指定了它們，改用上表的型號**。
 
 ### 使用者沒指定型號時
 

@@ -7,15 +7,17 @@ import { m } from "./messages.js";
 import { parseProvidersFile } from "./providers.js";
 import { bundledProvidersPath } from "./pkg-info.js";
 
+// 2026-10-16（v0_9_0 #41）：gpt-5.6-luna → gpt-6-luna、claude-haiku-4-5-20251001 → claude-haiku-5-5。
+// 新的兩個更便宜且 verify:providers 實跑通過；haiku-4-5 不收 effort／adaptive thinking，在 dowafu 從來派不出去。
 const DEFAULT_ENABLED = new Set([
-  "gpt-5.6-luna",
+  "gpt-6-luna",
   // 2026-09-12：預設改為 deepseek-flash。deepseek-v4-flash 已於 2026-09-10 退役，
   // 目前只是暫時轉址到 V4.1 Flash 且官方未給截止日——預設開一個隨時會消失的型號，
   // 壞法會是「新裝的人某天突然跑不動」。deepseek-flash 已 smoke 實跑通過。
   "deepseek-flash",
   "gemini-3.1-flash-lite",
   "gemini-3.5-flash-lite",
-  "claude-haiku-4-5-20251001",
+  "claude-haiku-5-5",
 ]);
 
 export type StoredModel = {

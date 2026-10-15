@@ -3,7 +3,7 @@ name: find-holes-external
 description: Dispatch sections of a plan document to external models (OpenAI / DeepSeek / Gemini / Anthropic) for hole-finding review, executed through the local dowafu CLI, where spokes are read-only and governed by an allowlist. Use when you need a heterogeneous perspective, or when the plan has to be reviewed against the real source code. Usage: /find-holes-external <path to plan> [section or question to focus on]
 metadata:
   derived-from: ".claude/skills/find-holes-external/SKILL.md"
-  derived-from-sha256: "be7c97cc7e6b49debd5b3a5357cb22169856a12b61d138070349edd1be3a7d68"
+  derived-from-sha256: "05631ca8be6b55ab1152b7f1c8250511a48b2d71f52759d6ec1fcdd702f2d729"
 ---
 
 # find-holes-external — external hole-finding
@@ -149,12 +149,12 @@ Dispatching one is fine; dispatching all three is fine. **Do not rule a lens out
 
 | provider | model |
 | --- | --- |
-| `openai` | `gpt-5.6-luna` / `gpt-5.6-terra` / `gpt-5.6-sol` / `gpt-6-astra` |
-| `deepseek` | `deepseek-flash` / `deepseek-v4-flash` / `deepseek-v4-pro` |
-| `gemini` | `gemini-3.1-flash-lite` / `gemini-3.5-flash-lite` / `gemini-3.6-flash` / `gemini-3.7-flash` / `gemini-3.8-flash` |
-| `anthropic` | `claude-opus-5` / `claude-sonnet-5` / `claude-haiku-4-5-20251001` |
+| `openai` | `gpt-6-luna` / `gpt-6-sol` / `gpt-6.1-sol` / `gpt-6-astra` / `gpt-5.6-luna` / `gpt-5.6-terra` / `gpt-5.6-sol` |
+| `deepseek` | `deepseek-flash` / `deepseek-v4-pro` |
+| `gemini` | `gemini-3.1-flash-lite` / `gemini-3.5-flash-lite` / `gemini-3.6-flash` / `gemini-3.8-flash` / `gemini-4-argon` |
+| `anthropic` | `claude-haiku-5-5` / `claude-sonnet-5-5` / `claude-opus-5-5` / `claude-fable-5-1` / `claude-sonnet-5` / `claude-opus-5` |
 
-Most of these start **disabled**: on a fresh install only `gpt-5.6-luna`, `deepseek-flash`, `gemini-3.1-flash-lite`, `gemini-3.5-flash-lite` and `claude-haiku-4-5-20251001` are enabled. Dispatching to a disabled model is refused before any spend, and the message names the `dowafu providers enable` command to run. `deepseek-v4-flash` is kept for existing tickets but is retired upstream — **use `deepseek-flash` for new ones**.
+Most of these start **disabled**: on a fresh install only `gpt-6-luna`, `deepseek-flash`, `gemini-3.1-flash-lite`, `gemini-3.5-flash-lite` and `claude-haiku-5-5` are enabled. Dispatching to a disabled model is refused before any spend, and the message names the `dowafu providers enable` command to run. Models that upstream has retired or redirected are removed from this list (`deepseek-v4-flash`, `gemini-3.7-flash`), as is `claude-haiku-4-5-20251001`, which rejects the reasoning parameters dowafu always sends — **if an existing ticket names one of them, switch it to a model above**.
 
 ### When the user has not specified models
 

@@ -189,22 +189,25 @@ response for every call. Read a run back with `dowafu result <id>`.
 
 | provider | model | on a fresh install |
 | --- | --- | :-: |
-| `openai` | `gpt-5.6-luna` | **enabled** |
-| | `gpt-5.6-terra`, `gpt-5.6-sol`, `gpt-6-astra` | disabled |
+| `openai` | `gpt-6-luna` | **enabled** |
+| | `gpt-5.6-luna`, `gpt-5.6-terra`, `gpt-5.6-sol`, `gpt-6-sol`, `gpt-6.1-sol`, `gpt-6-astra` | disabled |
 | `deepseek` | `deepseek-flash` | **enabled** |
-| | `deepseek-v4-flash`, `deepseek-v4-pro` | disabled |
+| | `deepseek-v4-pro` | disabled |
 | `gemini` | `gemini-3.1-flash-lite`, `gemini-3.5-flash-lite` | **enabled** |
-| | `gemini-3.6-flash`, `gemini-3.7-flash`, `gemini-3.8-flash` | disabled |
-| `anthropic` | `claude-haiku-4-5-20251001` | **enabled** |
-| | `claude-opus-5`, `claude-sonnet-5` | disabled |
+| | `gemini-3.6-flash`, `gemini-3.8-flash`, `gemini-4-argon` | disabled |
+| `anthropic` | `claude-haiku-5-5` | **enabled** |
+| | `claude-sonnet-5`, `claude-sonnet-5-5`, `claude-opus-5`, `claude-opus-5-5`, `claude-fable-5-1` | disabled |
 
-Fifteen models, five of them enabled out of the box — the pricier ones start disabled so
+Twenty models, five of them enabled out of the box — the pricier ones start disabled so
 that a typo cannot quietly dispatch to an expensive model. Dispatching to a disabled model
 is rejected before any spend, and tells you the `providers enable` command to run.
 
-`deepseek-v4-flash` was retired upstream on 2026-09-10 and is currently routed to V4.1
-Flash with no stated end date. It stays on the list so existing tickets keep working;
-**new tickets should use `deepseek-flash`**.
+Models that upstream has retired or redirected to another model are removed from the list;
+models that are only marked deprecated stay until their retirement date. 0.9.0 removed
+`deepseek-v4-flash` and `gemini-3.7-flash` (both now routed to a newer model) and
+`claude-haiku-4-5-20251001` (it rejects the reasoning parameters dowafu always sends).
+**Upgrading does not remove them from an existing database** — run
+`dowafu providers disable <model>` for each one you still have.
 
 The list ships with the package as `providers.json` and is seeded into the database the
 first time one is opened. From then on **the database is the source of truth**:

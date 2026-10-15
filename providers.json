@@ -10,16 +10,19 @@
       "allowed": ["none", "minimal", "low", "medium", "high", "xhigh", "max"],
       "default": "high"
     },
-    "models": ["gpt-5.6-luna", "gpt-5.6-terra", "gpt-5.6-sol", "gpt-6-astra"],
+    "models": ["gpt-5.6-luna", "gpt-5.6-terra", "gpt-5.6-sol", "gpt-6-astra", "gpt-6-luna", "gpt-6-sol", "gpt-6.1-sol"],
     "charsPerToken": 1.0,
     "tpmLimit": 200000,
     "maxSpokeTokens": null,
-    "pricingSource": { "url": "https://developers.openai.com/api/docs/pricing", "asOf": "2026-09-12", "note": "gpt-5.6-sol 為優惠價，官方頁措辭為「at least through 2026-11-21」，到期日可能再延。" },
+    "pricingSource": { "url": "https://developers.openai.com/api/docs/pricing", "asOf": "2026-10-16", "note": "gpt-5.6-sol 為優惠價，官方頁措辭為「at least through 2026-11-21」，到期日可能再延。一律取短 context（≤272K input）價；超過 272K 另有加價層。" },
     "pricing": {
       "gpt-5.6-luna": { "inputPerM": 0.20, "cachedInputPerM": 0.02, "outputPerM": 1.20 },
       "gpt-5.6-terra": { "inputPerM": 2.00, "cachedInputPerM": 0.20, "outputPerM": 12.00 },
       "gpt-5.6-sol": { "inputPerM": 4.00, "cachedInputPerM": 0.40, "outputPerM": 20.00 },
-      "gpt-6-astra": { "inputPerM": 10.00, "cachedInputPerM": 1.00, "outputPerM": 50.00 }
+      "gpt-6-astra": { "inputPerM": 10.00, "cachedInputPerM": 1.00, "outputPerM": 50.00 },
+      "gpt-6-luna": { "inputPerM": 0.10, "cachedInputPerM": 0.01, "outputPerM": 0.50 },
+      "gpt-6-sol": { "inputPerM": 2.00, "cachedInputPerM": 0.20, "outputPerM": 10.00 },
+      "gpt-6.1-sol": { "inputPerM": 2.00, "cachedInputPerM": 0.10, "outputPerM": 10.00 }
     }
   },
   "deepseek": {
@@ -32,17 +35,16 @@
       "allowed": ["low", "high", "max"],
       "default": "high"
     },
-    "models": ["deepseek-v4-flash", "deepseek-flash", "deepseek-v4-pro"],
+    "models": ["deepseek-flash", "deepseek-v4-pro"],
     "charsPerToken": 1.0,
     "tpmLimit": null,
     "maxSpokeTokens": null,
     "pricingSource": {
       "url": "https://api-docs.deepseek.com/quick_start/pricing/",
-      "asOf": "2026-09-12",
-      "note": "離峰（尖峰時段為週一至週五 01:00-04:00 與 06:00-10:00 UTC，其餘時段皆為離峰）為尖峰的一半；本檔一個型號只放得下一組價，取尖峰＝取上限。deepseek-v4-flash 已於 2026-09-10 退役、目前暫時轉址到 V4.1 Flash（deepseek-flash），官方未給截止日；其價格仍為退役前的舊值，故估算偏高。"
+      "asOf": "2026-10-16",
+      "note": "離峰（尖峰時段為週一至週五 01:00-04:00 與 06:00-10:00 UTC，其餘時段皆為離峰）為尖峰的一半；本檔一個型號只放得下一組價，取尖峰＝取上限。deepseek-flash 即 DeepSeek-V4.1-Flash。deepseek-v4-flash 已於 2026-09-10 退役、呼叫轉由 V4.1 Flash 處理，故自白名單移除。"
     },
     "pricing": {
-      "deepseek-v4-flash": { "inputPerM": 0.44, "cachedInputPerM": 0.014, "outputPerM": 1.32 },
       "deepseek-flash": { "inputPerM": 0.30, "cachedInputPerM": 0.006, "outputPerM": 1.20 },
       "deepseek-v4-pro": { "inputPerM": 1.32, "cachedInputPerM": 0.044, "outputPerM": 3.96 }
     }
@@ -57,17 +59,17 @@
       "allowed": ["minimal", "low", "medium", "high"],
       "default": "high"
     },
-    "models": ["gemini-3.1-flash-lite", "gemini-3.5-flash-lite", "gemini-3.6-flash", "gemini-3.7-flash", "gemini-3.8-flash"],
+    "models": ["gemini-3.1-flash-lite", "gemini-3.5-flash-lite", "gemini-3.6-flash", "gemini-3.8-flash", "gemini-4-argon"],
     "charsPerToken": 1.0,
     "tpmLimit": null,
     "maxSpokeTokens": null,
-    "pricingSource": { "url": "https://ai.google.dev/gemini-api/docs/pricing", "asOf": "2026-09-12", "note": "文字／圖片／影片價；音訊另計。output 價含 thinking tokens。gemini-3.6-flash／gemini-3.7-flash／gemini-3.8-flash 為優惠價，官方頁載明至 2026-12-31；2027-01-01 起漲為 $1.50 in／$7.50 out（三者皆是）" },
+    "pricingSource": { "url": "https://ai.google.dev/gemini-api/docs/pricing", "asOf": "2026-10-16", "note": "文字／圖片／影片價；音訊另計。output 價含 thinking tokens。gemini-3.6-flash／gemini-3.8-flash 為優惠價，官方頁載明至 2026-12-31；2027-01-01 起漲為 $1.50 in／$7.50 out（兩者皆是）。gemini-4-argon 在 2026-11-30 前為 $2.00／$0.10／$10.00，本檔取 2026-12-01 起的價。gemini-3.7-flash 已於 2026-10-08 退役、呼叫轉址到 gemini-3.8-flash，故自白名單移除。" },
     "pricing": {
       "gemini-3.1-flash-lite": { "inputPerM": 0.25, "cachedInputPerM": 0.025, "outputPerM": 1.50 },
       "gemini-3.5-flash-lite": { "inputPerM": 0.30, "cachedInputPerM": 0.03, "outputPerM": 2.50 },
       "gemini-3.6-flash": { "inputPerM": 0.75, "cachedInputPerM": 0.075, "outputPerM": 3.75 },
-      "gemini-3.7-flash": { "inputPerM": 0.75, "cachedInputPerM": 0.075, "outputPerM": 3.75 },
-      "gemini-3.8-flash": { "inputPerM": 0.75, "cachedInputPerM": 0.075, "outputPerM": 3.75 }
+      "gemini-3.8-flash": { "inputPerM": 0.75, "cachedInputPerM": 0.075, "outputPerM": 3.75 },
+      "gemini-4-argon": { "inputPerM": 4.00, "cachedInputPerM": 0.20, "outputPerM": 20.00 }
     }
   },
   "anthropic": {
@@ -80,15 +82,18 @@
       "allowed": ["low", "medium", "high", "xhigh", "max"],
       "default": "high"
     },
-    "models": ["claude-opus-5", "claude-sonnet-5", "claude-haiku-4-5-20251001"],
+    "models": ["claude-opus-5", "claude-sonnet-5", "claude-fable-5-1", "claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5"],
     "charsPerToken": 1.0,
     "tpmLimit": null,
     "maxSpokeTokens": null,
-    "pricingSource": { "url": "https://platform.claude.com/docs/en/about-claude/pricing", "asOf": "2026-09-02", "note": "claude-sonnet-5 的 $2／$10 原為上市優惠價（原訂 2026-08-31 到期、2026-09-01 漲為 $3／$15）；官方頁已載明該調漲不會發生，此價已成常態價。" },
+    "pricingSource": { "url": "https://platform.claude.com/docs/en/about-claude/pricing", "asOf": "2026-10-16", "note": "claude-sonnet-5 的 $2／$10 原為上市優惠價（原訂 2026-08-31 到期、2026-09-01 漲為 $3／$15）；官方頁已載明該調漲不會發生，此價已成常態價。cacheWritePerM 為 5 分鐘快取寫入價。claude-haiku-5-5 分兩段計價（prompt ≤100K 為 $0.10／$0.50），本檔取 >100K 那段＝取上限。claude-haiku-4-5-20251001 不支援 effort 與 adaptive thinking，dowafu 的 anthropic adapter 必送兩者，故自白名單移除。" },
     "pricing": {
       "claude-opus-5": { "inputPerM": 5.00, "cachedInputPerM": 0.50, "cacheWritePerM": 6.25, "outputPerM": 25.00 },
       "claude-sonnet-5": { "inputPerM": 2.00, "cachedInputPerM": 0.20, "cacheWritePerM": 2.50, "outputPerM": 10.00 },
-      "claude-haiku-4-5-20251001": { "inputPerM": 1.00, "cachedInputPerM": 0.10, "cacheWritePerM": 1.25, "outputPerM": 5.00 }
+      "claude-fable-5-1": { "inputPerM": 10.00, "cachedInputPerM": 0.25, "cacheWritePerM": 12.50, "outputPerM": 50.00 },
+      "claude-opus-5-5": { "inputPerM": 4.00, "cachedInputPerM": 0.20, "cacheWritePerM": 5.00, "outputPerM": 20.00 },
+      "claude-sonnet-5-5": { "inputPerM": 2.00, "cachedInputPerM": 0.10, "cacheWritePerM": 2.50, "outputPerM": 10.00 },
+      "claude-haiku-5-5": { "inputPerM": 0.50, "cachedInputPerM": 0.05, "cacheWritePerM": 0.625, "outputPerM": 2.50 }
     }
   }
 }
